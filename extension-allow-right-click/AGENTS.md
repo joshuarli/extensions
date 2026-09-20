@@ -54,5 +54,6 @@ deno task fmt:check
 deno task lint:check
 ```
 
-`build/` and `dist/` are generated extension directories. Load `dist/` as an
-unpacked Chromium extension for manual browser testing.
+`../build/extension-allow-right-click/` and `../dist/extension-allow-right-click/`
+are generated extension directories. Load `dist/extension-allow-right-click/`
+as an unpacked Chromium extension for manual browser testing.

@@ -30,7 +30,18 @@ function inlineStylesheets(outputDirectory, sourceDirectory) {
   }
 }
 
-for (const [extensionName, extension] of Object.entries(extensionDefinitions)) {
+function copyGeneratedFiles(extensionName, generatedFiles, outputDirectory) {
+  for (const { source, destination } of generatedFiles ?? []) {
+    if (!existsSync(source)) {
+      throw new Error(
+        `Generated file for ${extensionName} is missing at ${source}. Run deno task build:wasm first.`,
+      );
+    }
+    cpSync(source, resolve(outputDirectory, destination));
+  }
+}
+
+async function buildExtension(extensionName, extension) {
   for (const bundleConfig of extension.bundleConfigs) {
     // eslint-disable-next-line no-await-in-loop
     await build(bundleConfig);
@@ -49,17 +60,11 @@ for (const [extensionName, extension] of Object.entries(extensionDefinitions)) {
     `${JSON.stringify(manifest, null, 2)}\n`,
   );
 
-  if (extension.generatedWasmPath) {
-    if (!existsSync(extension.generatedWasmPath)) {
-      throw new Error(
-        `Loupe WASM bindings are missing at ${extension.generatedWasmPath}. Run deno task build:wasm first.`,
-      );
-    }
-    cpSync(
-      extension.generatedWasmPath,
-      resolve(extension.outputDirectory, "defuddle_wasm_bg.wasm"),
-    );
-  }
+  copyGeneratedFiles(extensionName, extension.generatedFiles, extension.outputDirectory);
 
   console.log(`Built ${extensionName} in ${extension.outputDirectory}`);
+}
+
+for (const [extensionName, extension] of Object.entries(extensionDefinitions)) {
+  await buildExtension(extensionName, extension);
 }

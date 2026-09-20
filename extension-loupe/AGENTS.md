@@ -40,8 +40,9 @@ WebAssembly, and renders the extracted content in an in-page reader overlay.
   from `test/fixtures/reader-sample-source.html`.
 - `../rolldown.config.mjs` emits the module service worker and the self-contained IIFE
   injected by `chrome.scripting.executeScript()`.
-- `build/` and `dist/` are generated extension directories. `.generated/` is
-  the ignored intermediate WASM-bindgen directory.
+- `../build/extension-loupe/` and `../dist/extension-loupe/` are generated
+  extension directories. `.generated/` is the ignored intermediate
+  WASM-bindgen directory.
 
 The Rust source of truth is the sibling `defuddle-rs` checkout. Its
 `crates/defuddle` crate performs extraction; `crates/defuddle-wasm` exposes the
@@ -151,8 +152,8 @@ binary is unavailable. The shared launcher uses an isolated profile, mock
 keychain, background-work suppression, and headless rendering flags so browser
 output is repeatable.
 
-Load `extension-loupe/dist/` as an unpacked extension. Click the Loupe toolbar icon to show or
-hide the reader. The first click parses the current DOM; subsequent toggles
+Load `dist/extension-loupe/` as an unpacked extension. Click the Loupe toolbar
+icon to show or hide the reader. The first click parses the current DOM; subsequent toggles
 reuse the result until the document URL changes.
 
 The reader toolbar’s Open in Obsidian button first copies the complete

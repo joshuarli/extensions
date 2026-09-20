@@ -44,6 +44,6 @@
     "unicorn/prefer-global-this": "off",
     "unicorn/consistent-function-scoping": "off"
   },
-  "ignorePatterns": ["**/test/fixtures/**", "**/build/**", "**/dist/**", "**/.generated/**"],
+  "ignorePatterns": ["**/test/fixtures/**", "build/**", "dist/**", "**/.generated/**"],
   "env": { "builtin": true }
 }

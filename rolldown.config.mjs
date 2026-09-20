@@ -4,10 +4,31 @@ import { defineConfig } from "rolldown";
 
 const repositoryRoot = resolve(import.meta.dirname, "."),
   isProductionBuild = process.env.NODE_ENV === "production",
+  outputRoot = resolve(repositoryRoot, isProductionBuild ? "dist" : "build"),
   transformOptions = {
     define: { "process.env.NODE_ENV": JSON.stringify(process.env.NODE_ENV || "development") },
     target: "chrome150",
   };
+
+function extensionPath(extensionName, ...pathSegments) {
+  return resolve(repositoryRoot, extensionName, ...pathSegments);
+}
+
+function sourcePath(extensionName, ...pathSegments) {
+  return extensionPath(extensionName, "src", ...pathSegments);
+}
+
+function outputDirectory(extensionName) {
+  return resolve(outputRoot, extensionName);
+}
+
+function defineExtension(extensionName, options) {
+  return {
+    sourceDirectory: sourcePath(extensionName),
+    outputDirectory: outputDirectory(extensionName),
+    ...options,
+  };
+}
 
 export const rawAssetPlugin = {
   name: "raw-asset-imports",
@@ -28,10 +49,10 @@ export const rawAssetPlugin = {
   },
 };
 
-function outputOptions(extensionDirectory, entryFileName, format, cleanDir) {
+function outputOptions(extensionName, entryFileName, format, cleanDir) {
   return {
     cleanDir,
-    dir: resolve(repositoryRoot, extensionDirectory, isProductionBuild ? "dist" : "build"),
+    dir: outputDirectory(extensionName),
     entryFileNames: entryFileName,
     format,
     minify: isProductionBuild,
@@ -39,107 +60,82 @@ function outputOptions(extensionDirectory, entryFileName, format, cleanDir) {
   };
 }
 
-function esmBundle(extensionDirectory, input, entryFileName, cleanDir) {
+function esmBundle(extensionName, input, entryFileName, cleanDir) {
   return defineConfig({
-    input: resolve(repositoryRoot, extensionDirectory, input),
-    output: outputOptions(extensionDirectory, entryFileName, "esm", cleanDir),
+    input: sourcePath(extensionName, input),
+    output: outputOptions(extensionName, entryFileName, "esm", cleanDir),
     transform: transformOptions,
   });
 }
 
-function classicBundle(extensionDirectory, input, entryFileName) {
+function classicBundle(extensionName, input, entryFileName) {
   return defineConfig({
-    input: resolve(repositoryRoot, extensionDirectory, input),
-    output: outputOptions(extensionDirectory, entryFileName, "iife", false),
+    input: sourcePath(extensionName, input),
+    output: outputOptions(extensionName, entryFileName, "iife", false),
     transform: transformOptions,
   });
 }
 
 const allowRightClickInjectedEntries = {
-  "data/inject/core": "src/data/inject/core.ts",
-  "data/inject/mouse": "src/data/inject/mouse.ts",
-  "data/inject/styles": "src/data/inject/styles.ts",
-  "data/inject/user-select/isolated": "src/data/inject/user-select/isolated.ts",
-  "data/inject/user-select/main": "src/data/inject/user-select/main.ts",
-  "data/inject/listen/isolated": "src/data/inject/listen/isolated.ts",
-  "data/inject/listen/main": "src/data/inject/listen/main.ts",
+  "data/inject/core": "data/inject/core.ts",
+  "data/inject/mouse": "data/inject/mouse.ts",
+  "data/inject/styles": "data/inject/styles.ts",
+  "data/inject/user-select/isolated": "data/inject/user-select/isolated.ts",
+  "data/inject/user-select/main": "data/inject/user-select/main.ts",
+  "data/inject/listen/isolated": "data/inject/listen/isolated.ts",
+  "data/inject/listen/main": "data/inject/listen/main.ts",
 };
 
 export const extensionDefinitions = {
-  "extension-loupe": {
-    sourceDirectory: resolve(repositoryRoot, "extension-loupe/src"),
-    outputDirectory: resolve(
-      repositoryRoot,
-      "extension-loupe",
-      isProductionBuild ? "dist" : "build",
-    ),
-    generatedWasmPath: resolve(
-      repositoryRoot,
-      "extension-loupe/.generated/defuddle-wasm/defuddle_wasm_bg.wasm",
-    ),
+  "extension-loupe": defineExtension("extension-loupe", {
+    generatedFiles: [
+      {
+        source: extensionPath(
+          "extension-loupe",
+          ".generated",
+          "defuddle-wasm",
+          "defuddle_wasm_bg.wasm",
+        ),
+        destination: "defuddle_wasm_bg.wasm",
+      },
+    ],
     bundleConfigs: [
       defineConfig({
-        input: resolve(repositoryRoot, "extension-loupe/src/service-worker.ts"),
+        input: sourcePath("extension-loupe", "service-worker.ts"),
         plugins: [rawAssetPlugin],
         output: outputOptions("extension-loupe", "service-worker.js", "esm", true),
         transform: transformOptions,
       }),
       defineConfig({
-        input: resolve(repositoryRoot, "extension-loupe/src/reader-content-script.ts"),
+        input: sourcePath("extension-loupe", "reader-content-script.ts"),
         plugins: [rawAssetPlugin],
         output: outputOptions("extension-loupe", "content.js", "iife", false),
         transform: transformOptions,
       }),
     ],
-  },
-  "extension-allow-right-click": {
-    sourceDirectory: resolve(repositoryRoot, "extension-allow-right-click/src"),
-    outputDirectory: resolve(
-      repositoryRoot,
-      "extension-allow-right-click",
-      isProductionBuild ? "dist" : "build",
-    ),
+  }),
+  "extension-allow-right-click": defineExtension("extension-allow-right-click", {
     bundleConfigs: [
-      esmBundle("extension-allow-right-click", "src/service-worker.ts", "service-worker.js", true),
+      esmBundle("extension-allow-right-click", "service-worker.ts", "service-worker.js", true),
       ...Object.entries(allowRightClickInjectedEntries).map(([entryName, input]) =>
         classicBundle("extension-allow-right-click", input, `${entryName}.js`),
       ),
     ],
-  },
-  "extension-youtube-transcript": {
-    sourceDirectory: resolve(repositoryRoot, "extension-youtube-transcript/src"),
-    outputDirectory: resolve(
-      repositoryRoot,
-      "extension-youtube-transcript",
-      isProductionBuild ? "dist" : "build",
-    ),
+  }),
+  "extension-youtube-transcript": defineExtension("extension-youtube-transcript", {
     inlineStylesheets: true,
     bundleConfigs: [
       defineConfig({
         input: {
-          "service-worker": resolve(
-            repositoryRoot,
-            "extension-youtube-transcript/src/service-worker.ts",
-          ),
-          options: resolve(repositoryRoot, "extension-youtube-transcript/src/options.ts"),
-          popup: resolve(repositoryRoot, "extension-youtube-transcript/src/popup.ts"),
+          "service-worker": sourcePath("extension-youtube-transcript", "service-worker.ts"),
+          options: sourcePath("extension-youtube-transcript", "options.ts"),
+          popup: sourcePath("extension-youtube-transcript", "popup.ts"),
         },
-        output: {
-          cleanDir: true,
-          dir: resolve(
-            repositoryRoot,
-            "extension-youtube-transcript",
-            isProductionBuild ? "dist" : "build",
-          ),
-          entryFileNames: "[name].js",
-          format: "esm",
-          minify: isProductionBuild,
-          sourcemap: isProductionBuild ? false : "inline",
-        },
+        output: outputOptions("extension-youtube-transcript", "[name].js", "esm", true),
         transform: transformOptions,
       }),
     ],
-  },
+  }),
 };
 
-export { repositoryRoot };
+export { outputRoot, repositoryRoot };

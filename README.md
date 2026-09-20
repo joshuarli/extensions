@@ -23,4 +23,5 @@ deno task test     # build Loupe's WASM bindings and run every test suite
 deno task check    # check formatting, lint, and TypeScript without changing files
 ```
 
-`make install` opens the extensions page in Helium.
+`make install` opens the extensions page in Helium and lists the unpacked
+extensions under `dist/`.
