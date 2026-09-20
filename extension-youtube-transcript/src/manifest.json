@@ -1,0 +1,52 @@
+{
+  "manifest_version": 3,
+  "minimum_chrome_version": "110",
+  "name": "YouTube Transcript Copier",
+  "version": "0.1.0",
+  "description": "Copy the current YouTube video's transcript to the clipboard.",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "clipboardWrite",
+    "downloads",
+    "notifications",
+    "declarativeNetRequest",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://www.youtube.com/*",
+    "https://m.youtube.com/*",
+    "https://youtube.com/*",
+    "https://youtu.be/*"
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'none'"
+  },
+  "background": {
+    "service_worker": "service-worker.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Copy YouTube transcript",
+    "default_icon": "icon.svg",
+    "default_popup": "popup.html"
+  },
+  "icons": {
+    "16": "icon.svg",
+    "48": "icon.svg",
+    "128": "icon.svg"
+  },
+  "externally_connectable": {
+    "matches": ["https://www.youtube.com/*", "https://m.youtube.com/*", "https://youtube.com/*"]
+  },
+  "options_page": "options.html",
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "youtube-headers",
+        "enabled": true,
+        "path": "rules.json"
+      }
+    ]
+  }
+}

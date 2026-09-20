@@ -1,0 +1,25 @@
+{
+  "nodeModulesDir": "auto",
+  "imports": {
+    "rolldown": "npm:rolldown@^1.2.0",
+    "typescript": "npm:typescript@^7.0.2",
+    "oxfmt": "npm:oxfmt@^0.68.0",
+    "oxlint": "npm:oxlint@^1.83.0",
+    "@types/chrome": "npm:@types/chrome@^0.2.2",
+    "@types/node": "npm:@types/node@^26.1.1"
+  },
+  "tasks": {
+    "build:wasm": "deno run -A scripts/build-defuddle-wasm.mjs",
+    "typecheck": "deno run -A npm:typescript/tsc --noEmit",
+    "fmt": "deno run -A npm:oxfmt --write .",
+    "fmt:check": "deno run -A npm:oxfmt --check .",
+    "lint": "deno run -A npm:oxlint --fix .",
+    "lint:check": "deno run -A npm:oxlint .",
+    "fmtlint": "deno task fmt && deno task lint",
+    "check": "deno task fmt:check && deno task lint:check && deno task typecheck",
+    "build": "deno task build:wasm && deno task typecheck && NODE_ENV=development deno run -A scripts/build-extensions.mjs",
+    "dist": "deno task build:wasm && deno task typecheck && NODE_ENV=production deno run -A scripts/build-extensions.mjs",
+    "reader-sample": "deno run -A scripts/build-reader-sample-fixture.mjs",
+    "test": "deno task build:wasm && deno test -A --no-check extension-loupe/test extension-allow-right-click/test extension-youtube-transcript/test"
+  }
+}

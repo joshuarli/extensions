@@ -1,0 +1,103 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  color: #202124;
+  font:
+    13px system-ui,
+    sans-serif;
+  min-width: 280px;
+  padding: 16px;
+}
+
+h1 {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+
+.buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+button {
+  align-items: center;
+  background: #f1f3f4;
+  border: 1px solid #dadce0;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  font: inherit;
+  gap: 6px;
+  padding: 8px 12px;
+  text-align: left;
+  width: 100%;
+}
+
+button:hover {
+  background: #e8eaed;
+}
+
+button:active {
+  background: #d2e3fc;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+#status {
+  color: #188038;
+  font-size: 12px;
+  margin-top: 8px;
+  min-height: 16px;
+}
+
+#status.error {
+  color: #c5221f;
+}
+
+#copy-error {
+  color: #1a73e8;
+  font-size: 11px;
+  justify-content: center;
+  margin-top: 6px;
+  padding: 6px 12px;
+}
+
+#copy-error[hidden] {
+  display: none;
+}
+
+.developer-toggle,
+.settings-link {
+  color: #5f6368;
+  display: block;
+  font-size: 12px;
+  margin-top: 10px;
+  text-decoration: none;
+}
+
+.developer-toggle:hover,
+.settings-link:hover {
+  text-decoration: underline;
+}
+
+#developer-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+#developer-actions[hidden] {
+  display: none;
+}

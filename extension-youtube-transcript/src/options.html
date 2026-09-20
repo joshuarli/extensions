@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>YouTube Transcript Copier settings</title>
+    <style>
+      body {
+        color: #202124;
+        font:
+          14px system-ui,
+          sans-serif;
+        margin: 32px;
+        max-width: 560px;
+      }
+      label {
+        display: block;
+        font-weight: 600;
+        margin-bottom: 8px;
+      }
+      input {
+        box-sizing: border-box;
+        padding: 8px;
+        width: 240px;
+      }
+      button {
+        margin-left: 8px;
+        padding: 8px 14px;
+      }
+      #status {
+        color: #188038;
+        margin-top: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>YouTube Transcript Copier</h1>
+    <label for="language">Preferred transcript language</label>
+    <input id="language" placeholder="Default, en, zh-CN, fr" />
+    <button id="save">Save</button>
+    <p>Leave this blank to use YouTube's default caption selection.</p>
+    <div id="status" role="status"></div>
+    <script type="module" src="options.js"></script>
+  </body>
+</html>
