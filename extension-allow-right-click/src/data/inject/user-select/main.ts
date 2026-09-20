@@ -21,7 +21,7 @@ try {
     });
   });
 } catch {
-  // ignore pages without Selection support
+  // Ignore pages without Selection support
 }
 
 export {};

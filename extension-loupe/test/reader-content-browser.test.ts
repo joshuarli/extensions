@@ -9,8 +9,8 @@ import test from "node:test";
 import { extensionDefinitions, rawAssetPlugin } from "../../rolldown.config.mjs";
 import { chromiumTestAvailable, runChromiumDumpDom } from "./chromium-test-launcher.ts";
 
-const repositoryRoot = resolve(import.meta.dirname, "../..");
-const contentScriptBundleConfig = extensionDefinitions["extension-loupe"].bundleConfigs[1];
+const repositoryRoot = resolve(import.meta.dirname, "../.."),
+  contentScriptBundleConfig = extensionDefinitions["extension-loupe"].bundleConfigs[1];
 
 test("content script renders a parsed page in the browser", async (t) => {
   if (!chromiumTestAvailable()) {
@@ -221,7 +221,10 @@ test("content script opens Obsidian with a clipboard loupe-import URI", async (t
     );
 
     const output = runChromiumDumpDom(readerContentTestPagePath, chromiumProfileDirectory);
-    assert.match(output, /data-obsidian-status="Opening in Obsidian; image import will continue there/);
+    assert.match(
+      output,
+      /data-obsidian-status="Opening in Obsidian; image import will continue there/,
+    );
     assert.match(output, /data-obsidian-action="loupe-import"/);
     assert.match(output, /data-obsidian-file="Rendered article"/);
     assert.match(output, /data-obsidian-source="file:/);

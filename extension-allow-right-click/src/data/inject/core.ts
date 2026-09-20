@@ -1,4 +1,4 @@
-window.pointers = window.pointers ?? {
+window.pointers ??= {
   run: new Set<() => void>(),
   cache: new Map<ArcStylableElement, ArcCachedStyle>(),
   status: "",

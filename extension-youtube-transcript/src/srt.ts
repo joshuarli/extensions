@@ -1,10 +1,10 @@
 import type { TranscriptSegment } from "./types.ts";
 
 export function formatSrtTimestamp(seconds: number): string {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = Math.floor(seconds % 60);
-  const ms = Math.floor((seconds % 1) * 1000);
+  const h = Math.floor(seconds / 3600),
+    m = Math.floor((seconds % 3600) / 60),
+    s = Math.floor(seconds % 60),
+    ms = Math.floor((seconds % 1) * 1000);
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")},${String(ms).padStart(3, "0")}`;
 }
 

@@ -13,12 +13,10 @@ interface ArcPointers {
   run: Set<() => void>;
   cache: Map<ArcStylableElement, ArcCachedStyle>;
   status: ArcStatus;
-  record(element: ArcStylableElement, name: ArcStyleName, value: string): void;
+  record: (element: ArcStylableElement, name: ArcStyleName, value: string) => void;
 }
 
-type ArcRuntimeRequest =
-  | { method: "activate" }
-  | { method: "deactivate" };
+type ArcRuntimeRequest = { method: "activate" } | { method: "deactivate" };
 
 interface Window {
   pointers: ArcPointers;

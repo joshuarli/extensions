@@ -3,7 +3,9 @@
   "specifiers": {
     "npm:@types/chrome@~0.2.2": "0.2.9",
     "npm:@types/node@^26.1.1": "26.6.2",
+    "npm:oxfmt@*": "0.68.0",
     "npm:oxfmt@0.68": "0.68.0",
+    "npm:oxlint@*": "1.83.0",
     "npm:oxlint@^1.83.0": "1.83.0",
     "npm:rolldown@^1.2.0": "1.2.9",
     "npm:typescript@*": "7.0.2",

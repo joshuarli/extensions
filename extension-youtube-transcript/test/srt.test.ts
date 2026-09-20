@@ -11,13 +11,12 @@ test("formats SRT timestamps as HH:MM:SS,mmm", () => {
 
 test("builds SRT from segments with estimated end times", () => {
   const srt = buildSrt([
-    { start: 0, text: "Hello world." },
-    { start: 5, text: "This is the second line." },
-    { start: 10, text: "Third line." },
-  ]);
-
-  const expected =
-    "1\n00:00:00,000 --> 00:00:05,000\nHello world.\n\n2\n00:00:05,000 --> 00:00:10,000\nThis is the second line.\n\n3\n00:00:10,000 --> 00:00:15,000\nThird line.\n";
+      { start: 0, text: "Hello world." },
+      { start: 5, text: "This is the second line." },
+      { start: 10, text: "Third line." },
+    ]),
+    expected =
+      "1\n00:00:00,000 --> 00:00:05,000\nHello world.\n\n2\n00:00:05,000 --> 00:00:10,000\nThis is the second line.\n\n3\n00:00:10,000 --> 00:00:15,000\nThird line.\n";
   assert.equal(srt, expected);
 });
 

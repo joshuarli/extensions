@@ -1,7 +1,6 @@
-const language = document.querySelector<HTMLInputElement>("#language")!;
-const statusEl = document.querySelector<HTMLDivElement>("#status")!;
-
-const { language: savedLanguage } = await chrome.storage.local.get({ language: "" });
+const language = document.querySelector<HTMLInputElement>("#language")!,
+  statusEl = document.querySelector<HTMLDivElement>("#status")!,
+  { language: savedLanguage } = await chrome.storage.local.get({ language: "" });
 language.value = savedLanguage as string;
 
 document.querySelector<HTMLButtonElement>("#save")!.addEventListener("click", async () => {

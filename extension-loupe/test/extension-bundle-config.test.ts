@@ -8,8 +8,5 @@ test("extension bundle formats match browser loading contracts", () => {
     "utf8",
   );
   assert.match(extensionBundlerConfigSource, /outputOptions\([^)]*"service-worker\.js", "esm"/);
-  assert.match(
-    extensionBundlerConfigSource,
-    /outputOptions\([^)]*"content\.js", "iife"/,
-  );
+  assert.match(extensionBundlerConfigSource, /outputOptions\([^)]*"content\.js", "iife"/);
 });

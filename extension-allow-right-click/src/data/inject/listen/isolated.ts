@@ -1,26 +1,26 @@
 {
-  const skip = (e: Event): void => e.stopPropagation();
-  // try to minimize exposure
-  const keydown = (e: KeyboardEvent): void => {
-    const meta = e.metaKey || e.ctrlKey;
+  const skip = (e: Event): void => e.stopPropagation(),
+    // Try to minimize exposure
+    keydown = (e: KeyboardEvent): void => {
+      const meta = e.metaKey || e.ctrlKey;
 
-    if (meta && ["KeyC", "KeyV", "KeyP", "KeyA"].includes(e.code)) {
+      if (meta && ["KeyC", "KeyV", "KeyP", "KeyA"].includes(e.code)) {
+        e.stopPropagation();
+      }
+    },
+    paste = (e: ClipboardEvent): void => {
       e.stopPropagation();
-    }
-  };
-  const paste = (e: ClipboardEvent): void => {
-    e.stopPropagation();
-    // some websites use input event to revert paste changes
-    const target = e.target;
-    if (target !== null) {
-      target.addEventListener("input", skip, true);
-      requestAnimationFrame(() => {
-        target.removeEventListener("input", skip, true);
-      });
-    }
-  };
+      // Some websites use input event to revert paste changes
+      const target = e.target;
+      if (target !== null) {
+        target.addEventListener("input", skip, true);
+        requestAnimationFrame(() => {
+          target.removeEventListener("input", skip, true);
+        });
+      }
+    };
 
-  // bypass all registered listeners
+  // Bypass all registered listeners
   document.addEventListener("dragstart", skip, true);
   document.addEventListener("selectstart", skip, true);
   document.addEventListener("keydown", keydown, true);

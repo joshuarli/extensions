@@ -330,7 +330,7 @@ function buildReaderOutlineItems(headings: HTMLHeadingElement[]): ReaderOutlineI
   const outlineItems: ReaderOutlineItem[] = [];
 
   for (const heading of headings) {
-    const level = parseInt(heading.tagName.charAt(1), 10);
+    const level = Math.trunc(Number(heading.tagName.charAt(1)));
     if (level === 1) continue;
 
     let headingId = heading.id;
@@ -372,6 +372,7 @@ function renderReaderOutline(outlineItems: ReaderOutlineItem[]): void {
     return;
   }
 
+  const hostElement = readerHostElement!;
   for (const outlineItem of outlineItems) {
     const outlineButton = document.createElement("button");
     outlineButton.type = "button";
@@ -380,9 +381,10 @@ function renderReaderOutline(outlineItems: ReaderOutlineItem[]): void {
     outlineButton.textContent = outlineItem.headingLabel || "Untitled heading";
     outlineButton.dataset["headingId"] = outlineItem.headingId;
     outlineButton.setAttribute("aria-label", outlineItem.headingLabel || "Untitled heading");
+    const targetHeadingId = outlineItem.headingId;
     outlineButton.addEventListener("click", () => {
-      readerHostElement!
-        .shadowRoot!.getElementById(outlineItem.headingId)
+      hostElement
+        .shadowRoot!.querySelector(`#${CSS.escape(targetHeadingId)}`)
         ?.scrollIntoView({ behavior: "smooth" });
     });
     readerOutlineNavigationElement!.append(outlineButton);

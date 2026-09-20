@@ -31,8 +31,8 @@ async function resolveTranscriptForTab(
 
   const pageData = await deps.readPageData(tab.id!);
   await deps.progress(tab.id!, "Fetching transcript…");
-  const settings = await deps.getSettings();
-  const preferredLanguage = settings.language.trim() || undefined;
+  const settings = await deps.getSettings(),
+    preferredLanguage = settings.language.trim() || undefined;
   return resolveTranscript({
     fetchTranscript: (chapters) =>
       deps.fetchTranscript(videoId, pageData, preferredLanguage, chapters, deps.fetch),
@@ -103,8 +103,8 @@ export async function handleGetTranscript(
   tab: chrome.tabs.Tab,
   overrides: Partial<BackgroundDependencies> = {},
 ): Promise<string> {
-  const deps = { ...defaultDependencies(), ...overrides };
-  const result = await resolveTranscriptForTab(tab, deps);
+  const deps = { ...defaultDependencies(), ...overrides },
+    result = await resolveTranscriptForTab(tab, deps);
   return buildMarkdown(result.metadata, result.transcript.text);
 }
 
@@ -112,8 +112,8 @@ export async function handleGetSubtitle(
   tab: chrome.tabs.Tab,
   overrides: Partial<BackgroundDependencies> = {},
 ): Promise<string> {
-  const deps = { ...defaultDependencies(), ...overrides };
-  const result = await resolveTranscriptForTab(tab, deps);
+  const deps = { ...defaultDependencies(), ...overrides },
+    result = await resolveTranscriptForTab(tab, deps);
   return result.transcript.srt;
 }
 
@@ -129,12 +129,12 @@ export const handleDownloadFixtures:
         tab: chrome.tabs.Tab,
         overrides: Partial<BackgroundDependencies> = {},
       ): Promise<{ label: string }> => {
-        const deps = { ...defaultDependencies(), ...overrides };
-        const videoId = requireYouTubeVideo(tab);
+        const deps = { ...defaultDependencies(), ...overrides },
+          videoId = requireYouTubeVideo(tab);
         await deps.progress(tab.id!, "Reading YouTube page…");
-        const pageData = await deps.readPageData(tab.id!);
-        const settings = await deps.getSettings();
-        const preferredLanguage = settings.language.trim() || undefined;
+        const pageData = await deps.readPageData(tab.id!),
+          settings = await deps.getSettings(),
+          preferredLanguage = settings.language.trim() || undefined;
 
         await deps.progress(tab.id!, "Fetching InnerTube response…");
         const playerData = await fetchPlayerData(videoId, preferredLanguage, deps.fetch);
@@ -143,10 +143,9 @@ export const handleDownloadFixtures:
             "YouTube did not return player data. The video may be unavailable or the request may be blocked.",
           );
         }
-        const nextData = await fetchNextResponse!(videoId, preferredLanguage, deps.fetch);
-
-        const tracks = getCaptionTracks(playerData);
-        const track = pickCaptionTrack(tracks, preferredLanguage);
+        const nextData = await fetchNextResponse!(videoId, preferredLanguage, deps.fetch),
+          tracks = getCaptionTracks(playerData),
+          track = pickCaptionTrack(tracks, preferredLanguage);
         if (!track?.baseUrl) {
           throw new CaptionFetchError("No captions are available for this video.");
         }
@@ -155,30 +154,29 @@ export const handleDownloadFixtures:
 
         await deps.progress(tab.id!, "Building transcript…");
         const result = await resolveTranscript({
-          fetchTranscript: (chapters) =>
-            deps.fetchTranscript(
-              videoId,
-              { ...pageData, playerResponse: playerData },
-              preferredLanguage,
-              chapters,
-              deps.fetch,
-            ),
-          pageData: { ...pageData, initialData: nextData, playerResponse: playerData },
-          ...(preferredLanguage ? { preferredLanguage } : {}),
-          readPanel: () => deps.readPanel(tab.id!),
-          tabUrl: tab.url!,
-        });
-
-        const prefix = `${videoId}-`;
-        const innertube = JSON.stringify(
-          sortKeys!({
-            fetchedAt: new Date().toISOString(),
-            nextResponse: nextData,
-            playerResponse: playerData,
-            videoId,
+            fetchTranscript: (chapters) =>
+              deps.fetchTranscript(
+                videoId,
+                { ...pageData, playerResponse: playerData },
+                preferredLanguage,
+                chapters,
+                deps.fetch,
+              ),
+            pageData: { ...pageData, initialData: nextData, playerResponse: playerData },
+            ...(preferredLanguage ? { preferredLanguage } : {}),
+            readPanel: () => deps.readPanel(tab.id!),
+            tabUrl: tab.url!,
           }),
-        );
-        const innertubeGzip = await gzip!(innertube);
+          prefix = `${videoId}-`,
+          innertube = JSON.stringify(
+            sortKeys!({
+              fetchedAt: new Date().toISOString(),
+              nextResponse: nextData,
+              playerResponse: playerData,
+              videoId,
+            }),
+          ),
+          innertubeGzip = await gzip!(innertube);
         await deps.progress(tab.id!, "Saving fixtures…");
         await deps.download!(`${prefix}innertube.json.gz`, innertubeGzip, "application/gzip");
         await deps.download!(
@@ -229,8 +227,8 @@ function defaultDependencies(): BackgroundDependencies {
     ): Promise<void> => {
       let url: string;
       if (content instanceof ArrayBuffer || content instanceof Uint8Array) {
-        const bytes = new Uint8Array(content);
-        const blob = new Blob([bytes], type === undefined ? {} : { type });
+        const bytes = new Uint8Array(content),
+          blob = new Blob([bytes], type === undefined ? {} : { type });
         url = await new Promise<string>((resolve, reject) => {
           const reader = new FileReader();
           reader.addEventListener("load", () => resolve(reader.result as string));
@@ -263,108 +261,105 @@ function defaultDependencies(): BackgroundDependencies {
 }
 
 const fetchRawCaptionXml:
-  | ((track: { baseUrl: string }, fetchImpl: typeof globalThis.fetch) => Promise<string>)
-  | undefined =
-  process.env["NODE_ENV"] === "production"
-    ? undefined
-    : async (track: { baseUrl: string }, fetchImpl: typeof globalThis.fetch) => {
-        const url = new URL(track.baseUrl);
-        if (!url.hostname.endsWith(".youtube.com")) {
-          throw new CaptionFetchError("Invalid caption URL.");
-        }
-        let response;
-        try {
-          response = await fetchImpl(track.baseUrl, {
-            headers: { "User-Agent": "Mozilla/5.0" },
-            signal: AbortSignal.timeout(4000),
-          });
-          if (!response.ok) {
-            throw new CaptionFetchError(`HTTP ${response.status || "error"}`);
+    | ((track: { baseUrl: string }, fetchImpl: typeof globalThis.fetch) => Promise<string>)
+    | undefined =
+    process.env["NODE_ENV"] === "production"
+      ? undefined
+      : async (track: { baseUrl: string }, fetchImpl: typeof globalThis.fetch) => {
+          const url = new URL(track.baseUrl);
+          if (!url.hostname.endsWith(".youtube.com")) {
+            throw new CaptionFetchError("Invalid caption URL.");
           }
-          return await response.text();
-        } catch (error) {
-          if ((error as Error).message?.startsWith("HTTP ")) {
+          let response;
+          try {
+            response = await fetchImpl(track.baseUrl, {
+              headers: { "User-Agent": "Mozilla/5.0" },
+              signal: AbortSignal.timeout(4000),
+            });
+            if (!response.ok) {
+              throw new CaptionFetchError(`HTTP ${response.status || "error"}`);
+            }
+            return await response.text();
+          } catch (error) {
+            if ((error as Error).message?.startsWith("HTTP ")) {
+              throw new CaptionFetchError(
+                `YouTube rejected the caption request (${(error as Error).message}).`,
+              );
+            }
             throw new CaptionFetchError(
-              `YouTube rejected the caption request (${(error as Error).message}).`,
+              "Could not download captions from YouTube. The request may be blocked or timed out.",
             );
           }
-          throw new CaptionFetchError(
-            "Could not download captions from YouTube. The request may be blocked or timed out.",
-          );
-        }
-      };
-
-const fetchNextResponse:
-  | ((
-      videoId: string,
-      preferredLanguage: string | undefined,
-      fetchImpl: typeof globalThis.fetch,
-    ) => Promise<unknown>)
-  | undefined =
-  process.env["NODE_ENV"] === "production"
-    ? undefined
-    : async (
+        },
+  fetchNextResponse:
+    | ((
         videoId: string,
         preferredLanguage: string | undefined,
         fetchImpl: typeof globalThis.fetch,
-      ) => {
-        try {
-          const response = await fetchImpl(
-            "https://www.youtube.com/youtubei/v1/next?prettyPrint=false",
-            {
-              body: JSON.stringify({
-                context: { client: { clientName: "WEB", clientVersion: "2.20240101.00.00" } },
-                videoId,
-              }),
-              headers: {
-                "Content-Type": "application/json",
-                ...(preferredLanguage ? { "Accept-Language": preferredLanguage } : {}),
+      ) => Promise<unknown>)
+    | undefined =
+    process.env["NODE_ENV"] === "production"
+      ? undefined
+      : async (
+          videoId: string,
+          preferredLanguage: string | undefined,
+          fetchImpl: typeof globalThis.fetch,
+        ) => {
+          try {
+            const response = await fetchImpl(
+              "https://www.youtube.com/youtubei/v1/next?prettyPrint=false",
+              {
+                body: JSON.stringify({
+                  context: { client: { clientName: "WEB", clientVersion: "2.20240101.00.00" } },
+                  videoId,
+                }),
+                headers: {
+                  "Content-Type": "application/json",
+                  ...(preferredLanguage ? { "Accept-Language": preferredLanguage } : {}),
+                },
+                method: "POST",
+                signal: AbortSignal.timeout(4000),
               },
-              method: "POST",
-              signal: AbortSignal.timeout(4000),
-            },
-          );
-          return response.ok ? await response.json() : null;
-        } catch {
-          return null;
-        }
-      };
-
-const sortKeys: ((obj: unknown) => unknown) | undefined =
-  process.env["NODE_ENV"] === "production"
-    ? undefined
-    : (obj) => {
-        const seen = new WeakSet<object>();
-        const walk = (val: unknown): unknown => {
-          if (!val || typeof val !== "object") {
-            return val;
+            );
+            return response.ok ? await response.json() : null;
+          } catch {
+            return null;
           }
-          if (seen.has(val as object)) {
-            return val;
-          }
-          seen.add(val as object);
-          if (Array.isArray(val)) {
-            return val.map((v) => walk(v));
-          }
-          return Object.keys(val as Record<string, unknown>)
-            .toSorted()
-            .reduce<Record<string, unknown>>((acc, key) => {
-              acc[key] = walk((val as Record<string, unknown>)[key]);
-              return acc;
-            }, {});
+        },
+  sortKeys: ((obj: unknown) => unknown) | undefined =
+    process.env["NODE_ENV"] === "production"
+      ? undefined
+      : (obj) => {
+          const seen = new WeakSet<object>(),
+            walk = (val: unknown): unknown => {
+              if (!val || typeof val !== "object") {
+                return val;
+              }
+              if (seen.has(val as object)) {
+                return val;
+              }
+              seen.add(val as object);
+              if (Array.isArray(val)) {
+                return val.map((v) => walk(v));
+              }
+              return Object.keys(val as Record<string, unknown>)
+                .toSorted()
+                .reduce<Record<string, unknown>>((acc, key) => {
+                  acc[key] = walk((val as Record<string, unknown>)[key]);
+                  return acc;
+                }, {});
+            };
+          return walk(obj);
+        },
+  gzip: ((data: string) => Promise<Uint8Array>) | undefined =
+    process.env["NODE_ENV"] === "production"
+      ? undefined
+      : async (data) => {
+          const compressed = new Blob([new TextEncoder().encode(data)])
+            .stream()
+            .pipeThrough(new CompressionStream("gzip"));
+          return new Uint8Array(await new Response(compressed).arrayBuffer());
         };
-        return walk(obj);
-      };
-
-const gzip: ((data: string) => Promise<Uint8Array>) | undefined =
-  process.env["NODE_ENV"] === "production"
-    ? undefined
-    : async (data) => {
-        const compressed = new Blob([new TextEncoder().encode(data)])
-          .stream()
-          .pipeThrough(new CompressionStream("gzip"));
-        return new Uint8Array(await new Response(compressed).arrayBuffer());
-      };
 
 function requireYouTubeVideo(tab: chrome.tabs.Tab): string {
   if (!tab?.id || !isYouTubeUrl(tab.url!)) {

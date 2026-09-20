@@ -1,13 +1,13 @@
 import { TabNotAccessibleError } from "./error.ts";
 
-const transcriptBtn = document.querySelector<HTMLButtonElement>("#copy-transcript")!;
-const srtBtn = document.querySelector<HTMLButtonElement>("#copy-srt")!;
-const copyErrorBtn = document.querySelector<HTMLButtonElement>("#copy-error")!;
-const statusEl = document.querySelector<HTMLDivElement>("#status")!;
-const settingsLink = document.querySelector<HTMLAnchorElement>("#settings-link")!;
+const transcriptBtn = document.querySelector<HTMLButtonElement>("#copy-transcript")!,
+  srtBtn = document.querySelector<HTMLButtonElement>("#copy-srt")!,
+  copyErrorBtn = document.querySelector<HTMLButtonElement>("#copy-error")!,
+  statusEl = document.querySelector<HTMLDivElement>("#status")!,
+  settingsLink = document.querySelector<HTMLAnchorElement>("#settings-link")!;
 
-let busy = false;
-let lastErrorDetail: string | undefined;
+let busy = false,
+  lastErrorDetail: string | undefined;
 
 settingsLink.addEventListener("click", (e) => {
   e.preventDefault();
@@ -15,9 +15,9 @@ settingsLink.addEventListener("click", (e) => {
 });
 
 if (process.env["NODE_ENV"] !== "production") {
-  const developerToggle = document.querySelector<HTMLAnchorElement>("#developer-toggle")!;
-  const developerActions = document.querySelector<HTMLDivElement>("#developer-actions")!;
-  const fixturesBtn = document.querySelector<HTMLButtonElement>("#download-fixtures")!;
+  const developerToggle = document.querySelector<HTMLAnchorElement>("#developer-toggle")!,
+    developerActions = document.querySelector<HTMLDivElement>("#developer-actions")!,
+    fixturesBtn = document.querySelector<HTMLButtonElement>("#download-fixtures")!;
 
   developerToggle.addEventListener("click", (e) => {
     e.preventDefault();
@@ -90,4 +90,3 @@ function setStatus(message: string, isError?: boolean): void {
   statusEl.textContent = message;
   statusEl.className = isError ? "error" : "";
 }
-export {};

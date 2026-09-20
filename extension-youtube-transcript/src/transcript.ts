@@ -1,40 +1,40 @@
 import type { Chapter, TranscriptResult, TranscriptSegment } from "./types.ts";
 import { buildSrt } from "./srt.ts";
 
-const CJK_CHAR_RANGES = String.raw`\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff`;
-const CJK_SENTENCE_PUNCT = String.raw`\u3002\uff01\uff1f`;
-const CJK_CLOSE_QUOTES = String.raw`\u300d\u300f\uff09`;
-const SENTENCE_END = new RegExp(
-  `[.!?${CJK_SENTENCE_PUNCT}]["'\\u2019\\u201d)${CJK_CLOSE_QUOTES}]*\\s*$`,
-  "u",
-);
-const QUESTION_END = new RegExp(`[?\\uff1f]["'\\u2019\\u201d)${CJK_CLOSE_QUOTES}]*\\s*$`, "u");
-const SPEAKER_MARKER = /^(>>|-\s)/u;
-const SPEAKER_STRIP = /^(>>\s*|-\s+)/u;
-const TRAILING_COMMA = /,\s*$/u;
-const TRANSCRIPT_GROUP_GAP_SECONDS = 20;
-const TRANSCRIPT_MAX_GROUP_SECONDS = 30;
-const TURN_MERGE_MAX_WORDS = 80;
-const TURN_MERGE_MAX_SPAN_SECONDS = 45;
-const SHORT_UTTERANCE_MAX_WORDS = 3;
-const FIRST_GROUP_MERGE_MIN_WORDS = 8;
-const AFFIRMATIVE_PATTERN =
-  /^(mhm|yeah|yes|yep|right|okay|ok|absolutely|sure|exactly|uh-huh|mm-hmm)[.!,]?\s+/iu;
+const CJK_CHAR_RANGES = String.raw`\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff`,
+  CJK_SENTENCE_PUNCT = String.raw`\u3002\uff01\uff1f`,
+  CJK_CLOSE_QUOTES = String.raw`\u300d\u300f\uff09`,
+  SENTENCE_END = new RegExp(
+    `[.!?${CJK_SENTENCE_PUNCT}]["'\\u2019\\u201d)${CJK_CLOSE_QUOTES}]*\\s*$`,
+    "u",
+  ),
+  QUESTION_END = new RegExp(`[?\\uff1f]["'\\u2019\\u201d)${CJK_CLOSE_QUOTES}]*\\s*$`, "u"),
+  AFFIRMATIVE_PATTERN =
+    /^(mhm|yeah|yes|yep|right|okay|ok|absolutely|sure|exactly|uh-huh|mm-hmm)[.!,]?\s+/iu,
+  FIRST_GROUP_MERGE_MIN_WORDS = 8,
+  SHORT_UTTERANCE_MAX_WORDS = 3,
+  SPEAKER_MARKER = /^(>>|-\s)/u,
+  SPEAKER_STRIP = /^(>>\s*|-\s+)/u,
+  TRAILING_COMMA = /,\s*$/u,
+  TRANSCRIPT_GROUP_GAP_SECONDS = 20,
+  TRANSCRIPT_MAX_GROUP_SECONDS = 30,
+  TURN_MERGE_MAX_SPAN_SECONDS = 45,
+  TURN_MERGE_MAX_WORDS = 80;
 
 function countWords(text: string): number {
-  const cjk = (text.match(new RegExp(`[${CJK_CHAR_RANGES}]`, "gu")) || []).length;
-  const latin = text
-    .replaceAll(new RegExp(`[${CJK_CHAR_RANGES}]`, "gu"), " ")
-    .trim()
-    .split(/\s+/u)
-    .filter(Boolean).length;
+  const cjk = (text.match(new RegExp(`[${CJK_CHAR_RANGES}]`, "gu")) || []).length,
+    latin = text
+      .replaceAll(new RegExp(`[${CJK_CHAR_RANGES}]`, "gu"), " ")
+      .trim()
+      .split(/\s+/u)
+      .filter(Boolean).length;
   return cjk + latin;
 }
 
 export function formatTimestamp(seconds: number): string {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = Math.floor(seconds % 60);
+  const h = Math.floor(seconds / 3600),
+    m = Math.floor((seconds % 3600) / 60),
+    s = Math.floor(seconds % 60);
   return h > 0
     ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`
     : `${m}:${String(s).padStart(2, "0")}`;
@@ -84,21 +84,21 @@ export function groupTranscriptSegments(segments: TranscriptSegment[]): Transcri
 }
 
 function groupBySentence(segments: TranscriptSegment[]): TranscriptSegment[] {
-  const groups: TranscriptSegment[] = [];
-  const pending: TranscriptSegment[] = [];
-  const flush = (count?: number): void => {
-    const selected = count === undefined ? pending.splice(0) : pending.splice(0, count);
-    const text = selected
-      .map((segment) => segment.text)
-      .join(" ")
-      .trim();
-    if (text) {
-      const first = selected[0];
-      if (first) {
-        groups.push({ speakerChange: false, start: first.start, text });
+  const groups: TranscriptSegment[] = [],
+    pending: TranscriptSegment[] = [],
+    flush = (count?: number): void => {
+      const selected = count === undefined ? pending.splice(0) : pending.splice(0, count),
+        text = selected
+          .map((segment) => segment.text)
+          .join(" ")
+          .trim();
+      if (text) {
+        const first = selected[0];
+        if (first) {
+          groups.push({ speakerChange: false, start: first.start, text });
+        }
       }
-    }
-  };
+    };
 
   for (const segment of segments) {
     const lastPending = pending.at(-1);
@@ -132,11 +132,11 @@ function findNaturalBreak(segments: TranscriptSegment[]): number {
   if (!first) {
     return -1;
   }
-  const minStart = first.start + TRANSCRIPT_MAX_GROUP_SECONDS / 2;
-  const boundary = new RegExp(
-    `^(.*[.!?]["'\\u2019\\u201d)]*)\\s+([A-Z].*)$|^(.*[${CJK_SENTENCE_PUNCT}][${CJK_CLOSE_QUOTES}]*)([${CJK_CHAR_RANGES}].*)$`,
-    "u",
-  );
+  const minStart = first.start + TRANSCRIPT_MAX_GROUP_SECONDS / 2,
+    boundary = new RegExp(
+      `^(.*[.!?]["'\\u2019\\u201d)]*)\\s+([A-Z].*)$|^(.*[${CJK_SENTENCE_PUNCT}][${CJK_CLOSE_QUOTES}]*)([${CJK_CHAR_RANGES}].*)$`,
+      "u",
+    );
   for (let i = segments.length - 1; i >= 0; i--) {
     const segment = segments[i];
     if (!segment) {
@@ -149,8 +149,8 @@ function findNaturalBreak(segments: TranscriptSegment[]): number {
     if (!match) {
       continue;
     }
-    const before = (match[1] || match[3])!;
-    const after = (match[2] || match[4])!;
+    const before = (match[1] || match[3])!,
+      after = (match[2] || match[4])!;
     segments.splice(
       i,
       1,
@@ -159,11 +159,11 @@ function findNaturalBreak(segments: TranscriptSegment[]): number {
     );
     return i + 1;
   }
-  let bestIndex = -1;
-  let bestGap = 0;
+  let bestIndex = -1,
+    bestGap = 0;
   for (let i = 1; i < segments.length; i++) {
-    const segment = segments[i];
-    const previous = segments[i - 1];
+    const segment = segments[i],
+      previous = segments[i - 1];
     if (!segment || !previous) {
       continue;
     }
@@ -235,17 +235,17 @@ interface SpeakerTurn {
 
 function groupBySpeaker(segments: TranscriptSegment[]): TranscriptSegment[] {
   const turns: SpeakerTurn[] = [];
-  let current: SpeakerTurn | null = null;
-  let speaker = -1;
-  let previousText = "";
+  let current: SpeakerTurn | null = null,
+    speaker = -1,
+    previousText = "";
 
   for (const segment of segments) {
-    const marker = SPEAKER_MARKER.test(segment.text);
-    const cleanText = segment.text.replace(SPEAKER_STRIP, "");
-    const realChange =
-      marker &&
-      (SENTENCE_END.test(previousText) || !previousText) &&
-      !TRAILING_COMMA.test(previousText);
+    const marker = SPEAKER_MARKER.test(segment.text),
+      cleanText = segment.text.replace(SPEAKER_STRIP, ""),
+      realChange =
+        marker &&
+        (SENTENCE_END.test(previousText) || !previousText) &&
+        !TRAILING_COMMA.test(previousText);
     if (realChange) {
       if (current) {
         turns.push(current);
@@ -304,25 +304,25 @@ function splitAffirmativeTurns(turns: SpeakerTurn[]): void {
       continue;
     }
 
-    const remainder = firstSegment.text.slice(match[0].length).trim();
-    const restSegments = turn.segments.slice(1);
-    const restWords =
-      countWords(remainder) +
-      restSegments.reduce((sum, segment) => sum + countWords(segment.text), 0);
+    const remainder = firstSegment.text.slice(match[0].length).trim(),
+      restSegments = turn.segments.slice(1),
+      restWords =
+        countWords(remainder) +
+        restSegments.reduce((sum, segment) => sum + countWords(segment.text), 0);
     if (restWords < 30) {
       continue;
     }
 
     const affirmativeTurn: SpeakerTurn = {
-      segments: [{ start: firstSegment.start, text: match[0].trimEnd() }],
-      speaker: turn.speaker,
-      speakerChange: turn.speakerChange,
-      start: turn.start,
-    };
-    const newRestSegments = remainder
-      ? [{ start: firstSegment.start, text: remainder }, ...restSegments]
-      : restSegments;
-    const firstRestSegment = newRestSegments[0];
+        segments: [{ start: firstSegment.start, text: match[0].trimEnd() }],
+        speaker: turn.speaker,
+        speakerChange: turn.speakerChange,
+        start: turn.start,
+      },
+      newRestSegments = remainder
+        ? [{ start: firstSegment.start, text: remainder }, ...restSegments]
+        : restSegments,
+      firstRestSegment = newRestSegments[0];
     if (!firstRestSegment) {
       continue;
     }
@@ -338,60 +338,60 @@ function splitAffirmativeTurns(turns: SpeakerTurn[]): void {
 }
 
 export function extractChapters(data: unknown): Chapter[] {
-  const chapters: Chapter[] = [];
-  const seen = new Set<string>();
-  const add = (title: string | undefined, start: number | null): void => {
-    if (!title || typeof start !== "number" || !Number.isFinite(start)) {
-      return;
-    }
-    const key = `${start}\u0000${title}`;
-    if (seen.has(key)) {
-      return;
-    }
-    seen.add(key);
-    chapters.push({ start, title });
-  };
-  const visit = (value: unknown): void => {
-    if (!value || typeof value !== "object") {
-      return;
-    }
-    if (Array.isArray(value)) {
-      for (const v of value) {
-        visit(v);
+  const chapters: Chapter[] = [],
+    seen = new Set<string>(),
+    add = (title: string | undefined, start: number | null): void => {
+      if (!title || typeof start !== "number" || !Number.isFinite(start)) {
+        return;
       }
-      return;
-    }
-    const obj = value as Record<string, unknown>;
-    if (Array.isArray(obj["chapters"])) {
-      for (const item of obj["chapters"]) {
-        const chapter = (item as Record<string, unknown>)["chapterRenderer"] as
-          | Record<string, unknown>
-          | undefined;
+      const key = `${start}\u0000${title}`;
+      if (seen.has(key)) {
+        return;
+      }
+      seen.add(key);
+      chapters.push({ start, title });
+    },
+    visit = (value: unknown): void => {
+      if (!value || typeof value !== "object") {
+        return;
+      }
+      if (Array.isArray(value)) {
+        for (const v of value) {
+          visit(v);
+        }
+        return;
+      }
+      const obj = value as Record<string, unknown>;
+      if (Array.isArray(obj["chapters"])) {
+        for (const item of obj["chapters"]) {
+          const chapter = (item as Record<string, unknown>)["chapterRenderer"] as
+            | Record<string, unknown>
+            | undefined;
+          add(
+            (chapter?.["title"] as Record<string, unknown> | undefined)?.["simpleText"] as
+              | string
+              | undefined,
+            (chapter?.["timeRangeStartMillis"] as number) / 1000,
+          );
+        }
+      }
+      const marker = obj["macroMarkersListItemRenderer"] as Record<string, unknown> | undefined;
+      if (marker) {
         add(
-          (chapter?.["title"] as Record<string, unknown> | undefined)?.["simpleText"] as
+          (marker["title"] as Record<string, unknown> | undefined)?.["simpleText"] as
             | string
             | undefined,
-          (chapter?.["timeRangeStartMillis"] as number) / 1000,
+          parseTimestampValue(
+            ((marker["timeDescription"] as Record<string, unknown> | undefined)?.[
+              "simpleText"
+            ] as string) || "",
+          ),
         );
       }
-    }
-    const marker = obj["macroMarkersListItemRenderer"] as Record<string, unknown> | undefined;
-    if (marker) {
-      add(
-        (marker["title"] as Record<string, unknown> | undefined)?.["simpleText"] as
-          | string
-          | undefined,
-        parseTimestampValue(
-          ((marker["timeDescription"] as Record<string, unknown> | undefined)?.[
-            "simpleText"
-          ] as string) || "",
-        ),
-      );
-    }
-    for (const v of Object.values(obj)) {
-      visit(v);
-    }
-  };
+      for (const v of Object.values(obj)) {
+        visit(v);
+      }
+    };
   visit(data);
   return chapters.toSorted((a, b) => a.start - b.start);
 }
@@ -425,12 +425,12 @@ export function parseTranscriptXml(
   languageCode?: string,
   chapters: Chapter[] = [],
 ): TranscriptResult | undefined {
-  const segments = [];
-  const pRegex = /<p\s+t="(\d+)"[^>]*>([\s\S]*?)<\/p>/gu;
+  const segments = [],
+    pRegex = /<p\s+t="(\d+)"[^>]*>([\s\S]*?)<\/p>/gu;
   let match;
   while ((match = pRegex.exec(xml))) {
-    const inner = match[2];
-    const start = match[1];
+    const inner = match[2],
+      start = match[1];
     if (inner === undefined || start === undefined) {
       continue;
     }
@@ -438,14 +438,14 @@ export function parseTranscriptXml(
     let text = pieces.length > 0 ? pieces.join("") : inner.replaceAll(/<[^>]+>/gu, "");
     text = decodeEntities(text.replaceAll("\n", " ").replaceAll(/\s{2,}/gu, " ")).trim();
     if (text) {
-        segments.push({ start: Math.trunc(Number(start)) / 1000, text });
+      segments.push({ start: Math.trunc(Number(start)) / 1000, text });
     }
   }
   if (segments.length === 0) {
     const textRegex = /<text\s+start="([^"]*)"[^>]*>([\s\S]*?)<\/text>/gu;
     while ((match = textRegex.exec(xml))) {
-      const start = match[1];
-      const content = match[2];
+      const start = match[1],
+        content = match[2];
       if (start === undefined || content === undefined) {
         continue;
       }

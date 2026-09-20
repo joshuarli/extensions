@@ -6,10 +6,9 @@ export function clearResponseCache(): void {
 
 export function cachedFetch(fetchImpl: typeof globalThis.fetch): typeof globalThis.fetch {
   return async (input, init) => {
-    const url = typeof input === "string" ? input : input.toString();
-    const key = init?.body ? `${url}::${init.body}` : url;
-
-    const cached = responseCache.get(key);
+    const url = typeof input === "string" ? input : input.toString(),
+      key = init?.body ? `${url}::${init.body}` : url,
+      cached = responseCache.get(key);
     if (cached) {
       try {
         const response = await cached;

@@ -5,12 +5,12 @@ function yamlString(value: string): string {
 }
 
 export function buildFrontmatter(metadata: PageMetadata): string {
-  const lines = ["---"];
-  const add = (key: string, value: string | undefined | null): void => {
-    if (value !== undefined && value !== null && String(value).trim() !== "") {
-      lines.push(`${key}: ${yamlString(value)}`);
-    }
-  };
+  const lines = ["---"],
+    add = (key: string, value: string | undefined | null): void => {
+      if (value !== undefined && value !== null && String(value).trim() !== "") {
+        lines.push(`${key}: ${yamlString(value)}`);
+      }
+    };
 
   add("title", metadata.title);
   if (metadata.author) {

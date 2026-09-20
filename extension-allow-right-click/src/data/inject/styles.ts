@@ -1,4 +1,4 @@
-// custom styles
+// Custom styles
 {
   const next = (): void => {
     const s = document.createElement("style");
@@ -26,10 +26,10 @@
     window.pointers.run.add(() => s.remove());
   };
 
-  if (document.body !== null) {
-    next();
-  } else {
+  if (document.body === null) {
     document.addEventListener("DOMContentLoaded", next);
+  } else {
+    next();
   }
 }
 

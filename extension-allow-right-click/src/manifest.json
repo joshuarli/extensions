@@ -12,10 +12,7 @@
     "256": "data/icons/256.png",
     "512": "data/icons/512.png"
   },
-  "permissions": [
-    "activeTab",
-    "scripting"
-  ],
+  "permissions": ["activeTab", "scripting"],
   "action": {
     "default_title": "Click to enable or disable Allow Right-Click on this tab."
   },

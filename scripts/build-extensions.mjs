@@ -1,12 +1,5 @@
 import { build } from "rolldown";
-import {
-  cpSync,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  readdirSync,
-  writeFileSync,
-} from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { relative, resolve } from "node:path";
 import { extensionDefinitions } from "../rolldown.config.mjs";
 
@@ -16,8 +9,7 @@ function copyStaticSource(sourceDirectory, outputDirectory) {
     filter(sourcePath) {
       const relativePath = relative(sourceDirectory, sourcePath);
       return (
-        relativePath === "" ||
-        (relativePath !== "manifest.json" && !relativePath.endsWith(".ts"))
+        relativePath === "" || (relativePath !== "manifest.json" && !relativePath.endsWith(".ts"))
       );
     },
   });
@@ -40,6 +32,7 @@ function inlineStylesheets(outputDirectory, sourceDirectory) {
 
 for (const [extensionName, extension] of Object.entries(extensionDefinitions)) {
   for (const bundleConfig of extension.bundleConfigs) {
+    // eslint-disable-next-line no-await-in-loop
     await build(bundleConfig);
   }
 

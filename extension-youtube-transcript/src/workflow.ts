@@ -44,9 +44,8 @@ export async function resolveTranscript({
 }: ResolveTranscriptInput): Promise<ResolveTranscriptOutput> {
   const dataIsStale = isPlayerResponseStale(pageData.playerResponse, tabUrl);
   if (dataIsStale) pageData.transcript = null;
-  const chapters = dataIsStale ? [] : extractChapters(pageData.initialData);
-
-  const attempted: string[] = [];
+  const chapters = dataIsStale ? [] : extractChapters(pageData.initialData),
+    attempted: string[] = [];
   let transcript: TranscriptResult | undefined;
 
   if (!preferredLanguage && pageData.transcript) {

@@ -12,7 +12,7 @@ try {
     clipboardPreventDefault: ClipboardEvent.prototype.preventDefault,
   };
 
-  // alert
+  // Alert
   Object.defineProperty(window, "alert", {
     get(): AlertFn {
       return (...args) => console.info("[alert is blocked]", ...args);
@@ -23,7 +23,7 @@ try {
     configurable: true,
   });
 
-  // unblock contextmenu and more
+  // Unblock contextmenu and more
   Object.defineProperty(MouseEvent.prototype, "preventDefault", {
     get(): () => void {
       return () => {};
@@ -75,8 +75,8 @@ try {
       configurable: true,
     });
   });
-} catch (e) {
-  console.error("listen/main", e);
+} catch (error) {
+  console.error("listen/main", error);
 }
 
 export {};

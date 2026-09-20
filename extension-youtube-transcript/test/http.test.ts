@@ -8,11 +8,10 @@ describe("cachedFetch", () => {
   it("returns cached response on subsequent calls", async () => {
     let calls = 0;
     const fetch = cachedFetch(async (_input) => {
-      calls++;
-      return new Response(`body-${calls}`, { status: 200 });
-    });
-
-    const r1 = await fetch("https://example.com/api");
+        calls++;
+        return new Response(`body-${calls}`, { status: 200 });
+      }),
+      r1 = await fetch("https://example.com/api");
     assert.equal(await r1.text(), "body-1");
     assert.equal(calls, 1);
 
@@ -24,12 +23,11 @@ describe("cachedFetch", () => {
   it("evicts non-ok responses and re-fetches", async () => {
     let calls = 0;
     const fetch = cachedFetch(async () => {
-      calls++;
-      if (calls === 1) return new Response("fail", { status: 500 });
-      return new Response("ok", { status: 200 });
-    });
-
-    const r1 = await fetch("https://example.com/api");
+        calls++;
+        if (calls === 1) return new Response("fail", { status: 500 });
+        return new Response("ok", { status: 200 });
+      }),
+      r1 = await fetch("https://example.com/api");
     assert.equal(r1.status, 500);
     assert.equal(calls, 1);
 
@@ -41,19 +39,18 @@ describe("cachedFetch", () => {
   it("separates cache keys by request body", async () => {
     let calls = 0;
     const fetch = cachedFetch(async (_input, init) => {
-      calls++;
-      return new Response(`body-${init!.body}`, { status: 200 });
-    });
-
-    const r1 = await fetch("https://example.com/api", { body: "a" });
+        calls++;
+        return new Response(`body-${init!.body}`, { status: 200 });
+      }),
+      r1 = await fetch("https://example.com/api", { body: "a", method: "POST" });
     assert.equal(await r1.text(), "body-a");
     assert.equal(calls, 1);
 
-    const r2 = await fetch("https://example.com/api", { body: "b" });
+    const r2 = await fetch("https://example.com/api", { body: "b", method: "POST" });
     assert.equal(await r2.text(), "body-b");
     assert.equal(calls, 2);
 
-    const r3 = await fetch("https://example.com/api", { body: "a" });
+    const r3 = await fetch("https://example.com/api", { body: "a", method: "POST" });
     assert.equal(await r3.text(), "body-a");
     assert.equal(calls, 2);
   });
@@ -61,14 +58,13 @@ describe("cachedFetch", () => {
   it("deduplicates concurrent requests", async () => {
     let calls = 0;
     const fetch = cachedFetch(async () => {
-      calls++;
-      return new Response("shared", { status: 200 });
-    });
-
-    const [r1, r2] = await Promise.all([
-      fetch("https://example.com/api"),
-      fetch("https://example.com/api"),
-    ]);
+        calls++;
+        return new Response("shared", { status: 200 });
+      }),
+      [r1, r2] = await Promise.all([
+        fetch("https://example.com/api"),
+        fetch("https://example.com/api"),
+      ]);
     assert.equal(await r1.text(), "shared");
     assert.equal(await r2.text(), "shared");
     assert.equal(calls, 1);
@@ -77,11 +73,10 @@ describe("cachedFetch", () => {
   it("clearResponseCache flushes all cached responses", async () => {
     let calls = 0;
     const fetch = cachedFetch(async () => {
-      calls++;
-      return new Response("fresh", { status: 200 });
-    });
-
-    const r1 = await fetch("https://example.com/api");
+        calls++;
+        return new Response("fresh", { status: 200 });
+      }),
+      r1 = await fetch("https://example.com/api");
     assert.equal(await r1.text(), "fresh");
     assert.equal(calls, 1);
 

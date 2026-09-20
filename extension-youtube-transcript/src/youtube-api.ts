@@ -3,24 +3,22 @@ import { CaptionFetchError } from "./error.ts";
 import { extractChapters, parseTranscriptXml } from "./transcript.ts";
 import { pickCaptionTrack } from "./captions.ts";
 
-const PLAYER_URL = "https://www.youtube.com/youtubei/v1/player?prettyPrint=false";
-const NEXT_URL = "https://www.youtube.com/youtubei/v1/next?prettyPrint=false";
-const PLAYER_CONTEXTS = [
-  { clientName: "IOS", clientVersion: "20.10.3" },
-  { clientName: "ANDROID", clientVersion: "20.10.38" },
-  { clientName: "WEB", clientVersion: "2.20240101.00.00" },
-];
-const WEB_CONTEXT = { client: { clientName: "WEB", clientVersion: "2.20240101.00.00" } };
-const FETCH_TIMEOUT_MS = 4000;
+const NEXT_URL = "https://www.youtube.com/youtubei/v1/next?prettyPrint=false",
+  PLAYER_URL = "https://www.youtube.com/youtubei/v1/player?prettyPrint=false",
+  PLAYER_CONTEXTS = [
+    { clientName: "IOS", clientVersion: "20.10.3" },
+    { clientName: "ANDROID", clientVersion: "20.10.38" },
+    { clientName: "WEB", clientVersion: "2.20240101.00.00" },
+  ],
+  WEB_CONTEXT = { client: { clientName: "WEB", clientVersion: "2.20240101.00.00" } },
+  FETCH_TIMEOUT_MS = 4000;
 
 export function getCaptionTracks(playerData: unknown): CaptionTrack[] {
   const tracks = (playerData as Record<string, unknown>)?.["captions"] as
-    | Record<string, unknown>
-    | undefined;
-  const tracklist = tracks?.["playerCaptionsTracklistRenderer"] as
-    | Record<string, unknown>
-    | undefined;
-  const captionTracks = tracklist?.["captionTracks"];
+      | Record<string, unknown>
+      | undefined,
+    tracklist = tracks?.["playerCaptionsTracklistRenderer"] as Record<string, unknown> | undefined,
+    captionTracks = tracklist?.["captionTracks"];
   return Array.isArray(captionTracks) ? (captionTracks as CaptionTrack[]) : [];
 }
 
@@ -31,42 +29,41 @@ export async function fetchTranscript(
   inlineChapters: Chapter[],
   fetchImpl: typeof globalThis.fetch = globalThis.fetch,
 ): Promise<TranscriptResult | undefined> {
-  const chaptersPromise = fetchChapters(videoId, inlineChapters, preferredLanguage, fetchImpl);
-  const playerVideoId = (
-    (pageData.playerResponse as Record<string, unknown> | undefined)?.["videoDetails"] as
-      | Record<string, unknown>
-      | undefined
-  )?.["videoId"] as string | undefined;
-  const inlineTrack =
-    playerVideoId !== undefined && playerVideoId !== videoId
-      ? undefined
-      : pickCaptionTrack(getCaptionTracks(pageData.playerResponse), preferredLanguage);
-  const inlinePromise = inlineTrack?.baseUrl
-    ? fetchCaptionXml(
-        { ...inlineTrack, baseUrl: inlineTrack.baseUrl },
-        chaptersPromise,
-        preferredLanguage,
-        fetchImpl,
-      ).catch((error: unknown) => {
-        console.warn("YouTube Transcript: inline caption fetch failed", error);
-        return undefined;
-      })
-    : Promise.resolve(undefined);
-
-  const playerData = await fetchPlayerData(videoId, preferredLanguage, fetchImpl);
-  const apiTrack = pickCaptionTrack(getCaptionTracks(playerData), preferredLanguage);
-  const apiPromise =
-    apiTrack?.baseUrl && apiTrack.baseUrl !== inlineTrack?.baseUrl
+  const chaptersPromise = fetchChapters(videoId, inlineChapters, preferredLanguage, fetchImpl),
+    playerVideoId = (
+      (pageData.playerResponse as Record<string, unknown> | undefined)?.["videoDetails"] as
+        | Record<string, unknown>
+        | undefined
+    )?.["videoId"] as string | undefined,
+    inlineTrack =
+      playerVideoId !== undefined && playerVideoId !== videoId
+        ? undefined
+        : pickCaptionTrack(getCaptionTracks(pageData.playerResponse), preferredLanguage),
+    inlinePromise = inlineTrack?.baseUrl
       ? fetchCaptionXml(
-          { ...apiTrack, baseUrl: apiTrack.baseUrl },
+          { ...inlineTrack, baseUrl: inlineTrack.baseUrl },
           chaptersPromise,
           preferredLanguage,
           fetchImpl,
         ).catch((error: unknown) => {
-          console.warn("YouTube Transcript: API caption fetch failed", error);
+          console.warn("YouTube Transcript: inline caption fetch failed", error);
           return undefined;
         })
-      : Promise.resolve(undefined);
+      : Promise.resolve(undefined),
+    playerData = await fetchPlayerData(videoId, preferredLanguage, fetchImpl),
+    apiTrack = pickCaptionTrack(getCaptionTracks(playerData), preferredLanguage),
+    apiPromise =
+      apiTrack?.baseUrl && apiTrack.baseUrl !== inlineTrack?.baseUrl
+        ? fetchCaptionXml(
+            { ...apiTrack, baseUrl: apiTrack.baseUrl },
+            chaptersPromise,
+            preferredLanguage,
+            fetchImpl,
+          ).catch((error: unknown) => {
+            console.warn("YouTube Transcript: API caption fetch failed", error);
+            return undefined;
+          })
+        : Promise.resolve(undefined);
   return (await apiPromise) || (await inlinePromise);
 }
 
@@ -126,8 +123,8 @@ export async function fetchCaptionXml(
   if (!response.ok) {
     throw new CaptionFetchError("YouTube rejected the caption request.");
   }
-  const xml = await response.text();
-  const chapters = chaptersPromise ? await chaptersPromise : [];
+  const xml = await response.text(),
+    chapters = chaptersPromise ? await chaptersPromise : [];
   return parseTranscriptXml(xml, track.languageCode || "en", chapters);
 }
 

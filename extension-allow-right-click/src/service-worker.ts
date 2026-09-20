@@ -1,19 +1,17 @@
 const protectedScripts = [
-  "user-select/isolated.js",
-  "styles.js",
-  "mouse.js",
-  "listen/isolated.js",
-] as const;
-
-const unprotectedScripts = ["user-select/main.js", "listen/main.js"] as const;
-
-const executeCore = async (tabId: number): Promise<void> => {
-  await chrome.scripting.executeScript({
-    target: { allFrames: true, tabId },
-    injectImmediately: true,
-    files: ["/data/inject/core.js"],
-  });
-};
+    "user-select/isolated.js",
+    "styles.js",
+    "mouse.js",
+    "listen/isolated.js",
+  ] as const,
+  unprotectedScripts = ["user-select/main.js", "listen/main.js"] as const,
+  executeCore = async (tabId: number): Promise<void> => {
+    await chrome.scripting.executeScript({
+      target: { allFrames: true, tabId },
+      injectImmediately: true,
+      files: ["/data/inject/core.js"],
+    });
+  };
 
 chrome.action.onClicked.addListener((tab) => {
   if (tab.id !== undefined) {
@@ -24,8 +22,8 @@ chrome.action.onClicked.addListener((tab) => {
 });
 
 chrome.runtime.onMessage.addListener((request: ArcRuntimeRequest, sender) => {
-  const tabId = sender.tab?.id;
-  const frameId = sender.frameId;
+  const tabId = sender.tab?.id,
+    frameId = sender.frameId;
   if (tabId === undefined || frameId === undefined) {
     return;
   }

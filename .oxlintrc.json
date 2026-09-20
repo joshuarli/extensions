@@ -37,7 +37,12 @@
     "require-unicode-regexp": "off",
     "no-useless-undefined": "off",
     "relative-url-style": "off",
-    "prefer-destructuring": "off"
+    "prefer-destructuring": "off",
+    "one-var": "off",
+    "sort-vars": "off",
+    "max-classes-per-file": "off",
+    "unicorn/prefer-global-this": "off",
+    "unicorn/consistent-function-scoping": "off"
   },
   "ignorePatterns": ["**/test/fixtures/**", "**/build/**", "**/dist/**", "**/.generated/**"],
   "env": { "builtin": true }
