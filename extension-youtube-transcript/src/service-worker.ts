@@ -431,7 +431,7 @@ function handleMessage(
   _sender: chrome.runtime.MessageSender,
   sendResponse: (response: unknown) => void,
 ): true {
-  (async () => {
+  void (async () => {
     let request: ExtensionMessage | undefined;
     try {
       request = Schema.decodeUnknownSync(ExtensionMessageSchema)(message);
@@ -470,7 +470,7 @@ function handleMessage(
           break;
         }
         default: {
-          result = { error: `Unknown action: ${request.action}` };
+          result = { error: "Unknown extension action." };
         }
       }
       sendResponse(Schema.decodeUnknownSync(ExtensionResponseSchema)(result));

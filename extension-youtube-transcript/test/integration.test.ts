@@ -78,11 +78,13 @@ async function discoverFixtures(): Promise<FixtureSet[]> {
           videoId,
           caption,
           innertube,
-          description: String(videoDetails["shortDescription"] || ""),
+          description: readFixtureString(videoDetails, "shortDescription"),
           expectedTranscript,
-          title: String(videoDetails["title"] || ""),
-          author: String(videoDetails["author"] || ""),
-          published: String(playerMicroformatRenderer?.["publishDate"] || ""),
+          title: readFixtureString(videoDetails, "title"),
+          author: readFixtureString(videoDetails, "author"),
+          published: playerMicroformatRenderer
+            ? readFixtureString(playerMicroformatRenderer, "publishDate")
+            : "",
           image: `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`,
           languageCode: captionTracks?.[0]?.languageCode || "en",
         };
@@ -92,6 +94,11 @@ async function discoverFixtures(): Promise<FixtureSet[]> {
       return fixture;
     }),
   );
+}
+
+function readFixtureString(record: Record<string, unknown>, key: string): string {
+  const value = record[key];
+  return typeof value === "string" ? value : "";
 }
 
 const fixtureSets = await discoverFixtures();

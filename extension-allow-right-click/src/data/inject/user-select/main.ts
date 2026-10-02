@@ -1,5 +1,11 @@
 try {
-  let current: Selection["removeAllRanges"] = Selection.prototype.removeAllRanges;
+  const nativeRemoveAllRanges = Reflect.get(Selection.prototype, "removeAllRanges");
+  if (typeof nativeRemoveAllRanges !== "function") {
+    throw new TypeError("The selection range method is unavailable.");
+  }
+  let current: Selection["removeAllRanges"] = function (this: Selection): void {
+    Reflect.apply(nativeRemoveAllRanges, this, []);
+  };
 
   Object.defineProperty(Selection.prototype, "removeAllRanges", {
     get(): () => void {

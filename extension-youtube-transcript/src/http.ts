@@ -6,9 +6,10 @@ export function clearResponseCache(): void {
 
 export function cachedFetch(fetchImpl: typeof globalThis.fetch): typeof globalThis.fetch {
   return async (input, init) => {
-    const url = typeof input === "string" ? input : input.toString(),
-      key = init?.body ? `${url}::${init.body}` : url,
-      cached = responseCache.get(key);
+    const key = getResponseCacheKey(input, init);
+    if (key === undefined) return fetchImpl(input, init);
+
+    const cached = responseCache.get(key);
     if (cached) {
       try {
         const response = await cached;
@@ -28,4 +29,15 @@ export function cachedFetch(fetchImpl: typeof globalThis.fetch): typeof globalTh
     }
     return response.clone();
   };
+}
+
+function getResponseCacheKey(input: RequestInfo | URL, init?: RequestInit): string | undefined {
+  const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+  if (input instanceof Request && init?.body === undefined && input.body !== null) {
+    return undefined;
+  }
+
+  const body = init?.body;
+  if (body === undefined || body === null) return url;
+  return typeof body === "string" ? `${url}::${body}` : undefined;
 }

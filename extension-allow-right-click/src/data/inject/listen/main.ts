@@ -1,5 +1,11 @@
 try {
   type AlertFn = (...args: unknown[]) => void;
+  const nativeMousePreventDefault = Reflect.get(MouseEvent.prototype, "preventDefault"),
+    nativeClipboardPreventDefault = Reflect.get(ClipboardEvent.prototype, "preventDefault");
+  if (typeof nativeMousePreventDefault !== "function" ||
+    typeof nativeClipboardPreventDefault !== "function") {
+    throw new TypeError("Browser event cancellation methods are unavailable.");
+  }
   const originals: {
     removed: boolean;
     alert: AlertFn;
@@ -8,8 +14,12 @@ try {
   } = {
     removed: false,
     alert: window.alert.bind(window),
-    mousePreventDefault: MouseEvent.prototype.preventDefault,
-    clipboardPreventDefault: ClipboardEvent.prototype.preventDefault,
+    mousePreventDefault: function (this: MouseEvent): void {
+      Reflect.apply(nativeMousePreventDefault, this, []);
+    },
+    clipboardPreventDefault: function (this: ClipboardEvent): void {
+      Reflect.apply(nativeClipboardPreventDefault, this, []);
+    },
   };
 
   // Alert

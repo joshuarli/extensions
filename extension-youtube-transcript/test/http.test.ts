@@ -40,7 +40,9 @@ describe("cachedFetch", () => {
     let calls = 0;
     const fetch = cachedFetch(async (_input, init) => {
         calls++;
-        return new Response(`body-${init!.body}`, { status: 200 });
+        const body = init?.body;
+        if (typeof body !== "string") throw new TypeError("Expected a string request body.");
+        return new Response(`body-${body}`, { status: 200 });
       }),
       r1 = await fetch("https://example.com/api", { body: "a", method: "POST" });
     assert.equal(await r1.text(), "body-a");
@@ -52,6 +54,26 @@ describe("cachedFetch", () => {
 
     const r3 = await fetch("https://example.com/api", { body: "a", method: "POST" });
     assert.equal(await r3.text(), "body-a");
+    assert.equal(calls, 2);
+  });
+
+  it("does not reuse responses for non-string request bodies", async () => {
+    let calls = 0;
+    const fetch = cachedFetch(async (_input, init) => {
+        calls++;
+        return new Response(await new Response(init?.body).text(), { status: 200 });
+      }),
+      firstResponse = await fetch("https://example.com/api", {
+        body: new Blob(["first"]),
+        method: "POST",
+      }),
+      secondResponse = await fetch("https://example.com/api", {
+        body: new Blob(["second"]),
+        method: "POST",
+      });
+
+    assert.equal(await firstResponse.text(), "first");
+    assert.equal(await secondResponse.text(), "second");
     assert.equal(calls, 2);
   });
 

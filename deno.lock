@@ -6,6 +6,7 @@
     "npm:@vitest/browser-playwright@5.0.3": "5.0.3_playwright@1.63.0_vitest@5.0.3_@types+node@26.6.2_vite@8.3.2__@types+node@26.6.2",
     "npm:effect@4.0.0": "4.0.0",
     "npm:oxlint-tsgolint@7.0.2003": "7.0.2003",
+    "npm:oxlint@*": "1.86.0_oxlint-tsgolint@7.0.2003",
     "npm:oxlint@1.86.0": "1.86.0_oxlint-tsgolint@7.0.2003",
     "npm:typescript@*": "7.0.2",
     "npm:typescript@7.0.2": "7.0.2",

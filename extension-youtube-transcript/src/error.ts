@@ -13,12 +13,15 @@ export class NoTranscriptError extends Schema.TaggedError<NoTranscriptError>()("
       parts.push(`Attempted: ${attempted.join(", ")}.`);
     }
 
-    if (details["language"] && details["language"] !== "") {
-      parts.push(`Language preference: ${String(details["language"])}.`);
+    const language = details["language"];
+    if (typeof language === "string" && language !== "") {
+      parts.push(`Language preference: ${language}.`);
     }
 
-    if (details["apiError"]) {
-      parts.push(`InnerTube API error: ${String(details["apiError"])}.`);
+    const apiError = details["apiError"];
+    if (apiError !== undefined && apiError !== null) {
+      const formattedApiError = formatUnknownValue(apiError);
+      if (formattedApiError) parts.push(`InnerTube API error: ${formattedApiError}.`);
     }
 
     if (details["cause"] instanceof Error) {
@@ -34,6 +37,16 @@ export class NoTranscriptError extends Schema.TaggedError<NoTranscriptError>()("
       text += `\n\nStack:\n${this.stack}`;
     }
     return text;
+  }
+}
+
+function formatUnknownValue(value: unknown): string {
+  if (value instanceof Error) return value.message;
+  if (typeof value === "string") return value;
+  try {
+    return JSON.stringify(value) ?? "";
+  } catch {
+    return "";
   }
 }
 

@@ -9,7 +9,7 @@ function parseTimestamp(value: string): number | null {
   return parts.length === 3 ? first * 3600 + second * 60 + third : first * 60 + second;
 }
 
-function readLanguageCode(page: Document | typeof document): string | undefined {
+function readLanguageCode(page: Document): string | undefined {
   const button = page.querySelector(
       'ytd-engagement-panel-section-list-renderer[target-id="engagement-panel-searchable-transcript"] #footer yt-dropdown-menu button',
     ),
@@ -54,7 +54,7 @@ async function waitFor<T>(
   return null;
 }
 
-export function collectPageData(doc: Document | typeof document = document): PageData {
+export function collectPageData(doc: Document = document): PageData {
   const parseGlobal = (name: string): Record<string, unknown> | null => {
       const script = [...doc.scripts].find((item) => item.textContent?.includes(name));
       if (!script?.textContent) {
@@ -253,7 +253,7 @@ export function updatePageProgress(message: string, done: boolean = false): void
 }
 
 export async function collectTranscriptPanel(
-  doc: Document | typeof document = document,
+  doc: Document = document,
 ): Promise<TranscriptPanelData | null> {
   const desktopContainer =
       'ytd-engagement-panel-section-list-renderer[target-id="engagement-panel-searchable-transcript"] #segments-container',
