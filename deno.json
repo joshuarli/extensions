@@ -3,16 +3,18 @@
   "imports": {
     "rolldown": "npm:rolldown@^1.2.0",
     "typescript": "npm:typescript@^7.0.2",
-    "oxfmt": "npm:oxfmt@^0.68.0",
     "oxlint": "npm:oxlint@^1.83.0",
     "@types/chrome": "npm:@types/chrome@^0.2.2",
     "@types/node": "npm:@types/node@^26.1.1"
   },
+  "fmt": {
+    "exclude": ["**/test/fixtures/**", "build/**", "dist/**", "**/.generated/**"]
+  },
   "tasks": {
     "build:wasm": "deno run -A scripts/build-defuddle-wasm.mjs",
     "typecheck": "deno run -A npm:typescript/tsc --noEmit",
-    "fmt": "deno run -A npm:oxfmt --write .",
-    "fmt:check": "deno run -A npm:oxfmt --check .",
+    "fmt": "deno fmt",
+    "fmt:check": "deno fmt --check",
     "lint": "deno run -A npm:oxlint --fix .",
     "lint:check": "deno run -A npm:oxlint .",
     "fmtlint": "deno task fmt && deno task lint",

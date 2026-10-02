@@ -116,7 +116,7 @@ deno task test
 ```
 
 The repository-root `deno.json::imports` pins the JavaScript build inputs (TypeScript, rolldown,
-oxfmt, oxlint, and the `@types/*` packages); `deno.lock` pins their resolved
+oxlint, and the `@types/*` packages); `deno.lock` pins their resolved
 versions. `deno task typecheck` runs the real TypeScript 7 compiler
 (`npm:typescript/tsc --noEmit`) against `tsconfig.json`, which enables every
 `strict`-family flag. `deno task test` runs with `--no-check`, since type

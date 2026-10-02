@@ -3,8 +3,6 @@
   "specifiers": {
     "npm:@types/chrome@~0.2.2": "0.2.9",
     "npm:@types/node@^26.1.1": "26.6.2",
-    "npm:oxfmt@*": "0.68.0",
-    "npm:oxfmt@0.68": "0.68.0",
     "npm:oxlint@*": "1.83.0",
     "npm:oxlint@^1.83.0": "1.83.0",
     "npm:rolldown@^1.2.0": "1.2.9",
@@ -15,120 +13,6 @@
     "@oxc-project/types@0.150.0": {
       "integrity": "sha512-rDS5/31E9HfPl/CIzGrn0DOlvBbXFseQ5URJ9sYMfstbKLD/c6Gm9vmRzRGDdAXyOIL4zmO37lc9RIwYqVruZw==",
       "tarball": "https://sfw.security.sentry.io/npm/@oxc-project/types/-/types-0.150.0.tgz"
-    },
-    "@oxfmt/binding-android-arm-eabi@0.68.0": {
-      "integrity": "sha512-dhfYPbzv/h9JgHjNkl2R6sOjUfxDyLGOZVb3g8/ScaTNwwJcYgmHh8kcYFDUhinuy1QAoANCWUvw1jlk+z6gAg==",
-      "os": ["android"],
-      "cpu": ["arm"],
-      "tarball": "https://sfw.security.sentry.io/npm/@oxfmt/binding-android-arm-eabi/-/binding-android-arm-eabi-0.68.0.tgz"
-    },
-    "@oxfmt/binding-android-arm64@0.68.0": {
-      "integrity": "sha512-v3Njdi6qY0O/5eGfg01ww2w6gTn2mUvZ72Bnx1/UN53A9wruh3Nk6otc3WkgJLkXD4Qgz1SOcVQieH1oD03V9Q==",
-      "os": ["android"],
-      "cpu": ["arm64"],
-      "tarball": "https://sfw.security.sentry.io/npm/@oxfmt/binding-android-arm64/-/binding-android-arm64-0.68.0.tgz"
-    },
-    "@oxfmt/binding-darwin-arm64@0.68.0": {
-      "integrity": "sha512-ei4MCMzHFREmZwPJ7KuWUB4kBuHdsgDrnXGJVcEAopU7fj7S42I8BChdFILWdHvhFqR08FLJtOfbZIr2CDw0cA==",
-      "os": ["darwin"],
-      "cpu": ["arm64"],
-      "tarball": "https://sfw.security.sentry.io/npm/@oxfmt/binding-darwin-arm64/-/binding-darwin-arm64-0.68.0.tgz"
-    },
-    "@oxfmt/binding-darwin-x64@0.68.0": {
-      "integrity": "sha512-UrKgzZxYhwB9DSvTX+vdgl9M32wLUNKJcAKIoiyx/Kzn/zveqi7W6kYVcRroFMhS3Kwz0KhTk3WBeSuQn4YCTg==",
-      "os": ["darwin"],
-      "cpu": ["x64"],
-      "tarball": "https://sfw.security.sentry.io/npm/@oxfmt/binding-darwin-x64/-/binding-darwin-x64-0.68.0.tgz"
-    },
-    "@oxfmt/binding-freebsd-x64@0.68.0": {
-      "integrity": "sha512-6jrEKgpJbilM1QaRv7hEtKXr4p4AK4jvvyOtajwyhu0kOz3e0O7OLnSTk6tBotRqCcUC4ehZRJ1Zx+Y99wieLw==",
-      "os": ["freebsd"],
-      "cpu": ["x64"],
-      "tarball": "https://sfw.security.sentry.io/npm/@oxfmt/binding-freebsd-x64/-/binding-freebsd-x64-0.68.0.tgz"
-    },
-    "@oxfmt/binding-linux-arm-gnueabihf@0.68.0": {
-      "integrity": "sha512-YOIVnKOBaLeGullskS179N12hjSAdFYnzLjOaKiLhAKNWgnShq9w4xRdtmUm6BlnP65l2/EA9Aw/KlftNxDM7Q==",
-      "os": ["linux"],
-      "cpu": ["arm"],
-      "tarball": "https://sfw.security.sentry.io/npm/@oxfmt/binding-linux-arm-gnueabihf/-/binding-linux-arm-gnueabihf-0.68.0.tgz"
-    },
-    "@oxfmt/binding-linux-arm-musleabihf@0.68.0": {
-      "integrity": "sha512-xW5XoEHVNqydPBv2KXvk9lmEzyAlOQHVEazKoXUuAacqekjya+OdiaFjjEBl0oJD02raG8g3TRl9OVCh9PDIHA==",
-      "os": ["linux"],
-      "cpu": ["arm"],
-      "tarball": "https://sfw.security.sentry.io/npm/@oxfmt/binding-linux-arm-musleabihf/-/binding-linux-arm-musleabihf-0.68.0.tgz"
-    },
-    "@oxfmt/binding-linux-arm64-gnu@0.68.0": {
-      "integrity": "sha512-QCvYwVVQieu6oyJglAgV9vH/YMDxZyR4cwVSYtoq9oOXd5N+D3TDUBjNwxFrLn5AdcJZOcvn/7IB17vJGp+2Og==",
-      "os": ["linux"],
-      "cpu": ["arm64"],
-      "tarball": "https://sfw.security.sentry.io/npm/@oxfmt/binding-linux-arm64-gnu/-/binding-linux-arm64-gnu-0.68.0.tgz"
-    },
-    "@oxfmt/binding-linux-arm64-musl@0.68.0": {
-      "integrity": "sha512-4TVz5iFQ8ndrHnhX50UXiz9BIWAtUSOHJ6Nus4qWFfJBXq/Ed/krXbF/ehJu42BXM5tIvBs99jNIM22s9agY5A==",
-      "os": ["linux"],
-      "cpu": ["arm64"],
-      "tarball": "https://sfw.security.sentry.io/npm/@oxfmt/binding-linux-arm64-musl/-/binding-linux-arm64-musl-0.68.0.tgz"
-    },
-    "@oxfmt/binding-linux-ppc64-gnu@0.68.0": {
-      "integrity": "sha512-qLe3ao0RP84bnPxBvRI+GnlK/jybo538NWu0Xrm+zYeTmJtpzqLhnnd5BH21NafqKnplbGZjtN1cnrOlWF73lw==",
-      "os": ["linux"],
-      "cpu": ["ppc64"],
-      "tarball": "https://sfw.security.sentry.io/npm/@oxfmt/binding-linux-ppc64-gnu/-/binding-linux-ppc64-gnu-0.68.0.tgz"
-    },
-    "@oxfmt/binding-linux-riscv64-gnu@0.68.0": {
-      "integrity": "sha512-Yvyl7a6gbb0vM6r925KW2dO+/CmXySO5TVbcX7o/uZJ+d108HFOG0TxIyHApmn5USuj5mhDPxzhiVwOlGP7uSA==",
-      "os": ["linux"],
-      "cpu": ["riscv64"],
-      "tarball": "https://sfw.security.sentry.io/npm/@oxfmt/binding-linux-riscv64-gnu/-/binding-linux-riscv64-gnu-0.68.0.tgz"
-    },
-    "@oxfmt/binding-linux-riscv64-musl@0.68.0": {
-      "integrity": "sha512-mJlFuFVCxzrYM5sFStN433D/s/mb6Wq4aCQAM02vs/OudHywnaSAd2rb1vlYUJtqdYIciJtiasuxvfbYkv5fLg==",
-      "os": ["linux"],
-      "cpu": ["riscv64"],
-      "tarball": "https://sfw.security.sentry.io/npm/@oxfmt/binding-linux-riscv64-musl/-/binding-linux-riscv64-musl-0.68.0.tgz"
-    },
-    "@oxfmt/binding-linux-s390x-gnu@0.68.0": {
-      "integrity": "sha512-RlfSg++qs1hbKltRR6lYvV9EoI3MdlfSQD9w1hdHVYjHqjIn1tkH4FWOpMSmjKGN20zr+nI+W9o4ARogCDudGQ==",
-      "os": ["linux"],
-      "cpu": ["s390x"],
-      "tarball": "https://sfw.security.sentry.io/npm/@oxfmt/binding-linux-s390x-gnu/-/binding-linux-s390x-gnu-0.68.0.tgz"
-    },
-    "@oxfmt/binding-linux-x64-gnu@0.68.0": {
-      "integrity": "sha512-nyzRB9U+dlYUKu3pMo3afHzZBUv/oTHZMG36ZfJViNVfOIzp70Q4GS8FFRGgYJ/p0zcyDCgpBvYISOdJOMh+jQ==",
-      "os": ["linux"],
-      "cpu": ["x64"],
-      "tarball": "https://sfw.security.sentry.io/npm/@oxfmt/binding-linux-x64-gnu/-/binding-linux-x64-gnu-0.68.0.tgz"
-    },
-    "@oxfmt/binding-linux-x64-musl@0.68.0": {
-      "integrity": "sha512-iCx3sbZRIvGrL1RafphEiUKBaW1lc0/tAjKOIB/Wjw2+STRBEdu5+fH1Gc1faEWEmc2k5Ks4iUUV54Zd5C9a1A==",
-      "os": ["linux"],
-      "cpu": ["x64"],
-      "tarball": "https://sfw.security.sentry.io/npm/@oxfmt/binding-linux-x64-musl/-/binding-linux-x64-musl-0.68.0.tgz"
-    },
-    "@oxfmt/binding-openharmony-arm64@0.68.0": {
-      "integrity": "sha512-x2X5AZez7OgyLLFpwIgItoXBUqudDM7yiaTsxv8R8vKQ6e81l0jVw0NFeUCXzcl1sAJq8h+tC8N4mY8EiMeL4w==",
-      "os": ["openharmony"],
-      "cpu": ["arm64"],
-      "tarball": "https://sfw.security.sentry.io/npm/@oxfmt/binding-openharmony-arm64/-/binding-openharmony-arm64-0.68.0.tgz"
-    },
-    "@oxfmt/binding-win32-arm64-msvc@0.68.0": {
-      "integrity": "sha512-AHVPjXkenLPQUh6kB8zSC8pX2ct9r4T1Edk9r/RNJyov6wPsS5uAfYtipwG4chn6+3bPFG5rI/3DxEeH8vib1w==",
-      "os": ["win32"],
-      "cpu": ["arm64"],
-      "tarball": "https://sfw.security.sentry.io/npm/@oxfmt/binding-win32-arm64-msvc/-/binding-win32-arm64-msvc-0.68.0.tgz"
-    },
-    "@oxfmt/binding-win32-ia32-msvc@0.68.0": {
-      "integrity": "sha512-n09SjEk5VH7z8Hl4WVP7hho+cCwGViENkQFiM45vbW85dJd7kEhWaHRUobaPzEmrWyu6uumd4EuNfNyDKLtzDA==",
-      "os": ["win32"],
-      "cpu": ["ia32"],
-      "tarball": "https://sfw.security.sentry.io/npm/@oxfmt/binding-win32-ia32-msvc/-/binding-win32-ia32-msvc-0.68.0.tgz"
-    },
-    "@oxfmt/binding-win32-x64-msvc@0.68.0": {
-      "integrity": "sha512-gPe+dJLXaPuWPWqlpklDAJp0k+K9KhQPYiQLHfb+i2rmFuUGfJ/5Qlj6tr1mO6of5g0DiLjG/XCFHIaPhotqqA==",
-      "os": ["win32"],
-      "cpu": ["x64"],
-      "tarball": "https://sfw.security.sentry.io/npm/@oxfmt/binding-win32-x64-msvc/-/binding-win32-x64-msvc-0.68.0.tgz"
     },
     "@oxlint/binding-android-arm-eabi@1.83.0": {
       "integrity": "sha512-0yGY24EwsLk5YDe6F+VkmZyRHSwJDALa3nIrPpq7FXmp2lV2d0TzvBCGeZk+wgiULRGr5blhyr4QMp5KCXJUqA==",
@@ -488,35 +372,6 @@
       "cpu": ["x64"],
       "tarball": "https://sfw.security.sentry.io/npm/@typescript/typescript-win32-x64/-/typescript-win32-x64-7.0.2.tgz"
     },
-    "oxfmt@0.68.0": {
-      "integrity": "sha512-Z0XMofcXCGUXbcpBHnWyUiX93BGiw1B+lcHNbQDWEtOhX06ewoFfu4zXkyiLhRrNnMq0twqXRHUcJetf+GsiQQ==",
-      "dependencies": [
-        "tinypool"
-      ],
-      "optionalDependencies": [
-        "@oxfmt/binding-android-arm-eabi",
-        "@oxfmt/binding-android-arm64",
-        "@oxfmt/binding-darwin-arm64",
-        "@oxfmt/binding-darwin-x64",
-        "@oxfmt/binding-freebsd-x64",
-        "@oxfmt/binding-linux-arm-gnueabihf",
-        "@oxfmt/binding-linux-arm-musleabihf",
-        "@oxfmt/binding-linux-arm64-gnu",
-        "@oxfmt/binding-linux-arm64-musl",
-        "@oxfmt/binding-linux-ppc64-gnu",
-        "@oxfmt/binding-linux-riscv64-gnu",
-        "@oxfmt/binding-linux-riscv64-musl",
-        "@oxfmt/binding-linux-s390x-gnu",
-        "@oxfmt/binding-linux-x64-gnu",
-        "@oxfmt/binding-linux-x64-musl",
-        "@oxfmt/binding-openharmony-arm64",
-        "@oxfmt/binding-win32-arm64-msvc",
-        "@oxfmt/binding-win32-ia32-msvc",
-        "@oxfmt/binding-win32-x64-msvc"
-      ],
-      "bin": true,
-      "tarball": "https://sfw.security.sentry.io/npm/oxfmt/-/oxfmt-0.68.0.tgz"
-    },
     "oxlint@1.83.0": {
       "integrity": "sha512-cyDzSzaw3uzP0TeCeq3lLRPPoaUxkbB4ZOXj+kn+5r+BX9V+4bNVGk9lxer+WrgcpebH4JxLlJ3KQjveVztOLQ==",
       "optionalDependencies": [
@@ -569,10 +424,6 @@
       "bin": true,
       "tarball": "https://sfw.security.sentry.io/npm/rolldown/-/rolldown-1.2.9.tgz"
     },
-    "tinypool@2.1.2": {
-      "integrity": "sha512-9YodfrxS9g9IbFr/KOjE5bAeJ0p61n3bW6mqvy0jtoeKd1kTW1Cxm0oulm6KX2lyM9Gl6WIe8nEbY7LWv5ZJww==",
-      "tarball": "https://sfw.security.sentry.io/npm/tinypool/-/tinypool-2.1.2.tgz"
-    },
     "typescript@7.0.2": {
       "integrity": "sha512-8FYau96o3NKOhbjKi/qNvG/W5jhzxkbdm5sj9AbZ/5T5sWqn3hJgLfGx27sRKZWTvyzCP8dLRBTf5tBTSRVUNA==",
       "optionalDependencies": [
@@ -609,7 +460,6 @@
     "dependencies": [
       "npm:@types/chrome@~0.2.2",
       "npm:@types/node@^26.1.1",
-      "npm:oxfmt@0.68",
       "npm:oxlint@^1.83.0",
       "npm:rolldown@^1.2.0",
       "npm:typescript@^7.0.2"

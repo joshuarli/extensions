@@ -1,7 +1,7 @@
 # Browser extensions
 
 This repository contains the custom Chromium Manifest V3 extensions under one
-shared Deno, TypeScript, Rolldown, Oxfmt, and Oxlint setup.
+shared Deno, TypeScript, Rolldown, and Oxlint setup.
 
 Each extension follows the same package shape:
 
