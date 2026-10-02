@@ -1,27 +1,29 @@
 {
   "nodeModulesDir": "auto",
   "imports": {
-    "rolldown": "npm:rolldown@^1.2.0",
-    "typescript": "npm:typescript@^7.0.2",
-    "oxlint": "npm:oxlint@^1.83.0",
-    "@types/chrome": "npm:@types/chrome@^0.2.2",
-    "@types/node": "npm:@types/node@^26.1.1"
-  },
-  "fmt": {
-    "exclude": ["**/test/fixtures/**", "build/**", "dist/**", "**/.generated/**"]
+    "@types/chrome": "npm:@types/chrome@0.2.2",
+    "@types/node": "npm:@types/node@26.6.2",
+    "@vitest/browser-playwright": "npm:@vitest/browser-playwright@5.0.3",
+    "effect": "npm:effect@4.0.0",
+    "oxlint": "npm:oxlint@1.86.0",
+    "oxlint-tsgolint": "npm:oxlint-tsgolint@7.0.2003",
+    "typescript": "npm:typescript@7.0.2",
+    "vite": "npm:vite@8.3.2",
+    "vitest": "npm:vitest@5.0.3"
   },
   "tasks": {
-    "build:wasm": "deno run -A scripts/build-defuddle-wasm.mjs",
-    "typecheck": "deno run -A npm:typescript/tsc --noEmit",
-    "fmt": "deno fmt",
-    "fmt:check": "deno fmt --check",
-    "lint": "deno run -A npm:oxlint --fix .",
-    "lint:check": "deno run -A npm:oxlint .",
-    "fmtlint": "deno task fmt && deno task lint",
-    "check": "deno task fmt:check && deno task lint:check && deno task typecheck",
-    "build": "deno task build:wasm && deno task typecheck && NODE_ENV=development deno run -A scripts/build-extensions.mjs",
-    "dist": "deno task build:wasm && deno task typecheck && NODE_ENV=production deno run -A scripts/build-extensions.mjs",
-    "reader-sample": "deno run -A scripts/build-reader-sample-fixture.mjs",
-    "test": "deno task build:wasm && deno test -A --no-check extension-loupe/test extension-allow-right-click/test extension-youtube-transcript/test"
+    "build:wasm": "deno run --allow-env --allow-read --allow-write --allow-run --allow-sys=homedir scripts/build-defuddle-wasm.mjs",
+    "build:extensions": "deno run --allow-env --allow-read --allow-write --allow-ffi --allow-sys=homedir scripts/build-extensions.mjs",
+    "typecheck": "deno run --allow-env --allow-read --allow-run npm:typescript/tsc --noEmit",
+    "lint": "deno run --allow-env --allow-read --allow-ffi --allow-run npm:oxlint --type-aware .",
+    "vitest": "deno run --allow-env --allow-read --allow-write --allow-net --allow-run --allow-ffi --allow-sys=homedir,osRelease,cpus npm:vitest",
+    "build:browser-tests": "deno run --allow-env --allow-read --allow-write --allow-ffi scripts/build-browser-test-bundles.mjs",
+    "dev": "deno task build:wasm && deno run --allow-env --allow-read --allow-write --allow-ffi --allow-run scripts/build-extensions.mjs --watch",
+    "check": "deno task lint && deno task typecheck && deno task test",
+    "build": "deno task build:wasm && deno task typecheck && NODE_ENV=development deno task build:extensions",
+    "dist": "deno task build:wasm && deno task typecheck && NODE_ENV=production deno task build:extensions",
+    "reader-sample": "deno run --allow-env --allow-read --allow-write scripts/build-reader-sample-fixture.mjs",
+    "test": "deno task vitest run --project unit",
+    "test:browser": "deno task build:browser-tests && deno task vitest run --project browser"
   }
 }

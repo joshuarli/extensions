@@ -5,7 +5,7 @@ function normalizeLanguageCode(code: string): string {
 }
 
 export function pickCaptionTrack(
-  tracks: CaptionTrack[],
+  tracks: readonly CaptionTrack[],
   preferredLanguage?: string,
 ): CaptionTrack | undefined {
   if (!Array.isArray(tracks) || tracks.length === 0) {

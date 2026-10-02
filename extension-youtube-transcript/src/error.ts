@@ -1,19 +1,11 @@
-export class TranscriptError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "TranscriptError";
-  }
+import { Schema } from "effect";
 
-  toClipboardText(): string {
-    return `${this.name}: ${this.message}\n\nStack:\n${this.stack || "(no stack)"}`;
-  }
-}
-
-export class NoTranscriptError extends TranscriptError {
-  public readonly videoUrl: string;
-  public readonly attempted: string[];
-  public readonly details: Record<string, unknown>;
-
+export class NoTranscriptError extends Schema.TaggedError<NoTranscriptError>()("NoTranscriptError", {
+  message: Schema.String,
+  videoUrl: Schema.String,
+  attempted: Schema.Array(Schema.String),
+  details: Schema.Record(Schema.String, Schema.Unknown),
+}) {
   constructor(videoUrl: string, attempted: string[], details: Record<string, unknown> = {}) {
     const parts = [`No transcript found for ${videoUrl}.`];
 
@@ -33,18 +25,11 @@ export class NoTranscriptError extends TranscriptError {
       parts.push(`Cause: ${details["cause"].message}`);
     }
 
-    super(parts.join(" "));
-    this.name = "NoTranscriptError";
-    this.videoUrl = videoUrl;
-    this.attempted = attempted;
-    this.details = details;
-    if (details["cause"] instanceof Error) {
-      (this as { cause?: unknown }).cause = details["cause"];
-    }
+    super({ message: parts.join(" "), videoUrl, attempted, details });
   }
 
-  override toClipboardText(): string {
-    let text = `${this.name}: ${this.message}`;
+  toClipboardText(): string {
+    let text = `${this._tag}: ${this.message}`;
     if (this.stack) {
       text += `\n\nStack:\n${this.stack}`;
     }
@@ -52,33 +37,53 @@ export class NoTranscriptError extends TranscriptError {
   }
 }
 
-export class InvalidPageError extends TranscriptError {
-  public readonly url: string;
-
+export class InvalidPageError extends Schema.TaggedError<InvalidPageError>()("InvalidPageError", {
+  message: Schema.String,
+  url: Schema.String,
+}) {
   constructor(message: string, url: string) {
-    super(message);
-    this.name = "InvalidPageError";
-    this.url = url;
+    super({ message, url });
   }
 }
 
-export class TabNotAccessibleError extends TranscriptError {
+export class TabNotAccessibleError extends Schema.TaggedError<TabNotAccessibleError>()(
+  "TabNotAccessibleError",
+  { message: Schema.String },
+) {
   constructor(message: string) {
-    super(message);
-    this.name = "TabNotAccessibleError";
+    super({ message });
   }
 }
 
-export class CaptionFetchError extends TranscriptError {
+export class CaptionFetchError extends Schema.TaggedError<CaptionFetchError>()(
+  "CaptionFetchError",
+  { message: Schema.String },
+) {
   constructor(message: string) {
-    super(message);
-    this.name = "CaptionFetchError";
+    super({ message });
   }
 }
 
-export class PlayerDataError extends TranscriptError {
+export class PlayerDataError extends Schema.TaggedError<PlayerDataError>()("PlayerDataError", {
+  message: Schema.String,
+}) {
   constructor(message: string) {
-    super(message);
-    this.name = "PlayerDataError";
+    super({ message });
+  }
+}
+
+export class PageReadError extends Schema.TaggedError<PageReadError>()("PageReadError", {
+  message: Schema.String,
+}) {
+  constructor(message: string) {
+    super({ message });
+  }
+}
+
+export class SettingsReadError extends Schema.TaggedError<SettingsReadError>()("SettingsReadError", {
+  message: Schema.String,
+}) {
+  constructor(message: string) {
+    super({ message });
   }
 }

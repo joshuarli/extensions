@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "vitest";
 import type { LoupeParsedPage } from "../src/extension-messages.ts";
 import { createReaderMarkdownFromPage } from "../src/reader-markdown.ts";
 

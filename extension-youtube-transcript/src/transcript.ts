@@ -41,8 +41,8 @@ export function formatTimestamp(seconds: number): string {
 }
 
 export function buildTranscript(
-  segments: TranscriptSegment[],
-  chapters: Chapter[] = [],
+  segments: readonly TranscriptSegment[],
+  chapters: readonly Chapter[] = [],
 ): TranscriptResult {
   const sortedChapters = [...chapters].toSorted((a, b) => a.start - b.start);
   let chapterIndex = 0;
@@ -423,7 +423,7 @@ function decodeEntities(text: string): string {
 export function parseTranscriptXml(
   xml: string,
   languageCode?: string,
-  chapters: Chapter[] = [],
+  chapters: readonly Chapter[] = [],
 ): TranscriptResult | undefined {
   const segments = [],
     pRegex = /<p\s+t="(\d+)"[^>]*>([\s\S]*?)<\/p>/gu;

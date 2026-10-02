@@ -1,5 +1,6 @@
 import type { BackgroundDependencies, PageData, TranscriptResult } from "../src/types.ts";
-import test, { describe, it } from "node:test";
+import { describe, it, test } from "vitest";
+import { Effect } from "effect";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -14,7 +15,8 @@ import {
 } from "../src/service-worker.ts";
 import { collectPageData } from "../src/page.ts";
 import { resolveTranscript } from "../src/workflow.ts";
-import { fetchPlayerData, fetchTranscript } from "../src/youtube-api.ts";
+import { fetchPlayerData, fetchTranscript, getCaptionTracks } from "../src/youtube-api.ts";
+import { CaptionFetchError } from "../src/error.ts";
 
 async function decompress(buffer: Uint8Array): Promise<string> {
   const stream = new Blob([buffer as unknown as BlobPart])
@@ -147,7 +149,7 @@ function dependencies(overrides: Partial<BackgroundDependencies> = {}): TestDeps
       calls.panel++;
       return null;
     },
-    fetchTranscript: async (): Promise<TranscriptResult> => ({
+    fetchTranscript: () => Effect.succeed<TranscriptResult | undefined>({
       text: "**0:00** · Hello from API.",
       srt: "1\n00:00:00,000 --> 00:00:05,000\n**0:00** · Hello from API.\n",
       languageCode: "en",
@@ -200,7 +202,7 @@ test("service-worker flow copies SRT subtitles", async () => {
 
 test("service-worker flow falls back to the opened panel when API extraction is empty", async () => {
   const deps = dependencies({
-    fetchTranscript: async () => undefined,
+    fetchTranscript: () => Effect.succeed(undefined),
     readPanel: async () => {
       deps.calls.panel++;
       return { segments: [{ start: 0, text: "Panel transcript." }], languageCode: "fr" };
@@ -224,9 +226,7 @@ test("service-worker flow prefers a rendered DOM transcript when no language is 
       metadata: { title: "DOM video", author: "DOM Channel", site: "YouTube" },
       transcript: { segments: [{ start: 5, text: "Already rendered." }], languageCode: "en" },
     }),
-    fetchTranscript: async () => {
-      throw new Error("API should not be called");
-    },
+    fetchTranscript: () => Effect.fail(new CaptionFetchError("API should not be called")),
   });
   await handleActionClick(
     {
@@ -236,6 +236,53 @@ test("service-worker flow prefers a rendered DOM transcript when no language is 
     deps,
   );
   assert.match(deps.calls.copied[0]!, /\*\*0:05\*\* · Already rendered\./);
+});
+
+test("service-worker rejects malformed page data before requesting a transcript", async () => {
+  let apiCalled = false;
+  const deps = dependencies({
+    readPageData: async () => ({ metadata: null, playerResponse: null }),
+    fetchTranscript: () => {
+      apiCalled = true;
+      return Effect.succeed(undefined);
+    },
+  });
+
+  await assert.rejects(
+    handleGetTranscript(
+      { id: 20, url: "https://www.youtube.com/watch?v=abc123" } as unknown as chrome.tabs.Tab,
+      deps,
+    ),
+    /Could not read valid transcript data/,
+  );
+  assert.equal(apiCalled, false);
+});
+
+test("service-worker rejects malformed saved language settings", async () => {
+  const deps = dependencies({ getSettings: async () => ({ language: 7 }) });
+
+  await assert.rejects(
+    handleGetTranscript(
+      { id: 21, url: "https://www.youtube.com/watch?v=abc123" } as unknown as chrome.tabs.Tab,
+      deps,
+    ),
+    /Could not read the preferred transcript language setting/,
+  );
+});
+
+test("service-worker reports malformed transcript panel data at the page boundary", async () => {
+  const deps = dependencies({
+    fetchTranscript: () => Effect.succeed(undefined),
+    readPanel: async () => ({ segments: [{ start: "0", text: "Not a valid segment." }] }),
+  });
+
+  await assert.rejects(
+    handleGetTranscript(
+      { id: 22, url: "https://www.youtube.com/watch?v=abc123" } as unknown as chrome.tabs.Tab,
+      deps,
+    ),
+    /invalid transcript panel data/,
+  );
 });
 
 function segment(text: string) {
@@ -321,7 +368,7 @@ test("page collector ignores player-derived metadata when response is stale", ()
 
 test("resolveTranscript skips stale page transcript and falls through to API", async () => {
   let apiCalled = false;
-  const result = await resolveTranscript({
+  const result = await Effect.runPromise(resolveTranscript({
     tabUrl: "https://www.youtube.com/watch?v=NEW_VID",
     pageData: {
       playerResponse: { videoDetails: { videoId: "OLD_VID" } },
@@ -332,12 +379,12 @@ test("resolveTranscript skips stale page transcript and falls through to API", a
         languageCode: "en",
       },
     },
-    fetchTranscript: async () => {
+    fetchTranscript: () => {
       apiCalled = true;
-      return { text: "**0:00** · Fresh from API.", srt: "", languageCode: "en" };
+      return Effect.succeed({ text: "**0:00** · Fresh from API.", srt: "", languageCode: "en" });
     },
-    readPanel: async () => null,
-  });
+    readPanel: () => Effect.succeed(null),
+  }));
 
   assert.ok(apiCalled, "should call fetchTranscript instead of using cached page transcript");
   assert.equal(result.transcript.text, "**0:00** · Fresh from API.");
@@ -363,15 +410,12 @@ test("player API retries clients and stops at the first caption-bearing response
       requests.push(options!);
       return responses.shift()!;
     },
-    result = (await fetchPlayerData(
+    result = await Effect.runPromise(fetchPlayerData(
       "abc123",
       "fr",
       fetchMock as typeof globalThis.fetch,
-    )) as Record<string, unknown>,
-    captions = (result["captions"] as Record<string, unknown>)[
-      "playerCaptionsTracklistRenderer"
-    ] as Record<string, unknown>;
-  assert.equal((captions["captionTracks"] as { languageCode: string }[])[0]!.languageCode, "en");
+    ));
+  assert.equal(getCaptionTracks(result)[0]?.languageCode, "en");
   assert.equal(requests.length, 2);
   assert.equal((requests[0]!.headers as Record<string, string>)["Accept-Language"], "fr");
 });
@@ -380,13 +424,13 @@ describe("fixtures", () => {
   for (const f of fixtureSets) {
     it(`${f.videoId} produces the captured transcript`, async () => {
       const { requests, fetchMock } = fixtureFetch(f),
-        result = await fetchTranscript(
+        result = await Effect.runPromise(fetchTranscript(
           f.videoId,
           { playerResponse: null },
           undefined,
           [],
           fetchMock as typeof globalThis.fetch,
-        ),
+        )),
         expectedBody = transcriptBody(f.expectedTranscript);
 
       assert.equal(result!.text, expectedBody);
@@ -586,7 +630,7 @@ test("handleGetSubtitle returns the SRT output string", async () => {
 
 test("handleGetTranscript throws when no transcript is available", async () => {
   const deps = dependencies({
-    fetchTranscript: async () => undefined,
+    fetchTranscript: () => Effect.succeed(undefined),
     readPanel: async () => {
       deps.calls.panel++;
       return null;

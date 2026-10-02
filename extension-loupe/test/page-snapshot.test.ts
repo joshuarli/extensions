@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "vitest";
 import { assertPageSnapshotWithinLimit, MAX_PAGE_SNAPSHOT_LENGTH } from "../src/page-snapshot.ts";
 
 test("accepts page snapshots at the configured limit", () => {

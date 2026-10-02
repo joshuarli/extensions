@@ -17,9 +17,8 @@ WebAssembly, and renders the extracted content in an in-page reader overlay.
   metadata frontmatter shared by Markdown copying, Obsidian import, and fixture
   downloads.
 - `src/reader-overlay.css` contains the reader stylesheet and
-  `src/reader-overlay.html` contains its Shadow DOM markup.
-  `../rolldown.config.mjs::rawAssetPlugin` embeds both assets in the content-script
-  bundle.
+  `src/reader-overlay.html` contains its Shadow DOM markup. Vite embeds the CSS
+  from the content-script entry through its raw asset import.
 - `src/reader-fixture.ts::serializeReaderUi()` converts the rendered Shadow DOM
   into a standalone fixture with inline CSS.
 - `src/download-filename.ts::sanitizeDownloadFilename()` defines the shared
@@ -34,12 +33,13 @@ WebAssembly, and renders the extracted content in an in-page reader overlay.
   script.
 - `../scripts/build-defuddle-wasm.mjs` builds the sibling Rust adapter and runs
   `wasm-bindgen`.
-- `../scripts/build-extensions.mjs` bundles all extensions and copies the generated
-  WASM file.
+- `../scripts/build-extensions.mjs` invokes Vite to bundle all extensions and copies the
+  generated WASM file.
 - `../scripts/build-reader-sample-fixture.mjs` builds the tracked reader fixture
   from `test/fixtures/reader-sample-source.html`.
-- `../rolldown.config.mjs` emits the module service worker and the self-contained IIFE
-  injected by `chrome.scripting.executeScript()`.
+- `../vite.config.ts` defines extension bundle entries and emits the module
+  service worker and self-contained IIFE injected by
+  `chrome.scripting.executeScript()`.
 - `../build/extension-loupe/` and `../dist/extension-loupe/` are generated
   extension directories. `.generated/` is the ignored intermediate
   WASM-bindgen directory.
@@ -113,15 +113,16 @@ cd ..
 deno install
 deno task dist
 deno task test
+deno task test:browser
 ```
 
-The repository-root `deno.json::imports` pins the JavaScript build inputs (TypeScript, rolldown,
-oxlint, and the `@types/*` packages); `deno.lock` pins their resolved
-versions. `deno task typecheck` runs the real TypeScript 7 compiler
+The repository-root `deno.json::imports` pins TypeScript 7, Vite 8, Effect 4,
+Vitest 5, Oxlint, and the `@types/*` packages; `deno.lock` pins their
+resolved versions. `deno task typecheck` runs TypeScript 7
 (`npm:typescript/tsc --noEmit`) against `tsconfig.json`, which enables every
-`strict`-family flag. `deno task test` runs with `--no-check`, since type
-safety is `typecheck`'s job, matching the previous `node --test` behavior of
-stripping types without checking them.
+`strict`-family flag. `deno task test` runs the unit suite; `deno task
+test:browser` runs browser behavior tests with Vitest Browser Mode and the
+Playwright provider.
 
 The Rust adapter requires the `wasm32-unknown-unknown` target and
 matching `wasm-bindgen` CLI and Binaryen releases. When `wasm-bindgen` is
@@ -145,12 +146,9 @@ cargo test --workspace
 cargo check --workspace --target wasm32-unknown-unknown
 ```
 
-The JavaScript test command also runs browser tests for the content script and
-reader fixture, then launches
-/Applications/Chromium.app/Contents/MacOS/Chromium. The test skips when that
-binary is unavailable. The shared launcher uses an isolated profile, mock
-keychain, background-work suppression, and headless rendering flags so browser
-output is repeatable.
+Set `CHROMIUM_BINARY_PATH` to choose the Chromium executable for Browser Mode.
+The default path is `/Applications/Chromium.app/Contents/MacOS/Chromium` when
+that file exists; otherwise the Playwright provider uses its managed browser.
 
 Load `dist/extension-loupe/` as an unpacked extension. Click the Loupe toolbar
 icon to show or hide the reader. The first click parses the current DOM; subsequent toggles

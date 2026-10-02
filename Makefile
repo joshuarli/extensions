@@ -1,4 +1,4 @@
-.PHONY: build dist test check fmt lint fmtlint install
+.PHONY: build dist test check lint install
 
 build:
 	deno task build
@@ -12,14 +12,8 @@ test:
 check:
 	deno task check
 
-fmt:
-	deno task fmt
-
 lint:
 	deno task lint
-
-fmtlint:
-	deno task fmtlint
 
 install: dist
 	@set -eu; \

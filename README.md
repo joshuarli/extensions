@@ -1,7 +1,7 @@
 # Browser extensions
 
 This repository contains the custom Chromium Manifest V3 extensions under one
-shared Deno, TypeScript, Rolldown, and Oxlint setup.
+shared Deno, TypeScript 7, Vite 8, and Oxlint setup.
 
 Each extension follows the same package shape:
 
@@ -18,10 +18,13 @@ separate bundles where the browser requires classic scripts.
 Install the shared dependencies with `deno install`, then use the root tasks:
 
 ```bash
-make install       # build all production bundles and show their unpacked paths
-deno task test     # build Loupe's WASM bindings and run every test suite
-deno task check    # check formatting, lint, and TypeScript without changing files
+deno task dev          # build Loupe's WASM bindings and watch extension sources
+deno task build        # build development extension bundles
+deno task dist         # build production extension bundles
+deno task test         # run unit tests
+deno task test:browser # run browser tests with Chromium
+deno task check        # run lint, typecheck, and unit tests
 ```
 
-`make install` opens the extensions page in Helium and lists the unpacked
-extensions under `dist/`.
+Use `make install` on macOS to open Helium's extensions page and build production
+bundles. Load the directories under `dist/` as unpacked extensions.

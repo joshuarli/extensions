@@ -10,6 +10,7 @@
     "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": true,
     "noPropertyAccessFromIndexSignature": true,
+    "noUncheckedSideEffectImports": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noEmit": true,
@@ -20,12 +21,14 @@
     "erasableSyntaxOnly": true,
     "allowImportingTsExtensions": true,
     "lib": ["ES2024", "DOM", "DOM.Iterable"],
-    "types": ["chrome", "node"]
+    "types": ["chrome", "node", "vite/client"]
   },
   "include": [
     "extension-*/src/**/*.ts",
     "extension-*/test/**/*.ts",
     "scripts/**/*.ts",
+    "vite.config.ts",
+    "vitest.config.ts",
     "extension-loupe/.generated/**/*.d.ts"
   ]
 }

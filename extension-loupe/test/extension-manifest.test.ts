@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import test from "node:test";
+import { test } from "vitest";
 
 test("extension manifest declares the Loupe MV3 runtime", () => {
   const extensionManifest = JSON.parse(

@@ -7,6 +7,8 @@ import type {
 import { buildMarkdown } from "./metadata.ts";
 import { collectPageData, collectTranscriptPanel, updatePageProgress } from "./page.ts";
 import {
+  fetchCaptionXmlText,
+  fetchNextResponse,
   fetchPlayerData,
   fetchTranscript as fetchTranscriptApi,
   getCaptionTracks,
@@ -16,10 +18,24 @@ import { resolveTranscript } from "./workflow.ts";
 import {
   CaptionFetchError,
   InvalidPageError,
+  PageReadError,
   PlayerDataError,
+  SettingsReadError,
   TabNotAccessibleError,
 } from "./error.ts";
 import { cachedFetch, clearResponseCache } from "./http.ts";
+import { Effect, Schema } from "effect";
+import {
+  PageDataSchema,
+  PreferredLanguageSettingsSchema,
+  TranscriptPanelDataSchema,
+} from "./types.ts";
+import {
+  ExtensionMessageSchema,
+  ExtensionResponseSchema,
+  type ExtensionMessage,
+  type ExtensionResponse,
+} from "./message-contract.ts";
 
 async function resolveTranscriptForTab(
   tab: chrome.tabs.Tab,
@@ -29,18 +45,17 @@ async function resolveTranscriptForTab(
   await deps.progress(tab.id!, "Reading YouTube page…");
   await deps.setTitle(tab.id!, "Fetching transcript…");
 
-  const pageData = await deps.readPageData(tab.id!);
+  const pageData = await loadPageData(tab.id!, deps);
   await deps.progress(tab.id!, "Fetching transcript…");
-  const settings = await deps.getSettings(),
-    preferredLanguage = settings.language.trim() || undefined;
-  return resolveTranscript({
+  const preferredLanguage = await loadPreferredLanguage(deps);
+  return Effect.runPromise(resolveTranscript({
     fetchTranscript: (chapters) =>
       deps.fetchTranscript(videoId, pageData, preferredLanguage, chapters, deps.fetch),
     pageData,
     ...(preferredLanguage ? { preferredLanguage } : {}),
-    readPanel: () => deps.readPanel(tab.id!),
+    readPanel: () => readTranscriptPanel(tab.id!, deps),
     tabUrl: tab.url!,
-  });
+  }));
 }
 
 export async function handleActionClick(
@@ -127,46 +142,52 @@ export const handleDownloadFixtures:
     ? undefined
     : async (
         tab: chrome.tabs.Tab,
-        overrides: Partial<BackgroundDependencies> = {},
-      ): Promise<{ label: string }> => {
+      overrides: Partial<BackgroundDependencies> = {},
+    ): Promise<{ label: string }> => {
         const deps = { ...defaultDependencies(), ...overrides },
           videoId = requireYouTubeVideo(tab);
         await deps.progress(tab.id!, "Reading YouTube page…");
-        const pageData = await deps.readPageData(tab.id!),
-          settings = await deps.getSettings(),
-          preferredLanguage = settings.language.trim() || undefined;
+        const pageData = await loadPageData(tab.id!, deps),
+          preferredLanguage = await loadPreferredLanguage(deps);
 
         await deps.progress(tab.id!, "Fetching InnerTube response…");
-        const playerData = await fetchPlayerData(videoId, preferredLanguage, deps.fetch);
+        const playerData = await Effect.runPromise(
+          fetchPlayerData(videoId, preferredLanguage, deps.fetch),
+        );
         if (!playerData) {
           throw new PlayerDataError(
             "YouTube did not return player data. The video may be unavailable or the request may be blocked.",
           );
         }
-        const nextData = await fetchNextResponse!(videoId, preferredLanguage, deps.fetch),
+        const nextData = await Effect.runPromise(
+          fetchNextResponse(videoId, preferredLanguage, deps.fetch),
+        ),
           tracks = getCaptionTracks(playerData),
           track = pickCaptionTrack(tracks, preferredLanguage);
         if (!track?.baseUrl) {
           throw new CaptionFetchError("No captions are available for this video.");
         }
         await deps.progress(tab.id!, "Downloading captions…");
-        const xml = await fetchRawCaptionXml!(track as { baseUrl: string }, deps.fetch);
+        const captionUrl = track.baseUrl,
+          xml = await Effect.runPromise(
+            fetchCaptionXmlText(captionUrl, preferredLanguage, deps.fetch),
+          );
 
         await deps.progress(tab.id!, "Building transcript…");
-        const result = await resolveTranscript({
-            fetchTranscript: (chapters) =>
-              deps.fetchTranscript(
+        const result = await Effect.runPromise(resolveTranscript({
+          fetchTranscript: (chapters) =>
+            deps.fetchTranscript(
                 videoId,
                 { ...pageData, playerResponse: playerData },
                 preferredLanguage,
                 chapters,
                 deps.fetch,
               ),
-            pageData: { ...pageData, initialData: nextData, playerResponse: playerData },
-            ...(preferredLanguage ? { preferredLanguage } : {}),
-            readPanel: () => deps.readPanel(tab.id!),
-            tabUrl: tab.url!,
-          }),
+          pageData: { ...pageData, initialData: nextData, playerResponse: playerData },
+          ...(preferredLanguage ? { preferredLanguage } : {}),
+          readPanel: () => readTranscriptPanel(tab.id!, deps),
+          tabUrl: tab.url!,
+        })),
           prefix = `${videoId}-`,
           innertube = JSON.stringify(
             sortKeys!({
@@ -242,16 +263,15 @@ function defaultDependencies(): BackgroundDependencies {
     },
     fetch: cachedFetch(globalThis.fetch.bind(globalThis) as typeof globalThis.fetch),
     fetchTranscript: fetchTranscriptApi,
-    getSettings: (): Promise<{ language: string }> => chrome.storage.local.get({ language: "" }),
+    getSettings: (): Promise<unknown> => chrome.storage.local.get({ language: "" }),
     log: (...args: unknown[]) => console.error(...args),
     notify: (title: string, message: string) => notifySafely(title, message),
     progress: (tabId: number, message: string, done = false): Promise<void> =>
       sendProgress(tabId, message, done),
-    readPageData: (tabId: number): Promise<PageData> => executePageScript(tabId, collectPageData),
-    readPanel: (tabId: number): Promise<TranscriptPanelData | null> =>
-      executePageScript(tabId, collectTranscriptPanel).then(
-        (r) => r as unknown as TranscriptPanelData | null,
-      ),
+    readPageData: (tabId: number): Promise<unknown> =>
+      executePageScript(tabId, collectPageData),
+    readPanel: (tabId: number): Promise<unknown> =>
+      executePageScript(tabId, collectTranscriptPanel),
     schedule: (callback: () => void, delay: number) => {
       setTimeout(callback, delay);
     },
@@ -260,73 +280,43 @@ function defaultDependencies(): BackgroundDependencies {
   };
 }
 
-const fetchRawCaptionXml:
-    | ((track: { baseUrl: string }, fetchImpl: typeof globalThis.fetch) => Promise<string>)
-    | undefined =
-    process.env["NODE_ENV"] === "production"
-      ? undefined
-      : async (track: { baseUrl: string }, fetchImpl: typeof globalThis.fetch) => {
-          const url = new URL(track.baseUrl);
-          if (!url.hostname.endsWith(".youtube.com")) {
-            throw new CaptionFetchError("Invalid caption URL.");
-          }
-          let response;
-          try {
-            response = await fetchImpl(track.baseUrl, {
-              headers: { "User-Agent": "Mozilla/5.0" },
-              signal: AbortSignal.timeout(4000),
-            });
-            if (!response.ok) {
-              throw new CaptionFetchError(`HTTP ${response.status || "error"}`);
-            }
-            return await response.text();
-          } catch (error) {
-            if ((error as Error).message?.startsWith("HTTP ")) {
-              throw new CaptionFetchError(
-                `YouTube rejected the caption request (${(error as Error).message}).`,
-              );
-            }
-            throw new CaptionFetchError(
-              "Could not download captions from YouTube. The request may be blocked or timed out.",
-            );
-          }
-        },
-  fetchNextResponse:
-    | ((
-        videoId: string,
-        preferredLanguage: string | undefined,
-        fetchImpl: typeof globalThis.fetch,
-      ) => Promise<unknown>)
-    | undefined =
-    process.env["NODE_ENV"] === "production"
-      ? undefined
-      : async (
-          videoId: string,
-          preferredLanguage: string | undefined,
-          fetchImpl: typeof globalThis.fetch,
-        ) => {
-          try {
-            const response = await fetchImpl(
-              "https://www.youtube.com/youtubei/v1/next?prettyPrint=false",
-              {
-                body: JSON.stringify({
-                  context: { client: { clientName: "WEB", clientVersion: "2.20240101.00.00" } },
-                  videoId,
-                }),
-                headers: {
-                  "Content-Type": "application/json",
-                  ...(preferredLanguage ? { "Accept-Language": preferredLanguage } : {}),
-                },
-                method: "POST",
-                signal: AbortSignal.timeout(4000),
-              },
-            );
-            return response.ok ? await response.json() : null;
-          } catch {
-            return null;
-          }
-        },
-  sortKeys: ((obj: unknown) => unknown) | undefined =
+async function loadPageData(tabId: number, deps: BackgroundDependencies): Promise<PageData> {
+  try {
+    return Schema.decodeUnknownSync(PageDataSchema)(await deps.readPageData(tabId));
+  } catch {
+    throw new PageReadError("Could not read valid transcript data from the YouTube page.");
+  }
+}
+
+async function loadPreferredLanguage(
+  deps: BackgroundDependencies,
+): Promise<string | undefined> {
+  try {
+    const settings = Schema.decodeUnknownSync(PreferredLanguageSettingsSchema)(
+      await deps.getSettings(),
+    );
+    return settings.language.trim() || undefined;
+  } catch {
+    throw new SettingsReadError("Could not read the preferred transcript language setting.");
+  }
+}
+
+function readTranscriptPanel(
+  tabId: number,
+  deps: BackgroundDependencies,
+): Effect.Effect<TranscriptPanelData | null, PageReadError> {
+  return Effect.tryPromise({
+    try: () => deps.readPanel(tabId),
+    catch: () => new PageReadError("Could not read the YouTube transcript panel."),
+  }).pipe(
+    Effect.flatMap((value) => Effect.try({
+      try: () => Schema.decodeUnknownSync(Schema.NullOr(TranscriptPanelDataSchema))(value),
+      catch: () => new PageReadError("YouTube returned invalid transcript panel data."),
+    })),
+  );
+}
+
+const sortKeys: ((obj: unknown) => unknown) | undefined =
     process.env["NODE_ENV"] === "production"
       ? undefined
       : (obj) => {
@@ -396,10 +386,10 @@ async function notifySafely(title: string, message: string): Promise<void> {
   }
 }
 
-function executePageScript<T>(tabId: number, func: () => T): Promise<T> {
+function executePageScript(tabId: number, func: () => unknown): Promise<unknown> {
   return chrome.scripting.executeScript({ func, target: { tabId } }).then((results) => {
     const result = results[0]?.result;
-    return (result === undefined ? {} : result) as T;
+    return result;
   });
 }
 
@@ -437,20 +427,22 @@ if (typeof chrome !== "undefined") {
 }
 
 function handleMessage(
-  message: { action: string; tabId?: number },
+  message: unknown,
   _sender: chrome.runtime.MessageSender,
   sendResponse: (response: unknown) => void,
 ): true {
   (async () => {
+    let request: ExtensionMessage | undefined;
     try {
-      console.log("YouTube Transcript: received action", message.action);
-      const tab = message.tabId ? await chrome.tabs.get(message.tabId) : _sender.tab;
+      request = Schema.decodeUnknownSync(ExtensionMessageSchema)(message);
+      console.log("YouTube Transcript: received action", request.action);
+      const tab = request.tabId === undefined ? _sender.tab : await chrome.tabs.get(request.tabId);
       if (!tab) {
         throw new TabNotAccessibleError("Tab not found.");
       }
 
-      let result;
-      switch (message.action) {
+      let result: ExtensionResponse;
+      switch (request.action) {
         case "copyTranscript": {
           await handleActionClick(tab);
           result = { label: "Transcript copied!" };
@@ -478,24 +470,24 @@ function handleMessage(
           break;
         }
         default: {
-          result = { error: `Unknown action: ${message.action}` };
+          result = { error: `Unknown action: ${request.action}` };
         }
       }
-      sendResponse(result);
+      sendResponse(Schema.decodeUnknownSync(ExtensionResponseSchema)(result));
     } catch (error) {
       console.error("YouTube Transcript background error:", error);
-      if (message.tabId) {
+      if (request?.tabId !== undefined) {
         await sendProgress(
-          message.tabId,
+          request.tabId,
           `Failed: ${(error as Error).message || "Unknown error."}`,
           true,
         );
       }
       const err = error as Error;
-      sendResponse({
+      sendResponse(Schema.decodeUnknownSync(ExtensionResponseSchema)({
         error: err.message || "Unknown error.",
         errorDetail: err.stack || err.message,
-      });
+      }));
     }
   })();
   return true;

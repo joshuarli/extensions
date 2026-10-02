@@ -50,8 +50,7 @@ worker is bundled as an ES module. Keep those output formats distinct.
 cd ..
 deno task dist
 deno task typecheck
-deno task fmt:check
-deno task lint:check
+deno task test
 ```
 
 `../build/extension-allow-right-click/` and `../dist/extension-allow-right-click/`

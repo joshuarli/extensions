@@ -1,22 +1,23 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import test from "node:test";
-// @ts-expect-error The repository does not publish declarations for the shared build config.
-import { extensionDefinitions, outputRoot } from "../../rolldown.config.mjs";
+import { test } from "vitest";
+import { extensionDefinitions, outputRootPath } from "../../vite.config.ts";
 
 test("extensions share one repository-level output root", () => {
-  const definitions = extensionDefinitions as Record<string, { outputDirectory: string }>;
-  for (const [extensionName, extension] of Object.entries(definitions)) {
-    assert.equal(extension.outputDirectory, resolve(outputRoot, extensionName));
+  for (const [extensionName, extension] of Object.entries(extensionDefinitions)) {
+    assert.equal(extension.outputDirectory, resolve(outputRootPath, extensionName));
   }
 });
 
 test("extension bundle formats match browser loading contracts", () => {
-  const extensionBundlerConfigSource = readFileSync(
-    new URL("../../rolldown.config.mjs", import.meta.url),
-    "utf8",
+  const loupeExtension = extensionDefinitions["extension-loupe"];
+  assert.ok(loupeExtension);
+  const loupeBundles = loupeExtension.bundles;
+  assert.deepEqual(
+    loupeBundles.map(({ entryFileName, format }) => ({ entryFileName, format })),
+    [
+      { entryFileName: "service-worker.js", format: "es" },
+      { entryFileName: "content.js", format: "iife" },
+    ],
   );
-  assert.match(extensionBundlerConfigSource, /outputOptions\([^)]*"service-worker\.js", "esm"/);
-  assert.match(extensionBundlerConfigSource, /outputOptions\([^)]*"content\.js", "iife"/);
 });

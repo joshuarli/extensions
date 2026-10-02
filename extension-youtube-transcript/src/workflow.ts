@@ -1,3 +1,4 @@
+import { Effect, Schema } from "effect";
 import type {
   Chapter,
   ResolveTranscriptInput,
@@ -6,7 +7,70 @@ import type {
   TranscriptResult,
 } from "./types.ts";
 import { buildTranscript, extractChapters, groupTranscriptSegments } from "./transcript.ts";
-import { NoTranscriptError } from "./error.ts";
+import { NoTranscriptError, PageReadError } from "./error.ts";
+import { YouTubePlayerDataSchema } from "./types.ts";
+
+export function resolveTranscript({
+  tabUrl,
+  pageData,
+  preferredLanguage,
+  fetchTranscript,
+  readPanel,
+}: ResolveTranscriptInput): Effect.Effect<
+  ResolveTranscriptOutput,
+  NoTranscriptError | PageReadError
+> {
+  return Effect.gen(function* () {
+    const dataIsStale = isPlayerResponseStale(pageData.playerResponse, tabUrl),
+      pageTranscript = dataIsStale ? null : pageData.transcript,
+      chapters = dataIsStale ? [] : extractChapters(pageData.initialData),
+      attempted: string[] = [];
+    let transcript: TranscriptResult | undefined;
+
+    if (!preferredLanguage && pageTranscript) {
+      attempted.push("page transcript panel");
+      transcript = formatSegments(pageTranscript, chapters);
+    }
+    if (!transcript) {
+      attempted.push("InnerTube API");
+      transcript = yield* fetchTranscript(chapters).pipe(
+        Effect.catch((error) =>
+          Effect.sync(() => {
+            attempted[attempted.length - 1] = `InnerTube API (failed: ${error.message})`;
+            return undefined;
+          })
+        ),
+      );
+    }
+    if (!transcript) {
+      attempted.push("DOM transcript panel");
+      const panelData = yield* readPanel();
+      if (panelData) {
+        transcript = formatSegments(panelData, chapters);
+      }
+    }
+    if (!transcript?.text) {
+      return yield* Effect.fail(
+        new NoTranscriptError(tabUrl, attempted, {
+          language: preferredLanguage || pageData.metadata.language,
+          panelWasOpen: pageTranscript !== null,
+          ...(transcript === undefined
+            ? { cause: new Error("All transcript sources returned no data.") }
+            : {}),
+        }),
+      );
+    }
+    const language = transcript.languageCode || pageData.metadata.language;
+    return {
+      metadata: {
+        ...pageData.metadata,
+        ...(language === undefined ? {} : { language }),
+        source: tabUrl,
+      },
+      transcript,
+    };
+  });
+}
 
 function getVideoId(url: string): string {
   try {
@@ -27,69 +91,24 @@ function isPlayerResponseStale(playerResponse: unknown, tabUrl: string): boolean
   if (!playerResponse) return false;
   const currentVideoId = getVideoId(tabUrl);
   if (!currentVideoId) return false;
-  const pageVideoId = (
-    (playerResponse as Record<string, unknown>)?.["videoDetails"] as
-      | Record<string, unknown>
-      | undefined
-  )?.["videoId"] as string | undefined;
+  const pageVideoId = decodePlayerVideoId(playerResponse);
   return Boolean(pageVideoId) && pageVideoId !== currentVideoId;
 }
 
-export async function resolveTranscript({
-  tabUrl,
-  pageData,
-  preferredLanguage,
-  fetchTranscript,
-  readPanel,
-}: ResolveTranscriptInput): Promise<ResolveTranscriptOutput> {
-  const dataIsStale = isPlayerResponseStale(pageData.playerResponse, tabUrl);
-  if (dataIsStale) pageData.transcript = null;
-  const chapters = dataIsStale ? [] : extractChapters(pageData.initialData),
-    attempted: string[] = [];
-  let transcript: TranscriptResult | undefined;
-
-  if (!preferredLanguage && pageData.transcript) {
-    attempted.push("page transcript panel");
-    transcript = formatSegments(pageData.transcript, chapters);
+function decodePlayerVideoId(input: unknown): string | undefined {
+  try {
+    return Schema.decodeUnknownSync(YouTubePlayerDataSchema)(input).videoDetails?.videoId;
+  } catch {
+    return undefined;
   }
-  if (!transcript) {
-    attempted.push("InnerTube API");
-    try {
-      transcript = await fetchTranscript(chapters);
-    } catch (error) {
-      attempted[attempted.length - 1] = `InnerTube API (failed: ${(error as Error).message})`;
-    }
-  }
-  if (!transcript) {
-    attempted.push("DOM transcript panel");
-    const panelData = await readPanel();
-    if (panelData) {
-      transcript = formatSegments(panelData, chapters);
-    }
-  }
-  if (!transcript?.text) {
-    throw new NoTranscriptError(tabUrl, attempted, {
-      language: preferredLanguage || pageData.metadata.language,
-      panelWasOpen: pageData.transcript !== null,
-      ...(transcript === undefined
-        ? { cause: new Error("All transcript sources returned no data.") }
-        : {}),
-    });
-  }
-  const language = transcript.languageCode || pageData.metadata.language;
-  return {
-    metadata: {
-      ...pageData.metadata,
-      ...(language === undefined ? {} : { language }),
-      source: tabUrl,
-    },
-    transcript,
-  };
 }
 
-function formatSegments(data: TranscriptPanelData, chapters: Chapter[]): TranscriptResult {
+function formatSegments(
+  data: TranscriptPanelData,
+  chapters: readonly Chapter[],
+): TranscriptResult {
   return {
-    ...buildTranscript(groupTranscriptSegments(data.segments), chapters),
+    ...buildTranscript(groupTranscriptSegments([...data.segments]), [...chapters]),
     ...(data.languageCode ? { languageCode: data.languageCode } : {}),
   };
 }

@@ -8,7 +8,7 @@ export function formatSrtTimestamp(seconds: number): string {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")},${String(ms).padStart(3, "0")}`;
 }
 
-export function buildSrt(segments: TranscriptSegment[]): string {
+export function buildSrt(segments: readonly TranscriptSegment[]): string {
   const cues: string[] = [];
   for (let i = 0; i < segments.length; i++) {
     const seg = segments[i];

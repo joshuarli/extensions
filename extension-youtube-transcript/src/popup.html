@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <title>YouTube Transcript Copier</title>
-    <link rel="stylesheet" href="popup.css" />
+    <link rel="stylesheet" href="./popup.css" />
   </head>
   <body>
     <h1>YouTube Transcript</h1>
@@ -15,24 +15,18 @@
       <button id="copy-srt" title="Copy SRT subtitle file">Copy SRT Subtitles</button>
     </div>
 
-    <!-- dev-only -->
-    <a class="developer-toggle" id="developer-toggle" href="#" aria-expanded="false"
-      >Developer tools</a
-    >
+    <a class="developer-toggle" id="developer-toggle" href="#" aria-expanded="false">
+      Developer tools
+    </a>
     <div id="developer-actions" hidden>
-      <button
-        id="download-fixtures"
-        title="Download the InnerTube response, transcript, and caption XML"
-      >
+      <button id="download-fixtures" title="Download the InnerTube response, transcript, and caption XML">
         Download fixtures
       </button>
     </div>
-    <!-- /dev-only -->
 
     <div id="status" role="status"></div>
     <button id="copy-error" hidden>Copy error details</button>
     <a class="settings-link" id="settings-link" href="#">Settings</a>
-
-    <script type="module" src="popup.js"></script>
+    <script type="module" src="./popup.ts"></script>
   </body>
 </html>

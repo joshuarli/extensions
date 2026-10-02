@@ -1,33 +1,20 @@
-import { build } from "rolldown";
-import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { relative, resolve } from "node:path";
-import { extensionDefinitions } from "../rolldown.config.mjs";
+import { build } from "vite";
+import { createExtensionBuildConfigs, extensionDefinitions } from "../vite.config.ts";
 
 function copyStaticSource(sourceDirectory, outputDirectory) {
   cpSync(sourceDirectory, outputDirectory, {
     recursive: true,
     filter(sourcePath) {
       const relativePath = relative(sourceDirectory, sourcePath);
+      if (relativePath === "") return true;
       return (
-        relativePath === "" || (relativePath !== "manifest.json" && !relativePath.endsWith(".ts"))
+        relativePath !== "manifest.json" &&
+        !/\.(?:ts|html|css)$/u.test(relativePath)
       );
     },
   });
-}
-
-function inlineStylesheets(outputDirectory, sourceDirectory) {
-  for (const filename of readdirSync(outputDirectory)) {
-    if (!filename.endsWith(".html")) {
-      continue;
-    }
-    const outputPath = resolve(outputDirectory, filename);
-    let html = readFileSync(outputPath, "utf8");
-    html = html.replaceAll(/<link rel="stylesheet" href="(.+?)"\s*\/?>/gu, (_match, href) => {
-      const stylesheet = readFileSync(resolve(sourceDirectory, href), "utf8");
-      return `<style>\n${stylesheet.trim()}\n</style>`;
-    });
-    writeFileSync(outputPath, html);
-  }
 }
 
 function copyGeneratedFiles(extensionName, generatedFiles, outputDirectory) {
@@ -41,17 +28,13 @@ function copyGeneratedFiles(extensionName, generatedFiles, outputDirectory) {
   }
 }
 
-async function buildExtension(extensionName, extension) {
-  for (const bundleConfig of extension.bundleConfigs) {
-    // eslint-disable-next-line no-await-in-loop
-    await build(bundleConfig);
+async function buildExtension(extensionName, extension, bundleConfigs) {
+  for (const bundleConfig of bundleConfigs) {
+    await build({ ...bundleConfig, configFile: false });
   }
 
   mkdirSync(extension.outputDirectory, { recursive: true });
   copyStaticSource(extension.sourceDirectory, extension.outputDirectory);
-  if (extension.inlineStylesheets) {
-    inlineStylesheets(extension.outputDirectory, extension.sourceDirectory);
-  }
 
   const manifestPath = resolve(extension.sourceDirectory, "manifest.json"),
     manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
@@ -61,10 +44,49 @@ async function buildExtension(extensionName, extension) {
   );
 
   copyGeneratedFiles(extensionName, extension.generatedFiles, extension.outputDirectory);
-
   console.log(`Built ${extensionName} in ${extension.outputDirectory}`);
 }
 
-for (const [extensionName, extension] of Object.entries(extensionDefinitions)) {
-  await buildExtension(extensionName, extension);
+const definitions = Object.entries(extensionDefinitions),
+  configs = createExtensionBuildConfigs();
+let configIndex = 0;
+const definitionConfigs = new Map();
+
+for (const [extensionName, extension] of definitions) {
+  const bundleConfigs = configs.slice(configIndex, configIndex + extension.bundles.length);
+  configIndex += extension.bundles.length;
+  definitionConfigs.set(extensionName, bundleConfigs);
+  await buildExtension(extensionName, extension, bundleConfigs);
+}
+
+if (process.argv.includes("--watch")) {
+  const sourceDirectories = definitions.map(([, extension]) => extension.sourceDirectory),
+    watcher = Deno.watchFs(sourceDirectories, { recursive: true });
+  let pendingExtensions = new Set(),
+    rebuildTimer,
+    rebuildQueue = Promise.resolve();
+
+  for await (const event of watcher) {
+    for (const changedPath of event.paths) {
+      const changedExtension = definitions.find(([, extension]) =>
+        changedPath.startsWith(`${extension.sourceDirectory}/`)
+      )?.[0];
+      if (changedExtension) pendingExtensions.add(changedExtension);
+    }
+    clearTimeout(rebuildTimer);
+    rebuildTimer = setTimeout(() => {
+      const extensionsToRebuild = [...pendingExtensions];
+      pendingExtensions = new Set();
+      rebuildQueue = rebuildQueue.then(async () => {
+        for (const extensionName of extensionsToRebuild) {
+          const extension = extensionDefinitions[extensionName];
+          await buildExtension(
+            extensionName,
+            extension,
+            definitionConfigs.get(extensionName),
+          );
+        }
+      });
+    }, 200);
+  }
 }

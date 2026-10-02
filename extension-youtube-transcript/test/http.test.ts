@@ -1,4 +1,4 @@
-import { describe, it, beforeEach } from "node:test";
+import { beforeEach, describe, it } from "vitest";
 import assert from "node:assert/strict";
 import { cachedFetch, clearResponseCache } from "../src/http.ts";
 
