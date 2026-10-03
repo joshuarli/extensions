@@ -110,19 +110,19 @@ The default layout expects `../defuddle-rs`. For another location, set
 
 ```bash
 cd ..
-deno install
-deno task dist
-deno task test
-deno task test:browser
+deno task bootstrap
+pnpm install
+pnpm run dist
+pnpm run test
+pnpm run test:browser
 ```
 
-The repository-root `deno.json::imports` pins TypeScript 7, Vite 8, Effect 4,
-Vitest 5, Oxlint, and the `@types/*` packages; `deno.lock` pins their
-resolved versions. `deno task typecheck` runs TypeScript 7
-(`npm:typescript/tsc --noEmit`) against `tsconfig.json`, which enables every
-`strict`-family flag. `deno task test` runs the unit suite; `deno task
-test:browser` runs browser behavior tests with Vitest Browser Mode and the
-Playwright provider.
+The repository-root `package.json` pins TypeScript 7, Vite 8, Effect 4,
+Vitest 5, Oxlint, and the `@types/*` packages; `pnpm-lock.yaml` pins their
+resolved versions. `pnpm run typecheck` runs TypeScript 7 (`tsc --noEmit`)
+against `tsconfig.json`, which enables every `strict`-family flag.
+`pnpm run test` runs the unit suite; `pnpm run test:browser` runs browser
+behavior tests with Vitest Browser Mode and the Playwright provider.
 
 The Rust adapter requires the `wasm32-unknown-unknown` target and
 matching `wasm-bindgen` CLI and Binaryen releases. When `wasm-bindgen` is

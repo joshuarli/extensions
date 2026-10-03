@@ -48,9 +48,9 @@ worker is bundled as an ES module. Keep those output formats distinct.
 
 ```text
 cd ..
-deno task dist
-deno task typecheck
-deno task test
+pnpm run dist
+pnpm run typecheck
+pnpm run test
 ```
 
 `../build/extension-allow-right-click/` and `../dist/extension-allow-right-click/`

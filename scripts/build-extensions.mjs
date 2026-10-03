@@ -21,7 +21,7 @@ function copyGeneratedFiles(extensionName, generatedFiles, outputDirectory) {
   for (const { source, destination } of generatedFiles ?? []) {
     if (!existsSync(source)) {
       throw new Error(
-        `Generated file for ${extensionName} is missing at ${source}. Run deno task build:wasm first.`,
+        `Generated file for ${extensionName} is missing at ${source}. Run pnpm run build:wasm first.`,
       );
     }
     cpSync(source, resolve(outputDirectory, destination));

@@ -34,7 +34,7 @@ service worker target whose URL ends with `/service-worker.js`.
 
 ```bash
 cd ..
-deno task dist   # production builds all extensions
+pnpm run dist   # production builds all extensions
 ```
 
 ## Actions

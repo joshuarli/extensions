@@ -1,0 +1,33 @@
+{
+  "name": "browser-extensions",
+  "private": true,
+  "packageManager": "pnpm@11.0.2",
+  "scripts": {
+    "build:wasm": "deno run --allow-env --allow-read --allow-write --allow-run --allow-sys=homedir scripts/build-defuddle-wasm.mjs",
+    "build:extensions": "deno run --allow-env --allow-read --allow-write --allow-ffi --allow-sys=homedir scripts/build-extensions.mjs",
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint --type-aware .",
+    "vitest": "vitest",
+    "build:browser-tests": "deno run --allow-env --allow-read --allow-write --allow-ffi scripts/build-browser-test-bundles.mjs",
+    "dev": "pnpm run build:wasm && deno run --allow-env --allow-read --allow-write --allow-ffi --allow-run scripts/build-extensions.mjs --watch",
+    "check": "pnpm run lint && pnpm run typecheck && pnpm run test",
+    "build": "pnpm run build:wasm && pnpm run typecheck && NODE_ENV=development pnpm run build:extensions",
+    "dist": "pnpm run build:wasm && pnpm run typecheck && NODE_ENV=production pnpm run build:extensions",
+    "reader-sample": "deno run --allow-env --allow-read --allow-write scripts/build-reader-sample-fixture.mjs",
+    "test": "pnpm run vitest run --project unit",
+    "test:browser": "pnpm run build:browser-tests && pnpm run vitest run --project browser"
+  },
+  "dependencies": {
+    "effect": "4.0.0"
+  },
+  "devDependencies": {
+    "@types/chrome": "0.2.2",
+    "@types/node": "26.6.2",
+    "@vitest/browser-playwright": "5.0.3",
+    "oxlint": "1.86.0",
+    "oxlint-tsgolint": "7.0.2003",
+    "typescript": "7.0.2",
+    "vite": "8.3.2",
+    "vitest": "5.0.3"
+  }
+}

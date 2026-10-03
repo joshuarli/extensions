@@ -1,19 +1,19 @@
 .PHONY: build dist test check lint install
 
 build:
-	deno task build
+	pnpm run build
 
 dist:
-	deno task dist
+	pnpm run dist
 
 test:
-	deno task test
+	pnpm run test
 
 check:
-	deno task check
+	pnpm run check
 
 lint:
-	deno task lint
+	pnpm run lint
 
 install: dist
 	@set -eu; \
