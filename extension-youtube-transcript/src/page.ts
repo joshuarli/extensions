@@ -48,7 +48,6 @@ async function waitFor<T>(
     if (result) {
       return result as Exclude<T, false | null | undefined>;
     }
-    // oxlint-disable-next-line no-await-in-loop
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
   return null;

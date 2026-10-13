@@ -1,16 +1,25 @@
 # Repository guide
 
-- Deno is used for its runtime APIs and to install the pinned pnpm CLI with
-  `deno task bootstrap`. pnpm owns JavaScript dependencies, scripts, and the
-  lockfile.
-- TypeScript 7 is the authoritative checker. Vite 8 builds the MV3 extensions;
-  Oxlint with `oxlint-tsgolint` handles linting.
-- Use Effect 4 for extension I/O, typed failures, and Schema validation at
-  network, storage, and message boundaries.
-- Keep extension UI in native TypeScript, DOM, and CSS. The pages and reader
-  overlay are small enough to use browser APIs directly.
-- Vitest 5 runs unit tests with `pnpm run test` and browser tests with
-  `pnpm run test:browser`. `pnpm run check` is the fast lint, typecheck, and
-  unit-test gate. `pnpm run dist` builds production extensions.
-- Do not run linters or pre-commit hooks; the user runs them independently.
-  Never push changes.
+This repository builds three Chromium Manifest V3 extensions with shared TypeScript and Vite tooling.
+
+## Commands
+
+- Bootstrap the pinned pnpm CLI: `deno task bootstrap`
+- Install dependencies: `pnpm install`
+- Check types and unit tests: `pnpm run check`
+- Build development or production bundles: `pnpm run build` or `pnpm run dist`
+- Run browser tests: `pnpm run test:browser`
+
+## Invariants
+
+- Service workers are ES modules; scripts injected into pages are classic bundles.
+- Keep extension UI in native TypeScript, DOM, and CSS.
+- Use Effect 4 for extension I/O and typed failures; use Schema at network, storage, and message boundaries.
+- Never push changes or run pre-commit hooks.
+
+## Topics
+
+- Shared setup, builds, and tests: [docs/development.md](docs/development.md)
+- Loupe architecture and constraints: [docs/loupe.md](docs/loupe.md)
+- Allow Right-Click architecture: [docs/allow-right-click.md](docs/allow-right-click.md)
+- YouTube user and message API: [extension-youtube-transcript/README.md](extension-youtube-transcript/README.md)

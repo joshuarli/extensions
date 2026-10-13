@@ -1,37 +1,23 @@
 # Browser extensions
 
-This repository contains the custom Chromium Manifest V3 extensions under one
-shared pnpm, Deno, TypeScript 7, Vite 8, and Oxlint setup.
+This repository contains three Chromium Manifest V3 extensions:
 
-Each extension follows the same package shape:
+- **Loupe** opens a clean reader view for the current page and can copy its content as HTML or Markdown.
+- **Allow Right-Click** toggles right-click, text selection, copy, paste, and drag support on the current tab.
+- **YouTube Transcript Copier** copies a video's transcript or SRT subtitles and supports a preferred transcript language. See the [YouTube user guide](extension-youtube-transcript/README.md).
 
-```text
-extension-*/
-├── src/       # manifest, service worker, UI, injected code, and assets
-└── test/      # package-local unit and browser tests
-```
+## Install
 
-Every extension names its background entrypoint `src/service-worker.ts` and
-builds it as `service-worker.js`. Runtime-specific injected scripts remain
-separate bundles where the browser requires classic scripts.
+Load the generated extension folders as unpacked extensions in a Chromium-based browser:
 
-Install the pinned pnpm CLI with Deno, then install the shared dependencies:
+1. Open chrome://extensions and enable Developer mode.
+2. Choose **Load unpacked** and select the generated folder for Loupe, Allow Right-Click, or YouTube Transcript Copier. Their folder names are `extension-loupe`, `extension-allow-right-click`, and `extension-youtube-transcript`.
+3. After replacing a folder's contents, reload that extension on the extensions page.
 
-```bash
-deno task bootstrap
-pnpm install
-```
+The generated folders are not checked into the repository; obtain a built folder from the person who supplied the extension.
 
-Use the root scripts for project tasks:
+## Use
 
-```bash
-pnpm run dev          # build Loupe's WASM bindings and watch extension sources
-pnpm run build        # build development extension bundles
-pnpm run dist         # build production extension bundles
-pnpm run test         # run unit tests
-pnpm run test:browser # run browser tests with Chromium
-pnpm run check        # run lint, typecheck, and unit tests
-```
-
-Use `make install` on macOS to open Helium's extensions page and build production
-bundles. Load the directories under `dist/` as unpacked extensions.
+- Click **Loupe** in the toolbar to show or hide the reader. Its menu provides HTML and Markdown copying and an Obsidian action.
+- Click **Allow Right-Click** to enable or disable it for the active tab.
+- On a YouTube video, click **YouTube Transcript Copier**, then choose **Copy Transcript** or **Copy SRT Subtitles**. Use Settings to choose a preferred transcript language.

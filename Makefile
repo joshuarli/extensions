@@ -1,4 +1,4 @@
-.PHONY: build dist test check lint install
+.PHONY: build dist test check install
 
 build:
 	pnpm run build
@@ -11,9 +11,6 @@ test:
 
 check:
 	pnpm run check
-
-lint:
-	pnpm run lint
 
 install: dist
 	@set -eu; \

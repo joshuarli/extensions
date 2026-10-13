@@ -1,15 +1,18 @@
-# YouTube Transcript
+# YouTube Transcript Copier
 
-An MV3 extension that copies the current YouTube video's transcript to the
-clipboard. Also exposes a programmatic `getTranscript` action for headless
-automation.
+Copies the current YouTube video's transcript as Markdown with video metadata in YAML frontmatter, or copies subtitles in SRT format.
 
-## Programmatic API
+For browser installation, follow the [repository README](../README.md).
 
-The extension declares `externally_connectable` on YouTube domains, so web
-pages can call `chrome.runtime.sendMessage` directly.
+## Use
 
-From a script injected via CDP (e.g., `tab.evaluate()` in shadowdriver):
+Open a YouTube video and click the extension icon. Choose **Copy Transcript** or **Copy SRT Subtitles**. In **Settings**, enter a preferred transcript language such as `en` or `zh-CN`; leave the field blank to use YouTube's default caption selection.
+
+## Message API
+
+Pages on `https://www.youtube.com`, `https://m.youtube.com`, or `https://youtube.com` can message the extension using its ID. `getTranscript` returns Markdown in the `transcript` field; `getSubtitle` returns SRT in the same field. Errors return an `error` field and may include `errorDetail`.
+
+A script injected through CDP can call the API like this:
 
 ```js
 (async () => {
@@ -17,30 +20,14 @@ From a script injected via CDP (e.g., `tab.evaluate()` in shadowdriver):
     chrome.runtime.sendMessage(EXTENSION_ID, { action: "getTranscript" }, (response) => {
       if (chrome.runtime.lastError) {
         reject(new Error(chrome.runtime.lastError.message));
-      } else if (response && response.error) {
-        reject(new Error(response.error));
+      } else if (!response || response.error) {
+        reject(new Error(response?.error || "No response from the extension."));
       } else {
-        resolve((response && response.transcript) || null);
+        resolve(response.transcript);
       }
     });
   });
 })();
 ```
 
-The extension ID can be discovered via CDP `Target.getTargets` — look for the
-service worker target whose URL ends with `/service-worker.js`.
-
-## Build
-
-```bash
-cd ..
-pnpm run dist   # production builds all extensions
-```
-
-## Actions
-
-| Action             | Source                      | Description                                               |
-| ------------------ | --------------------------- | --------------------------------------------------------- |
-| `copyTranscript`   | popup                       | Copies the transcript to clipboard                        |
-| `getTranscript`    | externally_connectable page | Returns the transcript text via `sendResponse`            |
-| `downloadFixtures` | popup (dev only)            | Downloads raw InnerTube response, transcript, caption XML |
+Use `{ action: "getSubtitle" }` to receive SRT instead. The extension ID can be found through CDP `Target.getTargets` by locating the service worker target whose URL ends with `/service-worker.js`.
