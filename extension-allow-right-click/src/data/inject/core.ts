@@ -3,7 +3,9 @@ window.pointers ??= {
   cache: new Map<ArcStylableElement, ArcCachedStyle>(),
   status: "",
   record: (element: ArcStylableElement, name: ArcStyleName, value: string): void => {
-    window.pointers.cache.set(element, { name, value });
+    if (!window.pointers.cache.has(element)) {
+      window.pointers.cache.set(element, { name, value });
+    }
   },
 };
 

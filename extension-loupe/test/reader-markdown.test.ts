@@ -27,7 +27,7 @@ test("adds reader metadata as YAML frontmatter", () => {
     `---
 title: "Part 1: AI, Rockets, and the Return of Hard Contracts | Essays"
 description: "What gets cheap when implementation is abundant, and what stays stubbornly expensive"
-date: "2026-07-11"
+date: "2026-07-12"
 author: "xjdr"
 url: "https://noumena.com/essays/the-engine-shop-part-1"
 domain: "noumena.com"

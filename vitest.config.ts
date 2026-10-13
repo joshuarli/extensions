@@ -16,7 +16,7 @@ export default defineConfig({
         extends: true,
         test: {
           name: "unit",
-          include: ["extension-*/test/**/*.test.ts"],
+          include: ["extension-*/test/**/*.test.ts", "scripts/**/*.test.ts"],
           exclude: ["**/*.browser.test.ts"],
           environment: "node",
         },

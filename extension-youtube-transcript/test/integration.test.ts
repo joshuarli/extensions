@@ -623,6 +623,8 @@ test("handleGetTranscript returns the transcript output string", async () => {
 
   assert.match(result, /^---\n/);
   assert.match(result, /\*\*0:00\*\* · Hello from API\./);
+  assert.deepEqual(deps.calls.progress, []);
+  assert.deepEqual(deps.calls.titles, []);
 });
 
 test("handleGetSubtitle returns the SRT output string", async () => {
@@ -633,6 +635,8 @@ test("handleGetSubtitle returns the SRT output string", async () => {
     );
 
   assert.match(result, /^1\n00:00:00,000 --> 00:00:05,000/);
+  assert.deepEqual(deps.calls.progress, []);
+  assert.deepEqual(deps.calls.titles, []);
 });
 
 test("handleGetTranscript throws when no transcript is available", async () => {
@@ -650,6 +654,25 @@ test("handleGetTranscript throws when no transcript is available", async () => {
     ),
     /No transcript found/,
   );
+  assert.deepEqual(deps.calls.progress, []);
+  assert.deepEqual(deps.calls.titles, []);
+});
+
+test("handleGetSubtitle failure does not leave page progress or title side effects", async () => {
+  const deps = dependencies({
+    fetchTranscript: () => Effect.succeed(undefined),
+    readPanel: async () => null,
+  });
+
+  await assert.rejects(
+    handleGetSubtitle(
+      { id: 17, url: "https://www.youtube.com/watch?v=abc123" } as unknown as chrome.tabs.Tab,
+      deps,
+    ),
+    /No transcript found/,
+  );
+  assert.deepEqual(deps.calls.progress, []);
+  assert.deepEqual(deps.calls.titles, []);
 });
 
 test("isYouTubeUrl accepts YouTube domains and rejects others", () => {

@@ -10,6 +10,7 @@ import { sanitizeDownloadFilename } from "./download-filename.ts";
 import { assertPageSnapshotWithinLimit } from "./page-snapshot.ts";
 import { serializeReaderUi } from "./reader-fixture.ts";
 import { createReaderMarkdownFromPage } from "./reader-markdown.ts";
+import { formatPublishedDate } from "./published-date.ts";
 import readerOverlayStyles from "./reader-overlay.css?raw";
 import readerOverlayMarkup from "./reader-overlay.html?raw";
 import {
@@ -33,6 +34,7 @@ let cachedPageUrl: string | undefined,
   readerMenuElement: HTMLDivElement | undefined,
   readerMenuToggleElement: HTMLButtonElement | undefined,
   readerOutlineNavigationElement: HTMLElement | undefined,
+  readerErrorPageUrl: string | undefined,
   readerStatusElement: HTMLElement | undefined,
   selectedExtractorName = "";
 const copyFeedbackTimeouts = new WeakMap<HTMLButtonElement, ReturnType<typeof setTimeout>>();
@@ -61,6 +63,15 @@ async function toggleReaderVisibility(): Promise<void> {
     setPageScrollLock(!readerHostElement.hidden);
     return;
   }
+  if (
+    readerHostElement &&
+    !readerHostElement.hidden &&
+    readerErrorPageUrl === document.URL
+  ) {
+    readerHostElement.hidden = true;
+    setPageScrollLock(false);
+    return;
+  }
   await loadReaderContent();
 }
 
@@ -75,8 +86,12 @@ async function loadReaderContent(): Promise<void> {
   setPageScrollLock(true);
 
   try {
-    const requestedExtractorName = selectedExtractorName,
+    const requestedPageUrl = document.URL,
+      requestedExtractorName = selectedExtractorName,
       parsePageResponse = await requestParsedPage();
+    if (document.URL !== requestedPageUrl) {
+      throw new Error("The page changed while Loupe was reading it. Try again.");
+    }
     if (!parsePageResponse.ok || !parsePageResponse.parsedPage) {
       throw new Error(parsePageResponse.error || "Loupe could not extract readable content.");
     }
@@ -85,6 +100,7 @@ async function loadReaderContent(): Promise<void> {
     }
     cachedParsedPage = parsePageResponse.parsedPage;
     cachedPageUrl = document.URL;
+    readerErrorPageUrl = undefined;
     if (!requestedExtractorName) {
       selectedExtractorName = cachedParsedPage.extractor_type ?? "";
       syncSelectedExtractorName();
@@ -93,6 +109,8 @@ async function loadReaderContent(): Promise<void> {
   } catch (error) {
     cachedParsedPage = undefined;
     cachedPageUrl = undefined;
+    readerErrorPageUrl = document.URL;
+    setPageScrollLock(false);
     logLoupeError("Loupe could not load the page", error, { pageUrl: document.URL });
     renderReaderError(getErrorMessage(error));
   } finally {
@@ -327,14 +345,15 @@ interface ReaderOutlineItem {
 }
 
 function buildReaderOutlineItems(headings: HTMLHeadingElement[]): ReaderOutlineItem[] {
-  const outlineItems: ReaderOutlineItem[] = [];
+  const outlineItems: ReaderOutlineItem[] = [],
+    headingIds = new Set<string>();
 
   for (const heading of headings) {
     const level = Math.trunc(Number(heading.tagName.charAt(1)));
     if (level === 1) continue;
 
     let headingId = heading.id;
-    if (!headingId || outlineItems.some((item) => item.headingId === headingId)) {
+    if (!headingId || headingIds.has(headingId)) {
       const base =
         heading.textContent
           ?.trim()
@@ -343,12 +362,13 @@ function buildReaderOutlineItems(headings: HTMLHeadingElement[]): ReaderOutlineI
           .replaceAll(/^-|-$/g, "") || "heading";
       headingId = base;
       let suffix = 0;
-      while (outlineItems.some((item) => item.headingId === headingId)) {
+      while (headingIds.has(headingId)) {
         suffix++;
         headingId = `${base}-${suffix}`;
       }
       heading.id = headingId;
     }
+    headingIds.add(headingId);
     outlineItems.push({
       headingId,
       headingLabel: heading.textContent?.trim() || "",
@@ -479,16 +499,6 @@ function renderParsedReaderContent(parsedPage: LoupeParsedPage): void {
     outlineItems = buildReaderOutlineItems([...readerHeadings]);
   renderReaderOutline(outlineItems);
   observeReaderHeadingVisibility([...readerHeadings]);
-}
-
-function formatPublishedDate(isoDate: string): string {
-  const publishedDate = new Date(isoDate);
-  if (isNaN(publishedDate.getTime())) return "";
-  return publishedDate.toLocaleDateString("en-US", {
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-  });
 }
 
 function renderReaderError(errorMessage: string): void {

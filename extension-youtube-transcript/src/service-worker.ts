@@ -40,13 +40,18 @@ import {
 async function resolveTranscriptForTab(
   tab: chrome.tabs.Tab,
   deps: BackgroundDependencies,
+  presentation: "interactive" | "silent",
 ): Promise<ResolveTranscriptOutput> {
   const videoId = requireYouTubeVideo(tab);
-  await deps.progress(tab.id!, "Reading YouTube page…");
-  await deps.setTitle(tab.id!, "Fetching transcript…");
+  if (presentation === "interactive") {
+    await deps.progress(tab.id!, "Reading YouTube page…");
+    await deps.setTitle(tab.id!, "Fetching transcript…");
+  }
 
   const pageData = await loadPageData(tab.id!, deps);
-  await deps.progress(tab.id!, "Fetching transcript…");
+  if (presentation === "interactive") {
+    await deps.progress(tab.id!, "Fetching transcript…");
+  }
   const preferredLanguage = await loadPreferredLanguage(deps);
   return Effect.runPromise(resolveTranscript({
     fetchTranscript: (chapters) =>
@@ -64,7 +69,7 @@ export async function handleActionClick(
 ): Promise<ResolveTranscriptOutput> {
   const deps = { ...defaultDependencies(), ...overrides };
   try {
-    const result = await resolveTranscriptForTab(tab, deps);
+    const result = await resolveTranscriptForTab(tab, deps, "interactive");
     await deps.progress(tab.id!, "Copying transcript…");
     await deps.copy(tab.id!, buildMarkdown(result.metadata, result.transcript.text));
     await deps.setTitle(tab.id!, "Transcript copied");
@@ -92,7 +97,7 @@ export async function handleActionClickSrt(
 ): Promise<ResolveTranscriptOutput> {
   const deps = { ...defaultDependencies(), ...overrides };
   try {
-    const result = await resolveTranscriptForTab(tab, deps);
+    const result = await resolveTranscriptForTab(tab, deps, "interactive");
     await deps.progress(tab.id!, "Copying SRT subtitles…");
     await deps.copy(tab.id!, result.transcript.srt);
     await deps.setTitle(tab.id!, "SRT subtitles copied");
@@ -119,7 +124,7 @@ export async function handleGetTranscript(
   overrides: Partial<BackgroundDependencies> = {},
 ): Promise<string> {
   const deps = { ...defaultDependencies(), ...overrides },
-    result = await resolveTranscriptForTab(tab, deps);
+    result = await resolveTranscriptForTab(tab, deps, "silent");
   return buildMarkdown(result.metadata, result.transcript.text);
 }
 
@@ -128,7 +133,7 @@ export async function handleGetSubtitle(
   overrides: Partial<BackgroundDependencies> = {},
 ): Promise<string> {
   const deps = { ...defaultDependencies(), ...overrides },
-    result = await resolveTranscriptForTab(tab, deps);
+    result = await resolveTranscriptForTab(tab, deps, "silent");
   return result.transcript.srt;
 }
 
@@ -416,8 +421,12 @@ export function getVideoId(url: string): string {
 }
 
 if (typeof chrome !== "undefined") {
-  chrome.runtime.onMessage.addListener(handleMessage);
-  chrome.runtime.onMessageExternal.addListener(handleMessage);
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) =>
+    handleMessage(message, sender, sendResponse, "internal"),
+  );
+  chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) =>
+    handleMessage(message, sender, sendResponse, "external"),
+  );
   chrome.tabs.onRemoved.addListener(() => clearResponseCache());
   chrome.tabs.onUpdated.addListener((_tabId, changeInfo) => {
     if (changeInfo.url || changeInfo.status === "loading") {
@@ -426,20 +435,44 @@ if (typeof chrome !== "undefined") {
   });
 }
 
+type MessageSource = "internal" | "external";
+
+export async function resolveMessageTab(
+  request: ExtensionMessage,
+  sender: chrome.runtime.MessageSender,
+  source: MessageSource,
+  getTab: (tabId: number) => Promise<chrome.tabs.Tab> = (tabId) => chrome.tabs.get(tabId),
+): Promise<chrome.tabs.Tab | undefined> {
+  if (source === "external") {
+    const senderTabId = sender.tab?.id;
+    if (senderTabId === undefined) {
+      throw new TabNotAccessibleError("External requests must come from a browser tab.");
+    }
+    if (request.tabId !== undefined && request.tabId !== senderTabId) {
+      throw new TabNotAccessibleError("External requests can only access the sending tab.");
+    }
+    return sender.tab;
+  }
+  return request.tabId === undefined ? sender.tab : await getTab(request.tabId);
+}
+
 function handleMessage(
   message: unknown,
-  _sender: chrome.runtime.MessageSender,
+  sender: chrome.runtime.MessageSender,
   sendResponse: (response: unknown) => void,
+  source: MessageSource,
 ): true {
   void (async () => {
     let request: ExtensionMessage | undefined;
+    let targetTabId: number | undefined;
     try {
       request = Schema.decodeUnknownSync(ExtensionMessageSchema)(message);
       console.log("YouTube Transcript: received action", request.action);
-      const tab = request.tabId === undefined ? _sender.tab : await chrome.tabs.get(request.tabId);
+      const tab = await resolveMessageTab(request, sender, source);
       if (!tab) {
         throw new TabNotAccessibleError("Tab not found.");
       }
+      targetTabId = tab.id;
 
       let result: ExtensionResponse;
       switch (request.action) {
@@ -476,9 +509,13 @@ function handleMessage(
       sendResponse(Schema.decodeUnknownSync(ExtensionResponseSchema)(result));
     } catch (error) {
       console.error("YouTube Transcript background error:", error);
-      if (request?.tabId !== undefined) {
+      if (
+        targetTabId !== undefined &&
+        request?.action !== "getTranscript" &&
+        request?.action !== "getSubtitle"
+      ) {
         await sendProgress(
-          request.tabId,
+          targetTabId,
           `Failed: ${(error as Error).message || "Unknown error."}`,
           true,
         );

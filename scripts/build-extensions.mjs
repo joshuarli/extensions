@@ -2,6 +2,7 @@ import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node
 import { relative, resolve } from "node:path";
 import { build } from "vite";
 import { createExtensionBuildConfigs, extensionDefinitions } from "../vite.config.ts";
+import { createRebuildQueue } from "./rebuild-queue.ts";
 
 function copyStaticSource(sourceDirectory, outputDirectory) {
   cpSync(sourceDirectory, outputDirectory, {
@@ -63,8 +64,10 @@ if (process.argv.includes("--watch")) {
   const sourceDirectories = definitions.map(([, extension]) => extension.sourceDirectory),
     watcher = Deno.watchFs(sourceDirectories, { recursive: true });
   let pendingExtensions = new Set(),
-    rebuildTimer,
-    rebuildQueue = Promise.resolve();
+    rebuildTimer;
+  const enqueueRebuild = createRebuildQueue((error) => {
+    console.error("Failed to rebuild extensions:", error);
+  });
 
   for await (const event of watcher) {
     for (const changedPath of event.paths) {
@@ -77,7 +80,7 @@ if (process.argv.includes("--watch")) {
     rebuildTimer = setTimeout(() => {
       const extensionsToRebuild = [...pendingExtensions];
       pendingExtensions = new Set();
-      rebuildQueue = rebuildQueue.then(async () => {
+      enqueueRebuild(async () => {
         for (const extensionName of extensionsToRebuild) {
           const extension = extensionDefinitions[extensionName];
           await buildExtension(

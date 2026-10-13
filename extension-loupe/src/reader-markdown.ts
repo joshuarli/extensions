@@ -1,4 +1,5 @@
 import type { LoupeParsedPage } from "./extension-messages.ts";
+import { formatFrontmatterDate } from "./published-date.ts";
 
 export interface ReaderMarkdownMetadata {
   title: string;
@@ -47,16 +48,4 @@ export function createReaderMarkdownFromPage(
     domain: parsedPage.domain,
     pageUrl,
   });
-}
-
-function formatFrontmatterDate(published: string): string {
-  const publishedDate = new Date(published);
-  if (isNaN(publishedDate.getTime())) {
-    return published;
-  }
-
-  const year = publishedDate.toLocaleDateString("en-US", { year: "numeric" }),
-    month = publishedDate.toLocaleDateString("en-US", { month: "2-digit" }),
-    day = publishedDate.toLocaleDateString("en-US", { day: "2-digit" });
-  return `${year}-${month}-${day}`;
 }

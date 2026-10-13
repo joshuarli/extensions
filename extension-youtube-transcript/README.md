@@ -10,7 +10,7 @@ Open a YouTube video and click the extension icon. Choose **Copy Transcript** or
 
 ## Message API
 
-Pages on `https://www.youtube.com`, `https://m.youtube.com`, or `https://youtube.com` can message the extension using its ID. `getTranscript` returns Markdown in the `transcript` field; `getSubtitle` returns SRT in the same field. Errors return an `error` field and may include `errorDetail`.
+Pages on `https://www.youtube.com`, `https://m.youtube.com`, or `https://youtube.com` can message the extension using its ID. External requests are bound to the sending browser tab: omit `tabId`, or provide the sending tab's ID. A request cannot read a transcript from another tab. `getTranscript` returns Markdown in the `transcript` field; `getSubtitle` returns SRT in the same field. Errors return an `error` field and may include `errorDetail`.
 
 A script injected through CDP can call the API like this:
 
