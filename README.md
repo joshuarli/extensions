@@ -18,6 +18,6 @@ The generated folders are not checked into the repository; obtain a built folder
 
 ## Use
 
-- Click **Loupe** in the toolbar to show or hide the reader. Its menu provides HTML and Markdown copying and an Obsidian action.
+- Click **Loupe** in the toolbar to show or hide the reader. Its menu provides HTML and Markdown copying, an Obsidian action, and **Send to Tansu**. Set the Tansu URL in Loupe's options; the Command+Shift+S (Ctrl+Shift+S elsewhere) shortcut sends the current page without opening the reader.
 - Click **Allow Right-Click** to enable or disable it for the active tab.
 - On a YouTube video, click **YouTube Transcript Copier**, then choose **Copy Transcript** or **Copy SRT Subtitles**. Use Settings to choose a preferred transcript language.

@@ -18,6 +18,8 @@ test("extension bundle formats match browser loading contracts", () => {
     [
       { entryFileName: "service-worker.js", format: "es" },
       { entryFileName: "content.js", format: "iife" },
+      { entryFileName: "tansu-import-page.js", format: "iife" },
+      { entryFileName: "[name].js", format: "es" },
     ],
   );
 });

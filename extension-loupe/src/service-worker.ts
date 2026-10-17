@@ -1,4 +1,5 @@
 import type {
+  ContentScriptMessage,
   DownloadReaderFixturesRequest,
   DownloadReaderFixturesResponse,
   ListExtractorsResponse,
@@ -8,6 +9,7 @@ import type {
 } from "./extension-messages.ts";
 import { getErrorMessage, logLoupeError } from "./error-logging.ts";
 import { sanitizeDownloadFilename } from "./download-filename.ts";
+import { runFocusTansuTab, runSendToTansu } from "./tansu-send.ts";
 import { listWasmExtractors, parsePageWithWasm } from "./defuddle-wasm-client.ts";
 
 chrome.action.onClicked.addListener(async (tab) => {
@@ -16,12 +18,29 @@ chrome.action.onClicked.addListener(async (tab) => {
   }
 
   try {
-    await sendReaderToggleToContentScript(tab.id, tab.url);
+    await sendMessageToContentScript(tab.id, tab.url, { action: "toggle" });
   } catch (error) {
     logLoupeError("Loupe could not access the current tab", error, {
       tabId: tab.id,
       tabUrl: tab.url,
     });
+    await chrome.action.setTitle({ tabId: tab.id, title: "Loupe is unavailable on this page" });
+  }
+});
+
+chrome.commands.onCommand.addListener(async (command, tab) => {
+  if (command !== "send-to-tansu" || !tab?.id) {
+    return;
+  }
+
+  try {
+    await sendMessageToContentScript(tab.id, tab.url, { action: "sendPageToTansu" });
+  } catch (error) {
+    logLoupeError("Loupe could not send the page to Tansu", error, {
+      tabId: tab.id,
+      tabUrl: tab.url,
+    });
+    await chrome.action.setBadgeText({ tabId: tab.id, text: "!" });
     await chrome.action.setTitle({ tabId: tab.id, title: "Loupe is unavailable on this page" });
   }
 });
@@ -48,6 +67,21 @@ chrome.runtime.onMessage.addListener((request: ServiceWorkerRequest, sender, sen
           error: getErrorMessage(error),
         } satisfies DownloadReaderFixturesResponse);
       });
+    return true;
+  }
+
+  if (request.action === "sendToTansu") {
+    void runSendToTansu(request).then(sendResponse);
+    return true;
+  }
+
+  if (request.action === "openTansuTab") {
+    void runFocusTansuTab().then(sendResponse);
+    return true;
+  }
+
+  if (request.action === "openOptions") {
+    void chrome.runtime.openOptionsPage().then(() => sendResponse({ ok: true }));
     return true;
   }
 
@@ -142,9 +176,13 @@ async function downloadReaderFixtureBundle(
   }
 }
 
-async function sendReaderToggleToContentScript(tabId: number, tabUrl?: string): Promise<void> {
+async function sendMessageToContentScript(
+  tabId: number,
+  tabUrl: string | undefined,
+  message: ContentScriptMessage,
+): Promise<void> {
   try {
-    await chrome.tabs.sendMessage(tabId, { action: "toggle" });
+    await chrome.tabs.sendMessage(tabId, message);
     return;
   } catch {
     // The content script is injected on demand, so a missing receiver is expected here.
@@ -156,18 +194,18 @@ async function sendReaderToggleToContentScript(tabId: number, tabUrl?: string): 
     logLoupeError("Loupe could not inject the content script", error, {
       tabId,
       tabUrl,
-      action: "toggle",
+      action: message.action,
     });
     throw error;
   }
 
   try {
-    await chrome.tabs.sendMessage(tabId, { action: "toggle" });
+    await chrome.tabs.sendMessage(tabId, message);
   } catch (error) {
     logLoupeError("Loupe could not reach the injected content script", error, {
       tabId,
       tabUrl,
-      action: "toggle",
+      action: message.action,
     });
     throw error;
   }

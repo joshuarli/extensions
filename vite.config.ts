@@ -77,6 +77,20 @@ const allowRightClickInjectedEntries = [
           target: "chrome150",
           emptyOutDir: false,
         },
+        {
+          input: sourcePath("extension-loupe", "tansu-import-page.ts"),
+          entryFileName: "tansu-import-page.js",
+          format: "iife",
+          target: "chrome150",
+          emptyOutDir: false,
+        },
+        {
+          input: { options: sourcePath("extension-loupe", "options.html") },
+          entryFileName: "[name].js",
+          format: "es",
+          target: "chrome150",
+          emptyOutDir: false,
+        },
       ],
       [
         {

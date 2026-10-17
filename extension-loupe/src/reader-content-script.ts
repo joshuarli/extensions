@@ -2,9 +2,12 @@ import type {
   DownloadReaderFixturesResponse,
   ListExtractorsResponse,
   LoupeParsedPage,
+  ContentScriptMessage,
   ParsePageResponse,
-  ToggleReaderMessage,
 } from "./extension-messages.ts";
+import type { SendToTansuResponse } from "./tansu-schemas.ts";
+import { describeTansuResponse, type TansuStatus } from "./tansu-status.ts";
+import { createPageToast } from "./page-toast.ts";
 import { getErrorMessage, logLoupeError } from "./error-logging.ts";
 import { sanitizeDownloadFilename } from "./download-filename.ts";
 import { assertPageSnapshotWithinLimit } from "./page-snapshot.ts";
@@ -42,9 +45,15 @@ let activeReaderHeadingId: string | undefined,
   readerStatusClearTimeout: ReturnType<typeof setTimeout> | undefined;
 const intersectingReaderHeadingIds = new Set<string>();
 
-chrome.runtime.onMessage.addListener((message: ToggleReaderMessage) => {
+chrome.runtime.onMessage.addListener((message: ContentScriptMessage) => {
   if (message.action === "toggle") {
     void toggleReaderVisibility();
+  } else if (message.action === "sendPageToTansu") {
+    const toast = createPageToast();
+    void sendPageToTansu(
+      (status) => toast.show(status.text, toastAction(status), status.action ? 10_000 : 4_000),
+      true,
+    );
   }
 });
 
@@ -86,19 +95,8 @@ async function loadReaderContent(): Promise<void> {
   setPageScrollLock(true);
 
   try {
-    const requestedPageUrl = document.URL,
-      requestedExtractorName = selectedExtractorName,
-      parsePageResponse = await requestParsedPage();
-    if (document.URL !== requestedPageUrl) {
-      throw new Error("The page changed while Loupe was reading it. Try again.");
-    }
-    if (!parsePageResponse.ok || !parsePageResponse.parsedPage) {
-      throw new Error(parsePageResponse.error || "Loupe could not extract readable content.");
-    }
-    if (!parsePageResponse.parsedPage.content.trim()) {
-      throw new Error("Loupe could not find readable content on this page.");
-    }
-    cachedParsedPage = parsePageResponse.parsedPage;
+    const requestedExtractorName = selectedExtractorName;
+    cachedParsedPage = await requestValidatedParsedPage();
     cachedPageUrl = document.URL;
     readerErrorPageUrl = undefined;
     if (!requestedExtractorName) {
@@ -117,6 +115,31 @@ async function loadReaderContent(): Promise<void> {
     readerContentLoadInProgress = false;
     readerContainerElement!.classList.remove("loupe-reader-busy");
   }
+}
+
+async function requestValidatedParsedPage(): Promise<LoupeParsedPage> {
+  const requestedPageUrl = document.URL,
+    parsePageResponse = await requestParsedPage();
+  if (document.URL !== requestedPageUrl) {
+    throw new Error("The page changed while Loupe was reading it. Try again.");
+  }
+  if (!parsePageResponse.ok || !parsePageResponse.parsedPage) {
+    throw new Error(parsePageResponse.error || "Loupe could not extract readable content.");
+  }
+  if (!parsePageResponse.parsedPage.content.trim()) {
+    throw new Error("Loupe could not find readable content on this page.");
+  }
+  return parsePageResponse.parsedPage;
+}
+
+async function ensureParsedPage(): Promise<LoupeParsedPage> {
+  if (cachedParsedPage && cachedPageUrl === document.URL) {
+    return cachedParsedPage;
+  }
+  const parsedPage = await requestValidatedParsedPage();
+  cachedParsedPage = parsedPage;
+  cachedPageUrl = document.URL;
+  return parsedPage;
 }
 
 function invalidateCachedReaderPage(): void {
@@ -188,6 +211,11 @@ function ensureReaderOverlay(): void {
   readerMenuToggleElement.addEventListener("click", () => {
     setReaderMenuOpen(Boolean(readerMenuElement!.hidden));
   });
+  readerShadowRoot
+    .querySelector<HTMLButtonElement>('[data-action="tansu"]')!
+    .addEventListener("click", () => {
+      void sendPageToTansu(showReaderTansuStatus, false);
+    });
   readerShadowRoot
     .querySelector<HTMLButtonElement>('[data-action="obsidian"]')!
     .addEventListener("click", () => {
@@ -536,8 +564,9 @@ function showReaderCopySuccess(copyButton: HTMLButtonElement): void {
   );
 }
 
-function setReaderStatusMessage(statusMessage: string): void {
+function setReaderStatusMessage(statusMessage: string, durationMs = 3000): void {
   if (!readerStatusElement) return;
+  readerStatusActionElement(readerStatusElement).hidden = true;
   if (readerStatusClearTimeout !== undefined) {
     clearTimeout(readerStatusClearTimeout);
   }
@@ -545,8 +574,9 @@ function setReaderStatusMessage(statusMessage: string): void {
   if (statusMessage) {
     readerStatusClearTimeout = setTimeout(() => {
       readerStatusElement!.textContent = "";
+      readerStatusActionElement(readerStatusElement!).hidden = true;
       readerStatusClearTimeout = undefined;
-    }, 3000);
+    }, durationMs);
   } else {
     readerStatusClearTimeout = undefined;
   }
@@ -618,6 +648,68 @@ async function openReaderMarkdownInObsidian(
   } catch (error) {
     logLoupeError("Loupe could not open Obsidian", error);
     window.location.href = obsidianUri;
+  }
+}
+
+function readerStatusActionElement(statusElement: HTMLElement): HTMLButtonElement {
+  return statusElement.parentElement!.querySelector<HTMLButtonElement>(
+    '[data-action="status-action"]',
+  )!;
+}
+
+function runTansuStatusAction(kind: "open-note" | "open-options"): void {
+  void chrome.runtime
+    .sendMessage({ action: kind === "open-note" ? "openTansuTab" : "openOptions" })
+    .catch((error: unknown) => logLoupeError("Loupe could not open Tansu", error, { kind }));
+}
+
+function toastAction(status: TansuStatus): { label: string; run: () => void } | undefined {
+  const action = status.action;
+  return action ? { label: action.label, run: () => runTansuStatusAction(action.kind) } : undefined;
+}
+
+function showReaderTansuStatus(status: TansuStatus): void {
+  setReaderStatusMessage(status.text, status.action ? 10_000 : 3000);
+  const action = status.action;
+  if (!action || !readerStatusElement) return;
+  const button = readerStatusActionElement(readerStatusElement);
+  button.textContent = action.label;
+  button.hidden = false;
+  button.onclick = () => runTansuStatusAction(action.kind);
+}
+
+let tansuSendInProgress = false;
+
+async function sendPageToTansu(
+  report: (status: TansuStatus) => void,
+  openOptionsWhenUnconfigured: boolean,
+): Promise<void> {
+  if (tansuSendInProgress) {
+    return;
+  }
+  tansuSendInProgress = true;
+  report({ text: "Sending to Tansu…" });
+  try {
+    const parsedPage = await ensureParsedPage(),
+      markdown = getReaderMarkdown(),
+      response = (await chrome.runtime.sendMessage({
+        action: "sendToTansu",
+        title: parsedPage.title || document.title || document.URL,
+        markdown,
+        sourceUrl: document.URL,
+      })) as SendToTansuResponse | undefined;
+    if (!response) {
+      throw new Error("No response from the service worker.");
+    }
+    report(describeTansuResponse(response));
+    if (!response.ok && response.reason === "not-configured" && openOptionsWhenUnconfigured) {
+      runTansuStatusAction("open-options");
+    }
+  } catch (error) {
+    logLoupeError("Loupe could not send to Tansu", error);
+    report({ text: `Could not send to Tansu: ${getErrorMessage(error)}` });
+  } finally {
+    tansuSendInProgress = false;
   }
 }
 
