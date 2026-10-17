@@ -10,6 +10,30 @@ export const IMAGE_ACCEPT_HEADER =
 export const IMAGE_USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36";
 
+function imageResourceUrl(url: string): string {
+  const parsed = new URL(url);
+  if (parsed.hostname !== "substackcdn.com" || !parsed.pathname.startsWith("/image/fetch/")) {
+    return parsed.href;
+  }
+  try {
+    const source = new URL(
+      decodeURIComponent(parsed.pathname.slice(parsed.pathname.lastIndexOf("/") + 1)),
+    );
+    return source.protocol === "http:" || source.protocol === "https:" ? source.href : parsed.href;
+  } catch {
+    return parsed.href;
+  }
+}
+
+function linkedImageTargetsSameResource(
+  linkDestination: string,
+  imageUrl: string,
+  sourceUrl: string,
+): boolean {
+  const linkedUrl = resolveLoupeImageUrl(linkDestination, sourceUrl);
+  return linkedUrl !== null && imageResourceUrl(linkedUrl) === imageResourceUrl(imageUrl);
+}
+
 export interface ExponentialBackoffOptions {
   attempts: number;
   initialDelayMs: number;
@@ -44,6 +68,10 @@ export function planTansuImages(markdown: string, sourceUrl: string): PlannedTan
     if (resolvedUrl === null) {
       continue;
     }
+    const replacementRange = occurrence.linkedImage !== undefined &&
+        linkedImageTargetsSameResource(occurrence.linkedImage.destination, resolvedUrl, sourceUrl)
+      ? occurrence.linkedImage
+      : occurrence;
     let id = idByUrl.get(resolvedUrl);
     if (id === undefined) {
       id = urls.length;
@@ -51,8 +79,8 @@ export function planTansuImages(markdown: string, sourceUrl: string): PlannedTan
       idByUrl.set(resolvedUrl, id);
     }
     replacements.push({
-      start: occurrence.start,
-      end: occurrence.end,
+      start: replacementRange.start,
+      end: replacementRange.end,
       text: `![${occurrence.alt}](${TANSU_IMAGE_PLACEHOLDER_SCHEME}${id})`,
     });
   }

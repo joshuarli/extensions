@@ -3,6 +3,11 @@ export interface LoupeImageOccurrence {
   destination: string;
   start: number;
   end: number;
+  linkedImage?: {
+    destination: string;
+    start: number;
+    end: number;
+  };
 }
 
 interface CodeRange {
@@ -244,12 +249,35 @@ function parseImageAt(markdown: string, bangIndex: number): LoupeImageOccurrence
   if (parsed === null) {
     return null;
   }
+  const linkedImage = parseEnclosingImageLink(markdown, bangIndex, parsed.end);
   return {
     alt: markdown.slice(bangIndex + 2, j),
     destination: parsed.destination,
     start: bangIndex,
     end: parsed.end,
+    ...(linkedImage === null ? {} : { linkedImage }),
   };
+}
+
+function parseEnclosingImageLink(
+  markdown: string,
+  imageStart: number,
+  imageEnd: number,
+): NonNullable<LoupeImageOccurrence["linkedImage"]> | null {
+  const linkStart = imageStart - 1;
+  if (
+    linkStart < 0 ||
+    markdown[linkStart] !== "[" ||
+    isMarkdownEscaped(markdown, linkStart) ||
+    markdown[imageEnd] !== "]" ||
+    markdown[imageEnd + 1] !== "("
+  ) {
+    return null;
+  }
+  const parsed = parseLinkDestination(markdown, imageEnd + 2);
+  return parsed === null
+    ? null
+    : { destination: parsed.destination, start: linkStart, end: parsed.end };
 }
 
 function isMarkdownEscaped(markdown: string, index: number): boolean {

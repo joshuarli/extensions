@@ -17,6 +17,10 @@ import {
 } from "../src/tansu-import.ts";
 
 const SOURCE = "https://example.com/articles/hello",
+  SUBSTACK_IMAGE_DISPLAY_URL =
+    "https://substackcdn.com/image/fetch/$s_!3fbT!,w_1456,c_limit,f_auto,q_auto:good,fl_progressive:steep/https%3A%2F%2Fsubstack-post-media.s3.amazonaws.com%2Fpublic%2Fimages%2F4d386d33-e530-49fd-9619-a8d72cbbc10d_1049x655.png",
+  SUBSTACK_IMAGE_LINK_URL =
+    "https://substackcdn.com/image/fetch/$s_!3fbT!,f_auto,q_auto:good,fl_progressive:steep/https%3A%2F%2Fsubstack-post-media.s3.amazonaws.com%2Fpublic%2Fimages%2F4d386d33-e530-49fd-9619-a8d72cbbc10d_1049x655.png",
   noSleep = { attempts: 3, initialDelayMs: 1, maxDelayMs: 2, sleep: async () => {} };
 
 function imageResponse(
@@ -37,6 +41,28 @@ test("rewrites every standard embed to a placeholder token and deduplicates URLs
   assert.equal(
     planned.markdown,
     "![a](tansu-import-image:0) text ![b](tansu-import-image:0)\n\n![c](tansu-import-image:1)",
+  );
+});
+
+test("unwraps Substack links that point to the same image", () => {
+  const planned = planTansuImages(
+    `[![](${SUBSTACK_IMAGE_DISPLAY_URL})](${SUBSTACK_IMAGE_LINK_URL})`,
+    SOURCE,
+  );
+
+  assert.deepEqual(planned.urls, [SUBSTACK_IMAGE_DISPLAY_URL]);
+  assert.equal(planned.markdown, "![](tansu-import-image:0)");
+});
+
+test("preserves links around images when they point elsewhere", () => {
+  const planned = planTansuImages(
+    `[![report](${SUBSTACK_IMAGE_DISPLAY_URL})](https://example.com/report)`,
+    SOURCE,
+  );
+
+  assert.equal(
+    planned.markdown,
+    `[![report](tansu-import-image:0)](https://example.com/report)`,
   );
 });
 
