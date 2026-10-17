@@ -4,11 +4,11 @@
   "packageManager": "pnpm@11.0.2",
   "scripts": {
     "build:wasm": "deno run --allow-env --allow-read --allow-write --allow-run --allow-sys=homedir scripts/build-defuddle-wasm.mjs",
-    "build:extensions": "deno run --allow-env --allow-read --allow-write --allow-ffi --allow-sys=homedir scripts/build-extensions.mjs",
+    "build:extensions": "deno run --allow-env --allow-read --allow-write --allow-ffi --allow-sys=homedir,uid scripts/build-extensions.mjs",
     "typecheck": "tsc --noEmit",
     "vitest": "vitest",
     "build:browser-tests": "deno run --allow-env --allow-read --allow-write --allow-ffi scripts/build-browser-test-bundles.mjs",
-    "dev": "pnpm run build:wasm && deno run --allow-env --allow-read --allow-write --allow-ffi --allow-run scripts/build-extensions.mjs --watch",
+    "dev": "pnpm run build:wasm && deno run --allow-env --allow-read --allow-write --allow-ffi --allow-run --allow-sys=homedir,uid scripts/build-extensions.mjs --watch",
     "check": "pnpm run typecheck && pnpm run test",
     "build": "pnpm run build:wasm && pnpm run typecheck && NODE_ENV=development pnpm run build:extensions",
     "dist": "pnpm run build:wasm && pnpm run typecheck && NODE_ENV=production pnpm run build:extensions",

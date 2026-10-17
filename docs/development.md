@@ -25,6 +25,17 @@ The shared package pins TypeScript 7, Vite 8, Effect 4, and Vitest 5. TypeScript
 
 ## Loupe WASM build
 
-The default Rust checkout is `../defuddle-rs`. Set `DEFUDDLE_RS_DIR` to use a different location. The build adds the `wasm32-unknown-unknown` target with rustup when needed and requires a `wasm-bindgen` CLI matching the sibling checkout's lockfile plus Binaryen's `wasm-opt`. If needed, it installs the matching CLI with Cargo and, on macOS with Homebrew, Binaryen. It runs `wasm-opt -Oz --strip-debug`. Set `WASM_BINDGEN` or `WASM_OPT` to select executable paths.
+The default Rust checkout is `../defuddle-rs`. Set `DEFUDDLE_RS_DIR` to use a different location.
+
+The `defuddle` crate declares `rustybench` as a local development dependency, so Cargo requires that checkout for the WASM build. For the default checkout, clone revision `56a0611` beside `defuddle-rs`:
+
+```sh
+git clone https://github.com/joshuarli/rustybench.git ../rustybench
+git -C ../rustybench checkout 56a0611
+```
+
+If `DEFUDDLE_RS_DIR` points elsewhere, place the `rustybench` checkout beside that directory.
+
+The build adds the `wasm32-unknown-unknown` target with rustup when needed. It requires a `wasm-bindgen` CLI that matches the sibling checkout's lockfile and Binaryen's `wasm-opt`. If needed, the build installs the matching CLI with Cargo and installs Binaryen with Homebrew on macOS. It runs `wasm-opt -Oz --strip-debug`. Set `WASM_BINDGEN` or `WASM_OPT` to select executable paths.
 
 To validate the Rust checkout, run `cargo test --workspace` and `cargo check --workspace --target wasm32-unknown-unknown` from that checkout.
