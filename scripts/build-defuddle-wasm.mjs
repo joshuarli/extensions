@@ -144,7 +144,6 @@ execFileSync(
     "defuddle-wasm",
     "--target",
     "wasm32-unknown-unknown",
-    "--locked",
   ],
   {
     cwd: defuddleRepositoryRoot,
