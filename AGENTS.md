@@ -20,6 +20,5 @@ This repository builds three Chromium Manifest V3 extensions with shared TypeScr
 ## Topics
 
 - Shared setup, builds, and tests: [docs/development.md](docs/development.md)
-- Loupe architecture and constraints: [docs/loupe.md](docs/loupe.md)
 - Allow Right-Click architecture: [docs/allow-right-click.md](docs/allow-right-click.md)
 - YouTube user and message API: [extension-youtube-transcript/README.md](extension-youtube-transcript/README.md)

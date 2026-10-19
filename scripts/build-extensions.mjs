@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { relative, resolve } from "node:path";
 import { build } from "vite";
 import { createExtensionBuildConfigs, extensionDefinitions } from "../vite.config.ts";
@@ -18,17 +18,6 @@ function copyStaticSource(sourceDirectory, outputDirectory) {
   });
 }
 
-function copyGeneratedFiles(extensionName, generatedFiles, outputDirectory) {
-  for (const { source, destination } of generatedFiles ?? []) {
-    if (!existsSync(source)) {
-      throw new Error(
-        `Generated file for ${extensionName} is missing at ${source}. Run pnpm run build:wasm first.`,
-      );
-    }
-    cpSync(source, resolve(outputDirectory, destination));
-  }
-}
-
 async function buildExtension(extensionName, extension, bundleConfigs) {
   for (const bundleConfig of bundleConfigs) {
     await build({ ...bundleConfig, configFile: false });
@@ -44,7 +33,6 @@ async function buildExtension(extensionName, extension, bundleConfigs) {
     `${JSON.stringify(manifest, null, 2)}\n`,
   );
 
-  copyGeneratedFiles(extensionName, extension.generatedFiles, extension.outputDirectory);
   console.log(`Built ${extensionName} in ${extension.outputDirectory}`);
 }
 

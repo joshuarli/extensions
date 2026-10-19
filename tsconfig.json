@@ -28,7 +28,6 @@
     "extension-*/test/**/*.ts",
     "scripts/**/*.ts",
     "vite.config.ts",
-    "vitest.config.ts",
-    "extension-loupe/.generated/**/*.d.ts"
+    "vitest.config.ts"
   ]
 }

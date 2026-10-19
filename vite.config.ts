@@ -1,4 +1,4 @@
-import { basename, dirname, resolve } from "node:path";
+import { resolve } from "node:path";
 import { defineConfig, type UserConfig } from "vite";
 
 const repositoryRoot = resolve(import.meta.dirname),
@@ -13,40 +13,28 @@ interface ExtensionBundle {
   emptyOutDir: boolean;
 }
 
-interface GeneratedFile {
-  source: string;
-  destination: string;
-}
-
 interface ExtensionDefinition {
   sourceDirectory: string;
   outputDirectory: string;
   bundles: ExtensionBundle[];
-  generatedFiles?: GeneratedFile[];
 }
 
 function resolvePath(...segments: string[]): string {
   return resolve(...segments);
 }
 
-function extensionPath(extensionName: string, ...segments: string[]): string {
-  return resolvePath(repositoryRoot, extensionName, ...segments);
-}
-
 function sourcePath(extensionName: string, ...segments: string[]): string {
-  return extensionPath(extensionName, "src", ...segments);
+  return resolvePath(repositoryRoot, extensionName, "src", ...segments);
 }
 
 function defineExtension(
   extensionName: string,
   bundles: ExtensionBundle[],
-  generatedFiles?: GeneratedFile[],
 ): ExtensionDefinition {
   return {
     sourceDirectory: sourcePath(extensionName),
     outputDirectory: resolvePath(outputRoot, extensionName),
     bundles,
-    ...(generatedFiles ? { generatedFiles } : {}),
   };
 }
 
@@ -60,50 +48,6 @@ const allowRightClickInjectedEntries = [
     "data/inject/listen/main.ts",
   ],
   extensionDefinitions: Record<string, ExtensionDefinition> = {
-    "extension-loupe": defineExtension(
-      "extension-loupe",
-      [
-        {
-          input: sourcePath("extension-loupe", "service-worker.ts"),
-          entryFileName: "service-worker.js",
-          format: "es",
-          target: "chrome150",
-          emptyOutDir: true,
-        },
-        {
-          input: sourcePath("extension-loupe", "reader-content-script.ts"),
-          entryFileName: "content.js",
-          format: "iife",
-          target: "chrome150",
-          emptyOutDir: false,
-        },
-        {
-          input: sourcePath("extension-loupe", "tansu-import-page.ts"),
-          entryFileName: "tansu-import-page.js",
-          format: "iife",
-          target: "chrome150",
-          emptyOutDir: false,
-        },
-        {
-          input: { options: sourcePath("extension-loupe", "options.html") },
-          entryFileName: "[name].js",
-          format: "es",
-          target: "chrome150",
-          emptyOutDir: false,
-        },
-      ],
-      [
-        {
-          source: extensionPath(
-            "extension-loupe",
-            ".generated",
-            "defuddle-wasm",
-            "defuddle_wasm_bg.wasm",
-          ),
-          destination: "defuddle_wasm_bg.wasm",
-        },
-      ],
-    ),
     "extension-allow-right-click": defineExtension("extension-allow-right-click", [
       {
         input: sourcePath("extension-allow-right-click", "service-worker.ts"),
@@ -173,33 +117,6 @@ export function createExtensionBuildConfigs(
   }
 
   return configs;
-}
-
-export function createSingleFileBundleConfig(
-  input: string,
-  outputFile: string,
-  target = "chrome150",
-): UserConfig {
-  return {
-    root: repositoryRoot,
-    base: "./",
-    define: { "process.env.NODE_ENV": JSON.stringify("test") },
-    build: {
-      outDir: dirname(outputFile),
-      emptyOutDir: false,
-      copyPublicDir: false,
-      minify: false,
-      sourcemap: false,
-      target,
-      rolldownOptions: {
-        input,
-        output: {
-          format: "iife",
-          entryFileNames: basename(outputFile),
-        },
-      },
-    },
-  };
 }
 
 export default defineConfig({
