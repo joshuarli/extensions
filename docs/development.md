@@ -5,8 +5,8 @@ The root package owns dependencies and scripts for both extensions. Deno install
 ## Setup and commands
 
 - Run `deno task bootstrap` to install pnpm 11.0.2, then `pnpm install`.
-- `pnpm run check` runs TypeScript 7 typechecking and the unit test project.
-- `pnpm run typecheck` runs `tsc --noEmit` using the strict options in `tsconfig.json`.
+- `pnpm run check` runs TypeScript 7.1 typechecking with `tsrs` and the unit test project.
+- `pnpm run typecheck` runs `tsrs --noEmit` using the strict options in `tsconfig.json`.
 - `pnpm run test` runs unit tests.
 - `pnpm run build` builds development bundles; `pnpm run dist` builds production bundles. Both typecheck first.
 - `pnpm run dev` watches extension source files and rebuilds changed extensions.
@@ -20,4 +20,4 @@ Each `extension-*/` directory contains a manifest, source files, and package-loc
 
 Service workers are emitted as ES modules. Scripts injected with `chrome.scripting.executeScript()` are emitted as classic scripts, so keep their formats separate. The UI uses browser DOM APIs directly; Effect and Schema handle extension I/O and boundary validation.
 
-The shared package pins TypeScript 7, Vite 8, Effect 4, and Vitest 5. TypeScript uses the strict options in [tsconfig.json](../tsconfig.json).
+The shared package pins `tsrs` 0.18.0, TypeScript 7.1, Vite 8, Effect 4, and Vitest 5. `tsrs` uses the strict options in [tsconfig.json](../tsconfig.json). Its native macOS build supports Apple silicon only, so typechecking is unavailable on Intel Macs.
