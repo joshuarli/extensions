@@ -427,6 +427,69 @@ test("player API retries clients and stops at the first caption-bearing response
   assert.equal((requests[0]!.headers as Record<string, string>)["Accept-Language"], "fr");
 });
 
+test("does not fetch captions from inline player data for another video", async () => {
+  const fetchMock = async (input: string | URL | Request): Promise<Response> => {
+    const url = String(input);
+    if (url.includes("/youtubei/v1/next")) return Response.json({});
+    if (url.includes("/youtubei/v1/player")) return Response.json({});
+    return new Response("<transcript><text start=\"0\" dur=\"2\">Stale transcript.</text></transcript>");
+  };
+  const result = await Effect.runPromise(fetchTranscript(
+    "current123",
+    {
+      playerResponse: {
+        videoDetails: { videoId: "stale456" },
+        captions: {
+          playerCaptionsTracklistRenderer: {
+            captionTracks: [{
+              languageCode: "en",
+              baseUrl: "https://www.youtube.com/api/timedtext?v=stale456&lang=en",
+            }],
+          },
+        },
+      },
+    },
+    undefined,
+    [],
+    fetchMock as typeof globalThis.fetch,
+  ));
+
+  assert.equal(result, undefined);
+});
+
+test("accepts matching inline player identity from microformat", async () => {
+  const captionRequests: string[] = [],
+    fetchMock = async (input: string | URL | Request): Promise<Response> => {
+      const url = String(input);
+      if (url.includes("/youtubei/v1/next")) return Response.json({});
+      if (url.includes("/youtubei/v1/player")) return Response.json({});
+      captionRequests.push(url);
+      return new Response("<transcript><text start=\"0\" dur=\"2\">Current transcript.</text></transcript>");
+    },
+    result = await Effect.runPromise(fetchTranscript(
+      "current123",
+      {
+        playerResponse: {
+          microformat: { playerMicroformatRenderer: { externalVideoId: "current123" } },
+          captions: {
+            playerCaptionsTracklistRenderer: {
+              captionTracks: [{
+                languageCode: "en",
+                baseUrl: "https://www.youtube.com/api/timedtext?v=current123&lang=en",
+              }],
+            },
+          },
+        },
+      },
+      undefined,
+      [],
+      fetchMock as typeof globalThis.fetch,
+    ));
+
+  assert.equal(result?.text, "**0:00** · Current transcript.");
+  assert.equal(captionRequests.length, 1);
+});
+
 describe("fixtures", () => {
   for (const f of fixtureSets) {
     it(`${f.videoId} produces the captured transcript`, async () => {

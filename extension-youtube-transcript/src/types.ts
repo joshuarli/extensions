@@ -7,12 +7,29 @@ export const CaptionTrackSchema = Schema.Struct({
     kind: Schema.optional(Schema.String),
     baseUrl: Schema.optional(Schema.String),
   }),
+  AudioTrackSchema = Schema.Struct({
+    audioTrackId: Schema.optional(Schema.String),
+    captionTrackIndices: Schema.optional(Schema.Array(Schema.Unknown)),
+    defaultCaptionTrackIndex: Schema.optional(Schema.Unknown),
+  }),
   YouTubePlayerDataSchema = Schema.Struct({
     videoDetails: Schema.optional(Schema.Struct({ videoId: Schema.optional(Schema.String) })),
+    microformat: Schema.optional(
+      Schema.Struct({
+        playerMicroformatRenderer: Schema.optional(
+          Schema.Struct({ externalVideoId: Schema.optional(Schema.String) }),
+        ),
+      }),
+    ),
     captions: Schema.optional(
       Schema.Struct({
         playerCaptionsTracklistRenderer: Schema.optional(
-          Schema.Struct({ captionTracks: Schema.optional(Schema.Array(CaptionTrackSchema)) }),
+          Schema.Struct({
+            captionTracks: Schema.optional(Schema.Array(CaptionTrackSchema)),
+            audioTracks: Schema.optional(Schema.Array(AudioTrackSchema)),
+            defaultAudioTrackIndex: Schema.optional(Schema.Unknown),
+            defaultCaptionTrackIndex: Schema.optional(Schema.Unknown),
+          }),
         ),
       }),
     ),

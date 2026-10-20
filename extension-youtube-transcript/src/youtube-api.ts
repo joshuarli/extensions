@@ -40,12 +40,12 @@ export function fetchTranscript(
   fetchImpl: typeof globalThis.fetch = globalThis.fetch,
 ): Effect.Effect<TranscriptResult | undefined, CaptionFetchError> {
   const program = Effect.gen(function* () {
-    const inlineData = decodePlayerData(pageData.playerResponse),
-      playerVideoId = inlineData?.videoDetails?.videoId,
-      inlineTrack =
-        playerVideoId !== undefined && playerVideoId !== videoId
-          ? undefined
-          : pickCaptionTrack(getCaptionTracks(inlineData), preferredLanguage),
+    const inlineData = decodeValidatedPlayerData(pageData.playerResponse, videoId),
+      inlineTrack = pickCaptionTrack(
+        getCaptionTracks(inlineData),
+        preferredLanguage,
+        inlineData,
+      ),
       chapters = yield* fetchChapters(videoId, inlineChapters, preferredLanguage, fetchImpl),
       inlineTranscriptEffect = inlineTrack?.baseUrl
         ? fetchCaptionXml(
@@ -59,7 +59,8 @@ export function fetchTranscript(
         [fetchPlayerData(videoId, preferredLanguage, fetchImpl), inlineTranscriptEffect],
         { concurrency: "unbounded" },
       ),
-      apiTrack = pickCaptionTrack(getCaptionTracks(playerData), preferredLanguage);
+      apiData = decodePlayerData(playerData),
+      apiTrack = pickCaptionTrack(getCaptionTracks(apiData), preferredLanguage, apiData);
 
     if (!apiTrack?.baseUrl || apiTrack.baseUrl === inlineTrack?.baseUrl) {
       return inlineTranscript;
@@ -243,6 +244,13 @@ function decodePlayerData(input: unknown): PlayerData | undefined {
   } catch {
     return undefined;
   }
+}
+
+function decodeValidatedPlayerData(input: unknown, videoId: string): PlayerData | undefined {
+  const data = decodePlayerData(input),
+    playerVideoId = data?.videoDetails?.videoId
+      ?? data?.microformat?.playerMicroformatRenderer?.externalVideoId;
+  return playerVideoId === videoId ? data : undefined;
 }
 
 function logCaptionFailure(source: string) {

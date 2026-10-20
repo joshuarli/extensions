@@ -231,3 +231,72 @@ test("selects preferred languages and prefers manual captions", () => {
   assert.equal(pickCaptionTrack(tracks, "en")!.kind, undefined);
   assert.equal(pickCaptionTrack([{ languageCode: "en", kind: "asr" }])!.kind, "asr");
 });
+
+test("selects captions for YouTube's default audio language", () => {
+  const tracks = [
+      { languageCode: "en", kind: "asr" },
+      { languageCode: "ja" },
+      { languageCode: "en-US", kind: "asr" },
+    ],
+    playerData = {
+      captions: {
+        playerCaptionsTracklistRenderer: {
+          audioTracks: [
+            { audioTrackId: "ja.4", captionTrackIndices: [0, 1] },
+            { audioTrackId: "en-US.10", captionTrackIndices: [0, 2] },
+          ],
+          defaultAudioTrackIndex: 0,
+        },
+      },
+    };
+
+  assert.equal(pickCaptionTrack(tracks, undefined, playerData)?.languageCode, "ja");
+  assert.equal(pickCaptionTrack(tracks, undefined, {
+    ...playerData,
+    captions: {
+      playerCaptionsTracklistRenderer: {
+        ...playerData.captions.playerCaptionsTracklistRenderer,
+        defaultAudioTrackIndex: 1,
+      },
+    },
+  })?.languageCode, "en-US");
+  assert.equal(pickCaptionTrack(tracks, "ja", {
+    ...playerData,
+    captions: {
+      playerCaptionsTracklistRenderer: {
+        ...playerData.captions.playerCaptionsTracklistRenderer,
+        defaultAudioTrackIndex: 1,
+      },
+    },
+  })?.languageCode, "ja");
+});
+
+test("uses the only audio track without an explicit default index", () => {
+  const tracks = [{ languageCode: "en", kind: "asr" }, { languageCode: "ja" }],
+    playerData = {
+      captions: {
+        playerCaptionsTracklistRenderer: {
+          audioTracks: [{ audioTrackId: "ja.4", captionTrackIndices: [0, 1] }],
+        },
+      },
+    };
+
+  assert.equal(pickCaptionTrack(tracks, undefined, playerData)?.languageCode, "ja");
+});
+
+test("ignores an invalid audio index instead of assuming the first audio track", () => {
+  const tracks = [{ languageCode: "en", kind: "asr" }, { languageCode: "ja" }],
+    playerData = {
+      captions: {
+        playerCaptionsTracklistRenderer: {
+          audioTracks: [
+            { audioTrackId: "ja.4", captionTrackIndices: [0, 1] },
+            { audioTrackId: "en.4", captionTrackIndices: [0] },
+          ],
+          defaultAudioTrackIndex: 0.5,
+        },
+      },
+    };
+
+  assert.equal(pickCaptionTrack(tracks, undefined, playerData)?.languageCode, "en");
+});
