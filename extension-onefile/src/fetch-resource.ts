@@ -56,15 +56,17 @@ function sniffMime(url: string, header: string | null): string {
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
+const boundFetch: typeof fetch = (...args: Parameters<typeof fetch>) => globalThis.fetch(...args);
+
 export async function fetchResourceBytes(
   url: string,
-  fetcher: typeof fetch = globalThis.fetch,
+  fetcher: typeof fetch = boundFetch,
 ): Promise<FetchedResource> {
   let lastError: ResourceFetchError | null = null;
-  for (let attempt = 0; attempt <= capturePolicy.imageRetryAttempts; attempt++) {
-    if (attempt > 0) await sleep(capturePolicy.imageRetryBackoffMs * attempt);
+  for (let attempt = 0; attempt <= capturePolicy.fetchRetryAttempts; attempt++) {
+    if (attempt > 0) await sleep(capturePolicy.fetchRetryBackoffMs * attempt);
     try {
-      const response = await fetcher(url, { signal: AbortSignal.timeout(capturePolicy.imageTimeoutMs) });
+      const response = await fetcher(url, { signal: AbortSignal.timeout(capturePolicy.fetchTimeoutMs) });
       if (!response.ok) {
         lastError = new ResourceFetchError(url, "bad-status", `HTTP ${response.status} for ${url}.`);
         continue;

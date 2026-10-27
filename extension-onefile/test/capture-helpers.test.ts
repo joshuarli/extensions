@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   absolutizeHttpUrl,
   collectCssResources,
+  resolveCssImports,
   splitSrcset,
 } from "../src/inject/capture.ts";
 
@@ -42,6 +43,33 @@ describe("collectCssResources", () => {
     );
     expect(resources).toContainEqual({ url: "https://example.com/fonts/a.woff2", kind: "font" });
     expect(resources).toContainEqual({ url: "https://example.com/img/b.png", kind: "image" });
+  });
+
+  it("resolves import chains and drops failed imports loudly", async () => {
+    const fetcher = (async (url: string) => {
+      if (url === "https://example.com/css/b.css") {
+        return { ok: true, text: async () => ".b{background:url(b.png)}" } as Response;
+      }
+      throw new Error("connection refused");
+    }) as typeof fetch;
+    const first = await resolveCssImports(
+      '@import url("b.css"); @import "missing.css"; .a{color:red}',
+      "https://example.com/css/a.css",
+      fetcher,
+    );
+    expect(first.text).toBe(".b{background:url(b.png)}  .a{color:red}");
+    expect(first.failed).toEqual(["https://example.com/css/missing.css"]);
+    const nested = await resolveCssImports(
+      '@import url("a.css");',
+      "https://example.com/css/top.css",
+      (async (url: string) => {
+        if (url.endsWith("a.css")) return { ok: true, text: async () => '@import url("b.css");' } as Response;
+        if (url.endsWith("b.css")) return { ok: true, text: async () => ".b{}" } as Response;
+        throw new Error("unexpected");
+      }) as typeof fetch,
+    );
+    expect(nested.text).toBe(".b{}");
+    expect(nested.failed).toEqual([]);
   });
 
   it("handles nested and unquoted forms", () => {

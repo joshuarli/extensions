@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Shadow DOM</title>
+</head>
+<body>
+<div id="open-host"></div>
+<div id="closed-host"></div>
+<p>light dom</p>
+<script>
+const open = document.getElementById("open-host").attachShadow({ mode: "open" });
+open.innerHTML = "<p>open shadow text</p><img src=\"shadow.png\">";
+const nested = document.createElement("div");
+nested.id = "nested-host";
+open.append(nested);
+nested.attachShadow({ mode: "open" }).innerHTML = "<p>nested shadow text</p>";
+document.getElementById("closed-host").attachShadow({ mode: "closed" }).innerHTML = "<p>closed shadow text</p>";
+</script>
+</body>
+</html>

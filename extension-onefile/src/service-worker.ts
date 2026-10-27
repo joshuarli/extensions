@@ -9,7 +9,7 @@ let cachedLoaderSource: Promise<string> | null = null;
 
 function loadLoaderSource(): Promise<string> {
   if (!cachedLoaderSource) {
-    cachedLoaderSource = fetch(chrome.runtime.getURL("inject/loader.js")).then((response) => {
+    cachedLoaderSource = globalThis.fetch(chrome.runtime.getURL("inject/loader.js")).then((response) => {
       if (!response.ok) throw new Error(`Loader bundle answered HTTP ${response.status}.`);
       return response.text();
     });

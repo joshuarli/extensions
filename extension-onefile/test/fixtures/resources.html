@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Mixed resources</title>
+</head>
+<body>
+<img src="photo.png" alt="png">
+<img src="photo.jpg" alt="jpg">
+<img src="anim.gif" alt="gif">
+<img src="modern.webp" alt="webp">
+<img src="vector.svg" alt="svg">
+<img src="my photo (1).png?size=large&amp;crop=1" alt="unusual name">
+<img src="ünïcodé.png" alt="unicode name">
+<picture>
+<source srcset="small.webp 480w, large.webp 1024w" type="image/webp">
+<source src="fallback.jpg">
+<img src="fallback.jpg" alt="picture">
+</picture>
+<img src="responsive.png" srcset="responsive.png 1x, responsive@2x.png 2x" alt="srcset">
+<img data-src="lazy-real.png" loading="lazy" alt="lazy">
+<video src="clip.mp4" poster="poster.png"></video>
+<audio src="sound.mp3"></audio>
+<svg viewBox="0 0 10 10" width="10" height="10"><circle cx="5" cy="5" r="4" fill="green"/></svg>
+</body>
+</html>

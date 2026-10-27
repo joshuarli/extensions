@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Adopted sheets</title>
+</head>
+<body>
+<p class="adopted">adopted text</p>
+<script>
+const sheet = new CSSStyleSheet();
+sheet.replaceSync(".adopted { color: teal; background: url(img/adopted.png); }");
+document.adoptedStyleSheets = [sheet];
+</script>
+</body>
+</html>
