@@ -4,8 +4,8 @@
 
 - Goal: third MV3 extension (`extension-onefile`) that saves the current tab as a universal self-extracting ZIP/HTML polyglot (`.u.zip.html`), offline-openable via `file://`.
 - Baseline (2026-10-27): `pnpm run typecheck` ~0.5s green; `pnpm run test` 59/59 green ~1.2s; tree has two extensions (AGENTS.md already anticipates three).
-- Accepted: OF-01 (`9cda11a`), OF-02 (`117370a`), OF-03 (`19c746f`), OF-04 (`5ae4bbb`), OF-05 (`077f2a4`), OF-06 (this commit). Red: none. Parked: none.
-- Next: OF-07. Resume: run `pnpm run check`, then start OF-07.
+- Accepted: OF-01 (`9cda11a`), OF-02 (`117370a`), OF-03 (`19c746f`), OF-04 (`5ae4bbb`), OF-05 (`077f2a4`), OF-06 (`9ba2b6b`), OF-07 (this commit). Red: none. Parked: none.
+- Next: OF-08. Resume: run `pnpm run check`, then start OF-08.
 - Steering: parent steering checkpoint runs after each accepted slice.
 
 ## Charter
@@ -44,6 +44,7 @@
 - [OF-04 2026-10-27] Hardening: iterative clone survives 3000-deep DOMs; ZIP refuses anything outside the 32-bit ranges before writing; resource fetches run at concurrency 6 with index-stable names; the in-flight guard releases via `Effect.ensuring` (a `try/finally` inside `Effect.gen` does not run on `Effect.fail`); file-open proves saved scripts stay dead. MV3 suspension mid-save is covered by guard release plus the manual serviceworker-internals step.
 - [OF-05 2026-10-27] Simplification audit, not a migration: the tree is native TS already, with no settings, profiles, migrations, sync, optimizers, minifiers, or alternate formats to delete. Removed the unused capture-request contract plus its test, narrowed `maxFrameDepth` to module scope, and dropped a dead tap parameter. Bundle carries no minifier modules.
 - [OF-06 2026-10-27] Docs landed (README, ARCHITECTURE, FORMAT, PERFORMANCE, UPSTREAM touch); permissions stay at `activeTab`, `scripting`, `downloads`, justified per call site in the README; one minimal workflow file runs typecheck, onefile unit tests, and build on onefile paths. Doc links resolve; workflow YAML parses.
+- [OF-07 2026-10-27] Validation only, no source changes: five alternating runs per side over four fixtures show the pipeline 4-14x faster than upstream defaults with no errors; size differences trace to format policy (fixed viewer plus ZIP overhead versus base64 embedding), not to bloat. Production bundles and medians are recorded in PERFORMANCE.md; heap stays omitted as unreliably measurable here.
 
 ## Baseline
 

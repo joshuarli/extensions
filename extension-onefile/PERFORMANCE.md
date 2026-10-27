@@ -23,6 +23,19 @@ Fail the run only on an egregious regression, and fix it in its own commit:
 - An archive more than 20 percent larger than the upstream same-policy output without a fidelity reason.
 - A median save more than twice as slow as upstream on the same fixture.
 
-## Current snapshot
+## Validation 2026-10-27
 
-Development build on 2026-10-27: `pnpm run check` passes typecheck plus 106 unit tests in about 1.3 seconds; `pnpm run build` finishes in about 1 second. Full comparative numbers land here in OF-07.
+Five alternating runs per side per fixture, production `dist` capture bundle against upstream `single-file-core` 1.7.1 defaults in the same Chromium, medians with min-max spread. The polyglot build step ran from the same unminified sources; the download step is excluded as environment-bound. Load averaged 4.6 on 18 cores with sides interleaved.
+
+| Fixture | Onefile median (spread) | Upstream median (spread) | Onefile bytes | Upstream bytes |
+| --- | --- | --- | --- | --- |
+| small | 2 ms (2-3) | 27 ms (26-28) | 5702 | 349 |
+| article | 3 ms (3-5) | 28 ms (28-31) | 50200 | 42941 |
+| image-heavy | 7 ms (6-8) | 30 ms (30-31) | 10735 | 2765 |
+| css-heavy | 6 ms (5-6) | 29 ms (28-29) | 7651 | 1181 |
+
+Onefile component medians: capture 1-3 ms, resource fetch 1-3 ms, archive build 0-1 ms. No run errored; our unresolved counts were 2 and 1 on image-heavy and css-heavy by policy (dropped media, unreachable cross-origin stylesheet), zero elsewhere. Upstream outputs verified by marker and embedded data URLs.
+
+Verdict: no egregious signal, so no source changes. The time gap reflects policy, not tuning: upstream base64-embeds every resource while this format stores binaries and references them. The size gap on tiny fixtures reflects the fixed viewer and ZIP overhead (about 5 KB) against 73-byte fixture images; it reverses on real media where base64 costs a third. Heap deltas read identically zero in this environment, so peak memory stays omitted as unreliable.
+
+Production bundles on 2026-10-27: `service-worker.js` 96 KB, `inject/capture.js` 8 KB, `inject/loader.js` 5 KB. `pnpm run check` passes typecheck plus 106 unit tests in about 1.3 seconds.
