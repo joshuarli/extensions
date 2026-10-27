@@ -14,7 +14,8 @@
     "check": "pnpm run typecheck && pnpm run test",
     "build": "pnpm run typecheck && NODE_ENV=development pnpm run build:extensions",
     "dist": "pnpm run typecheck && NODE_ENV=production pnpm run build:extensions",
-    "test": "pnpm run vitest run"
+    "test": "pnpm run vitest run",
+    "test:browser": "playwright test --config extension-onefile/playwright.config.ts"
   },
   "dependencies": {
     "effect": "4.0.0"
@@ -22,6 +23,7 @@
   "devDependencies": {
     "@types/chrome": "0.2.2",
     "@types/node": "26.6.2",
+    "playwright": "1.64.1",
     "tsrs": "0.18.0-ts7.1.0-dev.20260929",
     "vite": "8.3.2",
     "vitest": "5.0.3"

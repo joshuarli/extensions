@@ -72,6 +72,13 @@ const allowRightClickInjectedEntries = [
         target: "chrome110",
         emptyOutDir: true,
       },
+      ...["inject/capture.ts", "inject/loader.ts"].map((entry) => ({
+        input: sourcePath("extension-onefile", entry),
+        entryFileName: `${entry.replace(/\.ts$/u, "")}.js`,
+        format: "iife" as const,
+        target: "chrome110",
+        emptyOutDir: false,
+      })),
     ]),
     "extension-youtube-transcript": defineExtension("extension-youtube-transcript", [
       {

@@ -4,8 +4,8 @@
 
 - Goal: third MV3 extension (`extension-onefile`) that saves the current tab as a universal self-extracting ZIP/HTML polyglot (`.u.zip.html`), offline-openable via `file://`.
 - Baseline (2026-10-27): `pnpm run typecheck` ~0.5s green; `pnpm run test` 59/59 green ~1.2s; tree has two extensions (AGENTS.md already anticipates three).
-- Accepted: none. Red: none. Parked: none.
-- Next: OF-01. Resume: run `pnpm run check`, then start OF-01.
+- Accepted: OF-01 (`9cda11a`), OF-02 (this commit). Red: none. Parked: none.
+- Next: OF-03. Resume: run `pnpm run check`, then start OF-03.
 - Steering: parent steering checkpoint runs after each accepted slice.
 
 ## Charter
@@ -34,6 +34,10 @@
 - [delegated] Whether an offscreen document is needed, bound: only if the proven ZIP/blob path requires it; never by habit.
 - [delegated] Filename sanitizer edge cases, bound: example `Page Title (2026-10-27 15-30-00).u.zip.html`, Chromium uniquify on collision, never lose the normal download destination.
 - [delegated] Retry/backoff bounds for capture-fetch and MV3 suspension recovery, bound: same-tab clicks never overlap; cross-tab results never mix; partial files never masquerade as success.
+- [OF-02 2026-10-27] Prefix-IS-the-page polyglot: the HTML prefix is the saved page itself, the ZIP (resources plus `metadata.json`) is appended inside a parse-safe wrapper, offsets are file-absolute. Loader upgrades `resources/` refs to blob URLs when own-byte XHR works, else degrades to placeholders plus a banner. Proven: `unzip -t` passes, http render upgrades, `file://` degrades with no requests and no errors.
+- [OF-02 2026-10-27] Wrapper selection mirrors the oracle (`<!--`, `script`, `style`, `noframes`, `noembed`, `iframe`, first fit whose terminator is absent case-insensitively) minus the rendering wrappers (`xmp`, SVG CDATA, `plaintext`), because our loader never reads page text. Offsets and length converge in a bounded loop or fail loudly.
+- [OF-02 2026-10-27] Same-origin fetches ride on `activeTab`; no host permissions yet. Cross-origin shortfalls stay `unresolved` until OF-03 proves the host-permission need. Downloads use a data URL up to 1.5 MB; anything larger fails loudly until OF-04 proves the offscreen path. Capture fetch retries once after 500 ms with a 10 s timeout.
+- [OF-02 2026-10-27] Extension click-to-download is wired but unproven in automation (headless shell cannot load unpacked extensions); covered by the `Needs environment` manual load check. Browser specs prove render paths only.
 
 ## Baseline
 
