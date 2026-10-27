@@ -2,8 +2,9 @@ import type { CapturePayload } from "../message-contract.ts";
 import { capturePolicy } from "../policy.ts";
 
 export const resourceTokenPrefix = "onefile-resource-",
-  missingResourceToken = "onefile-missing",
-  maxFrameDepth = 3;
+  missingResourceToken = "onefile-missing";
+
+const maxFrameDepth = 3;
 
 const cssUrlPattern = /url\(\s*(?:"([^"]*)"|'([^']*)'|([^)"'\s][^)"']*))\s*\)/g,
   fontFacePattern = /@font-face\s*\{[^}]*\}/gi;

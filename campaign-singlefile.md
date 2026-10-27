@@ -4,8 +4,8 @@
 
 - Goal: third MV3 extension (`extension-onefile`) that saves the current tab as a universal self-extracting ZIP/HTML polyglot (`.u.zip.html`), offline-openable via `file://`.
 - Baseline (2026-10-27): `pnpm run typecheck` ~0.5s green; `pnpm run test` 59/59 green ~1.2s; tree has two extensions (AGENTS.md already anticipates three).
-- Accepted: OF-01 (`9cda11a`), OF-02 (`117370a`), OF-03 (`19c746f`), OF-04 (this commit). Red: none. Parked: none.
-- Next: OF-05. Resume: run `pnpm run check`, then start OF-05.
+- Accepted: OF-01 (`9cda11a`), OF-02 (`117370a`), OF-03 (`19c746f`), OF-04 (`5ae4bbb`), OF-05 (this commit). Red: none. Parked: none.
+- Next: OF-06. Resume: run `pnpm run check`, then start OF-06.
 - Steering: parent steering checkpoint runs after each accepted slice.
 
 ## Charter
@@ -42,6 +42,7 @@
 - [OF-03 2026-10-27] Native `fetch` must never be called unbound from strict-mode bundles (`Illegal invocation` fails with no request); defaults bind it and module code calls `globalThis.fetch`. The styles corpus case is the regression proof.
 - [OF-03 2026-10-27] Corpus lives in `extension-onefile/test/fixtures/` with a real-Chromium capture spec plus a byte-exact golden; no goldens are copied from upstream because the format differs by design (prefix-is-the-page, no base64 captures).
 - [OF-04 2026-10-27] Hardening: iterative clone survives 3000-deep DOMs; ZIP refuses anything outside the 32-bit ranges before writing; resource fetches run at concurrency 6 with index-stable names; the in-flight guard releases via `Effect.ensuring` (a `try/finally` inside `Effect.gen` does not run on `Effect.fail`); file-open proves saved scripts stay dead. MV3 suspension mid-save is covered by guard release plus the manual serviceworker-internals step.
+- [OF-05 2026-10-27] Simplification audit, not a migration: the tree is native TS already, with no settings, profiles, migrations, sync, optimizers, minifiers, or alternate formats to delete. Removed the unused capture-request contract plus its test, narrowed `maxFrameDepth` to module scope, and dropped a dead tap parameter. Bundle carries no minifier modules.
 
 ## Baseline
 

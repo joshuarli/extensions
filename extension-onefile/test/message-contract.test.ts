@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Schema } from "effect";
-import { CapturePayloadSchema, CaptureRequestSchema } from "../src/message-contract.ts";
+import { CapturePayloadSchema } from "../src/message-contract.ts";
 
 describe("capture message contract", () => {
   it("accepts a minimal valid payload", () => {
@@ -31,8 +31,4 @@ describe("capture message contract", () => {
     ).toThrow();
   });
 
-  it("round-trips the capture request", () => {
-    const request = Schema.decodeUnknownSync(CaptureRequestSchema)({ kind: "onefile-capture", saveId: "3-123" });
-    expect(Schema.encodeSync(CaptureRequestSchema)(request)).toEqual({ kind: "onefile-capture", saveId: "3-123" });
-  });
 });

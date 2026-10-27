@@ -60,7 +60,7 @@ chrome.action.onClicked.addListener((tab) => {
   const tabId = tab.id;
   void Effect.runPromise(
     saveTab({ id: tab.id, url: tab.url, title: tab.title }, realDependencies(), inFlight).pipe(
-      Effect.tap((outcome) =>
+      Effect.tap(() =>
         Effect.sync(() => {
           scheduleTitleRevert(
             {
@@ -73,7 +73,6 @@ chrome.action.onClicked.addListener((tab) => {
             tabId,
             idleTitle,
           );
-          void outcome;
         }),
       ),
     ),

@@ -21,9 +21,3 @@ export const CapturePayloadSchema = Schema.Struct({
 
 export type CapturePayload = Schema.Schema.Type<typeof CapturePayloadSchema>;
 
-export const CaptureRequestSchema = Schema.Struct({
-  kind: Schema.Literal("onefile-capture"),
-  saveId: Schema.String,
-});
-
-export type CaptureRequest = Schema.Schema.Type<typeof CaptureRequestSchema>;
