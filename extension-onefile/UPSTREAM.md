@@ -1,8 +1,10 @@
 # Upstream ground truth
 
-Derivative of SingleFile, kept AGPL-compatible. No upstream code is vendored
-in OF-01. Later slices preserve upstream license notices and attribution
-wherever retained code lands.
+Derivative of SingleFile, kept AGPL-compatible. No upstream code is vendored:
+the ZIP reader, writer, wrapper selection, loader, and capture pipeline are
+written from scratch against observed upstream behavior (see
+[ARCHITECTURE.md](ARCHITECTURE.md)). Later slices preserve upstream license
+notices and attribution wherever retained code lands.
 
 Pinned 2026-10-27 (HEAD of `main` at pin time, verified by shallow clone):
 
