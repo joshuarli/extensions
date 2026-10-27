@@ -64,6 +64,15 @@ const allowRightClickInjectedEntries = [
         emptyOutDir: false,
       })),
     ]),
+    "extension-onefile": defineExtension("extension-onefile", [
+      {
+        input: sourcePath("extension-onefile", "service-worker.ts"),
+        entryFileName: "service-worker.js",
+        format: "es",
+        target: "chrome110",
+        emptyOutDir: true,
+      },
+    ]),
     "extension-youtube-transcript": defineExtension("extension-youtube-transcript", [
       {
         input: {

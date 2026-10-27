@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "minimum_chrome_version": "110",
+  "version": "0.1.0",
+  "name": "Onefile",
+  "description": "Save the current tab as a universal self-extracting ZIP.",
+  "action": {
+    "default_title": "Save this page as a universal archive."
+  },
+  "background": {
+    "service_worker": "service-worker.js",
+    "type": "module"
+  }
+}
