@@ -25,6 +25,8 @@ const localHeaderSignature = 0x04034b50,
   centralHeaderSignature = 0x02014b50,
   endSignature = 0x06054b50,
   maxEndsToScan = 65_535 + 22,
+  maxEntries = 65_535,
+  maxUint32 = 0xff_ff_ff_ff,
   utf8Flag = 1 << 11;
 
 const textEncoder = new TextEncoder(), textDecoder = new TextDecoder("utf-8");
@@ -51,8 +53,35 @@ export interface ZipBuildRequest {
   archiveStartOffset: number;
 }
 
+export function assertZipLimits(
+  files: ({ name: string; size: number } | ZipInputFile)[],
+  archiveStartOffset: number,
+): void {
+  if (!Number.isSafeInteger(archiveStartOffset) || archiveStartOffset < 0 || archiveStartOffset > maxUint32) {
+    throw new Error("ZIP archive start offset exceeds the 32-bit range");
+  }
+  if (files.length > maxEntries) {
+    throw new Error(`ZIP archives hold at most ${maxEntries} entries`);
+  }
+  let cursor = archiveStartOffset;
+  for (const file of files) {
+    const size = "size" in file ? file.size : file.data.length;
+    if (!Number.isSafeInteger(size) || size < 0 || size > maxUint32) {
+      throw new Error(`ZIP entry ${file.name} exceeds the 32-bit size range`);
+    }
+    cursor += 30 + textEncoder.encode(file.name).length + size;
+    if (cursor > maxUint32) throw new Error("ZIP archive data exceeds the 32-bit offset range");
+  }
+  for (const file of files) {
+    cursor += 46 + textEncoder.encode(file.name).length;
+    if (cursor > maxUint32) throw new Error("ZIP central directory exceeds the 32-bit offset range");
+  }
+  if (cursor + 22 > maxUint32) throw new Error("ZIP end record exceeds the 32-bit offset range");
+}
+
 export function buildStoredZip(request: ZipBuildRequest): Uint8Array {
   const { files, archiveStartOffset } = request;
+  assertZipLimits(files, archiveStartOffset);
   const encoded = files.map((file) => ({ ...file, nameBytes: textEncoder.encode(file.name) })),
     headerSize = encoded.reduce((sum, file) => sum + 30 + file.nameBytes.length, 0),
     dataSize = encoded.reduce((sum, file) => sum + file.data.length, 0),

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { crc32 } from "../src/crc32.ts";
-import { buildStoredZip, extractStoredEntry, readStoredArchive } from "../src/zip.ts";
+import { assertZipLimits, buildStoredZip, extractStoredEntry, readStoredArchive } from "../src/zip.ts";
 
 const textEncoder = new TextEncoder();
 
@@ -61,6 +61,21 @@ describe("stored zip", () => {
     });
     zipBytes[40] = zipBytes[40] === 0 ? 1 : 0;
     expect(() => readStoredArchive(zipBytes)).toThrow();
+  });
+
+  it("holds the 32-bit entry budget and refuses the 65536th entry", () => {
+    const files = Array.from({ length: 65_535 }, (_, index) => ({ name: `f/${index}`, size: 1 })),
+      writable = Array.from({ length: 65_536 }, (_, index) => ({ name: `f/${index}`, data: new Uint8Array([1]), modifiedMs: 0 }));
+    expect(() => assertZipLimits(files, 0)).not.toThrow();
+    expect(() => assertZipLimits([...files, { name: "f/overflow", size: 1 }], 0)).toThrow(/at most/);
+    expect(() => buildStoredZip({ files: writable, archiveStartOffset: 0 })).toThrow(/at most/);
+  });
+
+  it("refuses entries and offsets outside the 32-bit range without allocating", () => {
+    expect(() => assertZipLimits([{ name: "big.bin", size: 0xff_ff_ff_ff + 1 }], 0)).toThrow(/size range/);
+    expect(() => assertZipLimits([{ name: "a", size: 10 }], 0xff_ff_ff_ff + 1)).toThrow(/start offset/);
+    expect(() => assertZipLimits([{ name: "a", size: 0xff_ff_ff_ff }], 100)).toThrow(/offset range/);
+    expect(() => assertZipLimits([{ name: "ok", size: 0xff_ff_ff_ff - 200 }], 0)).not.toThrow();
   });
 
   it("refuses unknown entries and non-stored methods", () => {

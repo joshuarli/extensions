@@ -76,58 +76,64 @@ export function saveTab(
   deps: SaveDependencies,
   inFlight: Map<number, string>,
 ): Effect.Effect<SaveOutcome, SaveError> {
+  if (tab.id === undefined) {
+    return Effect.fail(new CaptureFailedError(-1, "capture-rejected", "Save needs a tab id."));
+  }
+  const tabId = tab.id;
+  if (inFlight.has(tabId)) {
+    return Effect.promise(() =>
+      deps.setActionState(tabId, "Onefile is already saving this tab", "!").catch(() => undefined),
+    ).pipe(Effect.andThen(Effect.fail(new SaveInProgressError(tabId))));
+  }
+  const saveId = `${tabId}-${deps.nowMs()}`;
+  inFlight.set(tabId, saveId);
+  const release = Effect.sync(() => {
+    if (inFlight.get(tabId) === saveId) inFlight.delete(tabId);
+  });
   return Effect.gen(function* () {
-    if (tab.id === undefined) {
-      return yield* Effect.fail(new CaptureFailedError(-1, "capture-rejected", "Save needs a tab id."));
-    }
-    const tabId = tab.id;
-    if (inFlight.has(tabId)) {
-      yield* Effect.promise(() =>
-        deps.setActionState(tabId, "Onefile is already saving this tab", "!").catch(() => undefined),
+  yield* Effect.tryPromise({
+      try: () => deps.setActionState(tabId, "Onefile is saving…", "…"),
+      catch: (error) => classifyCaptureFailure(tabId, tab.url, error),
+    });
+    const rawPayload = yield* Effect.tryPromise({
+      try: () => deps.executeCapture(tabId, saveId),
+      catch: (error) => classifyCaptureFailure(tabId, tab.url, error),
+    });
+    const payload: CapturePayload = yield* Effect.try({
+      try: () => Schema.decodeUnknownSync(CapturePayloadSchema)(rawPayload),
+      catch: (error) =>
+        new CaptureFailedError(tabId, "invalid-payload", "Capture returned a bad payload.", error),
+    });
+    const loaderSource = yield* Effect.tryPromise({
+      try: () => deps.loadLoaderSource(),
+      catch: (error) => new ArchiveBuildError("Could not load the archive viewer.", error),
+    });
+    const fetched = yield* Effect.forEach(
+      payload.resources,
+      (reference, index) =>
+        Effect.tryPromise({
+          try: () => deps.fetchResource(reference.url),
+          catch: (error) => error,
+          }).pipe(
+            Effect.map((value) => ({ index, url: reference.url, fetched: true as const, value })),
+            Effect.catch((error: unknown) => Effect.succeed({ index, url: reference.url, fetched: false as const, value: error })),
+          ),
+        { concurrency: capturePolicy.resourceFetchConcurrency },
       );
-      return yield* Effect.fail(new SaveInProgressError(tabId));
-    }
-    const saveId = `${tabId}-${deps.nowMs()}`;
-    inFlight.set(tabId, saveId);
-    try {
-      yield* Effect.tryPromise({
-        try: () => deps.setActionState(tabId, "Onefile is saving…", "…"),
-        catch: (error) => classifyCaptureFailure(tabId, tab.url, error),
-      });
-      const rawPayload = yield* Effect.tryPromise({
-        try: () => deps.executeCapture(tabId, saveId),
-        catch: (error) => classifyCaptureFailure(tabId, tab.url, error),
-      });
-      const payload: CapturePayload = yield* Effect.try({
-        try: () => Schema.decodeUnknownSync(CapturePayloadSchema)(rawPayload),
-        catch: (error) =>
-          new CaptureFailedError(tabId, "invalid-payload", "Capture returned a bad payload.", error),
-      });
-      const loaderSource = yield* Effect.tryPromise({
-        try: () => deps.loadLoaderSource(),
-        catch: (error) => new ArchiveBuildError("Could not load the archive viewer.", error),
-      });
       let pageHtml = payload.pageHtml;
       const zipResources: PolyglotResource[] = [],
         unresolved: { url: string; reason: string }[] = [...payload.unresolved];
-      for (const [index, reference] of payload.resources.entries()) {
-        const token = `${resourceTokenPrefix}${index}`,
-          settled = yield* Effect.tryPromise({
-            try: () => deps.fetchResource(reference.url),
-            catch: (error) => error,
-          }).pipe(
-            Effect.map((value) => ({ fetched: true as const, value })),
-            Effect.catch((error: unknown) => Effect.succeed({ fetched: false as const, value: error })),
-          );
-        if (!settled.fetched) {
+      for (const outcome of fetched) {
+        const token = `${resourceTokenPrefix}${outcome.index}`;
+        if (!outcome.fetched) {
           pageHtml = pageHtml.replaceAll(token, missingResourceToken);
-          const reason = settled.value instanceof Error ? settled.value.message : String(settled.value);
-          unresolved.push({ url: reference.url, reason });
+          const reason = outcome.value instanceof Error ? outcome.value.message : String(outcome.value);
+          unresolved.push({ url: outcome.url, reason });
           continue;
         }
-        const name = resourceEntryName(index, reference.url, settled.value.mime);
+        const name = resourceEntryName(outcome.index, outcome.url, outcome.value.mime);
         pageHtml = pageHtml.replaceAll(token, name);
-        zipResources.push({ name, mime: settled.value.mime, data: settled.value.data });
+        zipResources.push({ name, mime: outcome.value.mime, data: outcome.value.data });
       }
       const archive = yield* Effect.try({
         try: () =>
@@ -157,18 +163,14 @@ export function saveTab(
         catch: (error) => classifyCaptureFailure(tabId, tab.url, error),
       });
       return { filename, downloadId, missingCount: unresolved.length, degraded };
-    } finally {
-      if (inFlight.get(tabId) === saveId) inFlight.delete(tabId);
-    }
   }).pipe(
     Effect.tapError((error) =>
       Effect.sync(() => {
         deps.log("Onefile save failed:", error);
-        if (tab.id !== undefined && error._tag !== "SaveInProgressError") {
-          deps.setActionState(tab.id, failureTitle(error), "!").catch(() => undefined);
-        }
+        deps.setActionState(tabId, failureTitle(error), "!").catch(() => undefined);
       }),
     ),
+    Effect.ensuring(release),
   );
 }
 

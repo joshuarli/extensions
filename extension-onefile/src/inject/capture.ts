@@ -128,14 +128,24 @@ interface CaptureShared {
   ownerDoc: Document;
 }
 
+function cloneRoot(node: Node): Node {
+  return node instanceof ShadowRoot ? node.ownerDocument.createDocumentFragment() : node.cloneNode(false);
+}
+
 function cloneWithMap(node: Node, map: Map<Node, Node>): Node {
-  const copy =
-    node instanceof ShadowRoot ? node.ownerDocument.createDocumentFragment() : node.cloneNode(false);
-  map.set(node, copy);
-  for (let child = node.firstChild; child !== null; child = child.nextSibling) {
-    copy.appendChild(cloneWithMap(child, map));
+  const rootCopy = cloneRoot(node),
+    stack: [Node, Node][] = [[node, rootCopy]];
+  map.set(node, rootCopy);
+  while (stack.length > 0) {
+    const [live, cloned] = stack.pop() ?? [node, rootCopy];
+    for (let child = live.firstChild; child !== null; child = child.nextSibling) {
+      const copy = cloneRoot(child);
+      map.set(child, copy);
+      cloned.appendChild(copy);
+      if (child.firstChild !== null) stack.push([child, copy]);
+    }
   }
-  return copy;
+  return rootCopy;
 }
 
 function takeUrl(shared: CaptureShared, url: string, kind: "image" | "font"): string {

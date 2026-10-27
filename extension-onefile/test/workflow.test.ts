@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Effect } from "effect";
 import { saveTab, type SaveDependencies } from "../src/workflow.ts";
+import { readStoredArchive } from "../src/zip.ts";
 import { buildArchiveFilename } from "../src/filename.ts";
 import { ResourceFetchError } from "../src/errors.ts";
 
@@ -102,6 +103,58 @@ describe("saveTab", () => {
     expect(outcome.degraded).toBe(true);
     expect(outcome.missingCount).toBe(1);
     expect(deps.states.at(-1)).toMatchObject({ tabId: 8, badge: "!" });
+  });
+
+  it("clears the in-flight guard after a failure so the next click starts fresh", async () => {
+    const inFlight = new Map<number, string>();
+    let calls = 0;
+    const flaky = stubDeps({
+      executeCapture: async () => {
+        calls += 1;
+        if (calls === 1) throw new Error("suspension cut the worker");
+        return payload();
+      },
+    });
+    await expect(Effect.runPromise(saveTab({ id: 11 }, flaky, inFlight).pipe(Effect.flip))).resolves.toMatchObject({
+      _tag: "CaptureFailedError",
+    });
+    expect(inFlight.has(11)).toBe(false);
+    const outcome = await Effect.runPromise(saveTab({ id: 11 }, flaky, inFlight));
+    expect(outcome.degraded).toBe(false);
+    expect(calls).toBe(2);
+  });
+
+  it("keeps entry names stable when resources resolve out of order", async () => {
+    const order: string[] = [],
+      deps = stubDeps({
+        fetchResource: async (url) => {
+          order.push(url);
+          await new Promise((resolve) => setTimeout(resolve, url.endsWith("slow.png") ? 30 : 0));
+          return { data: imageBytes, mime: "image/png" };
+        },
+        executeCapture: async () => ({
+          ...payload(),
+          pageHtml: '<img src="onefile-resource-0"><img src="onefile-resource-1"><img src="onefile-resource-2">',
+          resources: [
+            { url: "https://example.com/slow.png", kind: "image" as const },
+            { url: "https://example.com/a.png", kind: "image" as const },
+            { url: "https://example.com/b.png", kind: "image" as const },
+          ],
+        }),
+      });
+    const outcome = await Effect.runPromise(saveTab({ id: 12 }, deps, new Map()));
+    expect(outcome.degraded).toBe(false);
+    expect(order).toContain("https://example.com/slow.png");
+    const stored = deps.downloads.at(0),
+      dataUrl = stored?.url.split(",").at(1) ?? "",
+      archiveBytes = new Uint8Array(Buffer.from(dataUrl, "base64")),
+      directory = readStoredArchive(archiveBytes);
+    expect(directory.entries.map((entry) => entry.name)).toEqual([
+      "resources/0.png",
+      "resources/1.png",
+      "resources/2.png",
+      "metadata.json",
+    ]);
   });
 
   it("maps oversized archives to the too-large download error", async () => {

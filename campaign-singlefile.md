@@ -4,8 +4,8 @@
 
 - Goal: third MV3 extension (`extension-onefile`) that saves the current tab as a universal self-extracting ZIP/HTML polyglot (`.u.zip.html`), offline-openable via `file://`.
 - Baseline (2026-10-27): `pnpm run typecheck` ~0.5s green; `pnpm run test` 59/59 green ~1.2s; tree has two extensions (AGENTS.md already anticipates three).
-- Accepted: OF-01 (`9cda11a`), OF-02 (`117370a`), OF-03 (this commit). Red: none. Parked: none.
-- Next: OF-04. Resume: run `pnpm run check`, then start OF-04.
+- Accepted: OF-01 (`9cda11a`), OF-02 (`117370a`), OF-03 (`19c746f`), OF-04 (this commit). Red: none. Parked: none.
+- Next: OF-05. Resume: run `pnpm run check`, then start OF-05.
 - Steering: parent steering checkpoint runs after each accepted slice.
 
 ## Charter
@@ -41,6 +41,7 @@
 - [OF-03 2026-10-27] Capture covers open shadow DOM (declarative `template shadowrootmode`), adopted stylesheets, same-origin frames (nested `srcdoc`), canvas snapshots, lazy `data-src`, and recursive `@import` (depth 2). Closed shadow roots stay invisible by platform design and are kept as elements. Cross-origin frames, media, and failed imports land in `unresolved`.
 - [OF-03 2026-10-27] Native `fetch` must never be called unbound from strict-mode bundles (`Illegal invocation` fails with no request); defaults bind it and module code calls `globalThis.fetch`. The styles corpus case is the regression proof.
 - [OF-03 2026-10-27] Corpus lives in `extension-onefile/test/fixtures/` with a real-Chromium capture spec plus a byte-exact golden; no goldens are copied from upstream because the format differs by design (prefix-is-the-page, no base64 captures).
+- [OF-04 2026-10-27] Hardening: iterative clone survives 3000-deep DOMs; ZIP refuses anything outside the 32-bit ranges before writing; resource fetches run at concurrency 6 with index-stable names; the in-flight guard releases via `Effect.ensuring` (a `try/finally` inside `Effect.gen` does not run on `Effect.fail`); file-open proves saved scripts stay dead. MV3 suspension mid-save is covered by guard release plus the manual serviceworker-internals step.
 
 ## Baseline
 
