@@ -1,4 +1,4 @@
-import { cpSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, readdirSync, readFileSync, statSync, watch, writeFileSync } from "node:fs";
 import { relative, resolve } from "node:path";
 import { build } from "vite";
 import { createExtensionBuildConfigs, extensionDefinitions } from "../vite.config.ts";
@@ -49,21 +49,21 @@ for (const [extensionName, extension] of definitions) {
 }
 
 if (process.argv.includes("--watch")) {
-  const sourceDirectories = definitions.map(([, extension]) => extension.sourceDirectory),
-    watcher = Deno.watchFs(sourceDirectories, { recursive: true });
+  const sourceDirectories = definitions.map(([, extension]) => extension.sourceDirectory);
   let pendingExtensions = new Set(),
     rebuildTimer;
   const enqueueRebuild = createRebuildQueue((error) => {
     console.error("Failed to rebuild extensions:", error);
   });
 
-  for await (const event of watcher) {
-    for (const changedPath of event.paths) {
-      const changedExtension = definitions.find(([, extension]) =>
-        changedPath.startsWith(`${extension.sourceDirectory}/`)
-      )?.[0];
-      if (changedExtension) pendingExtensions.add(changedExtension);
-    }
+  function findExtension(changedPath) {
+    return definitions.find(([, extension]) =>
+      changedPath === extension.sourceDirectory ||
+      changedPath.startsWith(`${extension.sourceDirectory}/`)
+    )?.[0];
+  }
+
+  function scheduleRebuild() {
     clearTimeout(rebuildTimer);
     rebuildTimer = setTimeout(() => {
       const extensionsToRebuild = [...pendingExtensions];
@@ -79,5 +79,54 @@ if (process.argv.includes("--watch")) {
         }
       });
     }, 200);
+  }
+
+  function handleChangedPath(changedPath) {
+    const changedExtension = findExtension(changedPath);
+    if (changedExtension) {
+      pendingExtensions.add(changedExtension);
+      scheduleRebuild();
+    }
+  }
+
+  function collectDirectories(root) {
+    const directories = [root],
+      stack = [root];
+    while (stack.length > 0) {
+      const current = stack.pop();
+      for (const entry of readdirSync(current, { withFileTypes: true })) {
+        if (entry.isDirectory()) {
+          const full = resolve(current, entry.name);
+          directories.push(full);
+          stack.push(full);
+        }
+      }
+    }
+    return directories;
+  }
+
+  const watched = new Set();
+  function watchDirectory(directory) {
+    if (watched.has(directory)) return;
+    watched.add(directory);
+    const watcher = watch(directory, (eventType, filename) => {
+      const changedPath = filename ? resolve(directory, filename) : directory;
+      const created = statSync(changedPath, { throwIfNoEntry: false });
+      if (created?.isDirectory()) {
+        for (const subdirectory of collectDirectories(changedPath)) {
+          watchDirectory(subdirectory);
+        }
+      }
+      handleChangedPath(changedPath);
+    });
+    watcher.on("error", (error) => {
+      console.error(`Failed to watch ${directory}:`, error);
+    });
+  }
+
+  for (const sourceDirectory of sourceDirectories) {
+    for (const directory of collectDirectories(sourceDirectory)) {
+      watchDirectory(directory);
+    }
   }
 }

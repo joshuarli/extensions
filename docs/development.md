@@ -1,10 +1,10 @@
 # Development
 
-The root package owns dependencies and scripts for both extensions. Deno installs the pinned pnpm CLI; pnpm manages JavaScript dependencies and the lockfile.
+The root package owns dependencies and scripts for both extensions. Node.js runs the build script; pnpm manages JavaScript dependencies and the lockfile. Requires Node.js 22.12 or newer.
 
 ## Setup and commands
 
-- Run `deno task bootstrap` to install pnpm 11.0.2, then `pnpm install`.
+- Run `npm install --global pnpm@11.0.2` to install the pinned pnpm CLI, then `pnpm install`.
 - `pnpm run check` runs TypeScript 7.1 typechecking with `tsrs` and the unit test project.
 - `pnpm run typecheck` runs `tsrs --noEmit` using the strict options in `tsconfig.json`.
 - `pnpm run test` runs unit tests.

@@ -4,7 +4,7 @@ This repository builds three Chromium Manifest V3 extensions with shared TypeScr
 
 ## Commands
 
-- Bootstrap the pinned pnpm CLI: `deno task bootstrap`
+- Install the pinned pnpm CLI with Node.js: `npm install --global pnpm@11.0.2`
 - Install dependencies: `pnpm install`
 - Check types and unit tests: `pnpm run check`
 - Build development or production bundles: `pnpm run build` or `pnpm run dist`
