@@ -11,7 +11,7 @@ export interface DownloadTransport {
   downloadDataUrl: (url: string, filename: string) => Promise<number>;
 }
 
-export function encodeBase64Chunked(bytes: Uint8Array): string {
+function encodeBase64Chunked(bytes: Uint8Array): string {
   const step = 32_768;
   let binary = "";
   for (let offset = 0; offset < bytes.length; offset += step) {

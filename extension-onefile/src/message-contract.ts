@@ -1,11 +1,11 @@
 import { Schema } from "effect";
 
-export const ResourceReferenceSchema = Schema.Struct({
+const ResourceReferenceSchema = Schema.Struct({
   url: Schema.String,
   kind: Schema.Literals(["image", "stylesheet", "font"]),
 });
 
-export const UnresolvedResourceSchema = Schema.Struct({
+const UnresolvedResourceSchema = Schema.Struct({
   url: Schema.String,
   reason: Schema.String,
 });

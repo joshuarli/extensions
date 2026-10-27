@@ -8,7 +8,7 @@ export function sanitizeTitleForFilename(title: string): string {
   return cleaned.length > maxBaseLength ? cleaned.slice(0, maxBaseLength).trimEnd() : cleaned;
 }
 
-export function formatSaveTimestamp(now: Date): string {
+function formatSaveTimestamp(now: Date): string {
   const part = (value: number, width: number): string => String(value).padStart(width, "0");
   return `${now.getFullYear()}-${part(now.getMonth() + 1, 2)}-${part(now.getDate(), 2)} ${part(now.getHours(), 2)}-${part(now.getMinutes(), 2)}-${part(now.getSeconds(), 2)}`;
 }

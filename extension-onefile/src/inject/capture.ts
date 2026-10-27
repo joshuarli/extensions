@@ -18,7 +18,7 @@ export function absolutizeHttpUrl(raw: string, base: string): string | null {
   }
 }
 
-export interface SrcsetCandidate {
+interface SrcsetCandidate {
   url: string;
   descriptor: string;
 }
