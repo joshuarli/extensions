@@ -1,6 +1,6 @@
 # Development
 
-The root package owns dependencies and scripts for both extensions. Node.js runs the build script; pnpm manages JavaScript dependencies and the lockfile. Requires Node.js 22.12 or newer.
+The root package owns dependencies and scripts for all three extensions. Node.js runs the build script; pnpm manages JavaScript dependencies and the lockfile. Requires Node.js 22.12 or newer.
 
 ## Setup and commands
 
@@ -8,6 +8,7 @@ The root package owns dependencies and scripts for both extensions. Node.js runs
 - `pnpm run check` runs TypeScript 7.1 typechecking with `tsrs` and the unit test project.
 - `pnpm run typecheck` runs `tsrs --noEmit` using the strict options in `tsconfig.json`.
 - `pnpm run test` runs unit tests.
+- `pnpm run test:browser` runs the Onefile Playwright browser tests.
 - `pnpm run build` builds development bundles; `pnpm run dist` builds production bundles. Both typecheck first.
 - `pnpm run dev` watches extension source files and rebuilds changed extensions.
 - On macOS, `make install` builds production bundles and opens Helium's extensions page.
