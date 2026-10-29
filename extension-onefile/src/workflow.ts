@@ -25,7 +25,7 @@ export interface SaveTab {
 export interface SaveDependencies {
   executeCapture: (tabId: number, saveId: string) => Promise<unknown>;
   fetchResource: (url: string) => Promise<{ data: Uint8Array; mime: string }>;
-  downloadDataUrl: (url: string, filename: string) => Promise<number>;
+  downloadBlob: (blob: Blob, filename: string) => Promise<number>;
   loadLoaderSource: () => Promise<string>;
   setActionState: (tabId: number, title: string, badge: string) => Promise<void>;
   log: (...args: readonly unknown[]) => void;
@@ -67,7 +67,6 @@ function failureTitle(error: SaveError): string {
     return error.kind === "tab-not-accessible" ? "Onefile cannot save this page" : "Onefile capture failed";
   }
   if (error._tag === "ArchiveBuildError") return "Onefile could not build the archive";
-  if (error.kind === "too-large") return "Onefile archive is too large to download here";
   return "Onefile download failed";
 }
 
@@ -108,6 +107,8 @@ export function saveTab(
       try: () => deps.loadLoaderSource(),
       catch: (error) => new ArchiveBuildError("Could not load the archive viewer.", error),
     });
+    let completedResources = 0;
+    const totalResources = payload.resources.length;
     const fetched = yield* Effect.forEach(
       payload.resources,
       (reference, index) =>
@@ -117,6 +118,18 @@ export function saveTab(
           }).pipe(
             Effect.map((value) => ({ index, url: reference.url, fetched: true as const, value })),
             Effect.catch((error: unknown) => Effect.succeed({ index, url: reference.url, fetched: false as const, value: error })),
+            Effect.tap(() => {
+              completedResources += 1;
+              if (totalResources === 0) return Effect.void;
+              const percent = Math.floor((completedResources / totalResources) * 100);
+              return Effect.promise(() =>
+                deps.setActionState(
+                  tabId,
+                  `Onefile is saving… (${completedResources}/${totalResources})`,
+                  `${percent}%`,
+                ).catch(() => undefined),
+              );
+            }),
           ),
         { concurrency: capturePolicy.resourceFetchConcurrency },
       );
@@ -149,7 +162,7 @@ export function saveTab(
       });
       const filename = buildArchiveFilename(payload.title || tab.title || "", new Date(payload.capturedAtMs)),
         downloadId = yield* downloadArchive(
-          { downloadDataUrl: (url, name) => deps.downloadDataUrl(url, name) },
+          { downloadBlob: (blob, name) => deps.downloadBlob(blob, name) },
           { filename, bytes: archive.fileBytes },
         );
       const degraded = unresolved.length > 0;

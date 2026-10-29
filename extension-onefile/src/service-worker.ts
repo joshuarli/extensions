@@ -41,8 +41,12 @@ function realDependencies(): SaveDependencies {
         return result?.result;
       }),
     fetchResource: (url) => fetchResourceBytes(url),
-    downloadDataUrl: (url, filename) =>
-      chrome.downloads.download({ url, filename, saveAs: false, conflictAction: "uniquify" }),
+    downloadBlob: (blob, filename) => {
+      const url = URL.createObjectURL(blob);
+      return chrome.downloads.download({ url, filename, saveAs: false, conflictAction: "uniquify" }).finally(() => {
+        setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      });
+    },
     loadLoaderSource,
     setActionState: async (tabId, title, badge) => {
       await chrome.action.setTitle({ tabId, title });

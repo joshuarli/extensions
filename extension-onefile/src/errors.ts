@@ -24,7 +24,7 @@ export class ArchiveBuildError extends Schema.TaggedError<ArchiveBuildError>()("
   }
 }
 
-export const DownloadFailureKind = Schema.Literals(["too-large", "rejected"]);
+export const DownloadFailureKind = Schema.Literals(["rejected"]);
 
 export type DownloadFailureKind = Schema.Schema.Type<typeof DownloadFailureKind>;
 

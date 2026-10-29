@@ -22,17 +22,17 @@ function payload() {
 
 function stubDeps(overrides: Partial<SaveDependencies> = {}): SaveDependencies & {
   states: { tabId: number; title: string; badge: string }[];
-  downloads: { url: string; filename: string }[];
+  downloads: { blob: Blob; filename: string }[];
 } {
   const states: { tabId: number; title: string; badge: string }[] = [],
-    downloads: { url: string; filename: string }[] = [];
+    downloads: { blob: Blob; filename: string }[] = [];
   return {
     states,
     downloads,
     executeCapture: async () => payload(),
     fetchResource: async () => ({ data: imageBytes, mime: "image/png" }),
-    downloadDataUrl: async (url, filename) => {
-      downloads.push({ url, filename });
+    downloadBlob: async (blob, filename) => {
+      downloads.push({ blob, filename });
       return 7;
     },
     loadLoaderSource: async () => "/*loader*/",
@@ -146,8 +146,7 @@ describe("saveTab", () => {
     expect(outcome.degraded).toBe(false);
     expect(order).toContain("https://example.com/slow.png");
     const stored = deps.downloads.at(0),
-      dataUrl = stored?.url.split(",").at(1) ?? "",
-      archiveBytes = new Uint8Array(Buffer.from(dataUrl, "base64")),
+      archiveBytes = new Uint8Array(await stored?.blob.arrayBuffer() ?? []),
       directory = readStoredArchive(archiveBytes);
     expect(directory.entries.map((entry) => entry.name)).toEqual([
       "resources/0.png",
@@ -157,12 +156,33 @@ describe("saveTab", () => {
     ]);
   });
 
-  it("maps oversized archives to the too-large download error", async () => {
+  it("downloads archives above the old data-url cap through the blob transport", async () => {
     const deps = stubDeps({
       fetchResource: async () => ({ data: new Uint8Array(2_000_000), mime: "image/png" }),
     });
-    const error = await Effect.runPromise(saveTab({ id: 10 }, deps, new Map()).pipe(Effect.flip));
-    expect(error).toMatchObject({ _tag: "DownloadFailedError", kind: "too-large" });
-    expect(deps.states.at(-1)).toMatchObject({ title: "Onefile archive is too large to download here" });
+    const outcome = await Effect.runPromise(saveTab({ id: 10 }, deps, new Map()));
+    expect(outcome.degraded).toBe(false);
+    expect(deps.downloads).toHaveLength(1);
+    expect(deps.states.at(-1)).toMatchObject({ tabId: 10, badge: "" });
+  });
+
+  it("reports per-resource progress in the action title and badge", async () => {
+    const deps = stubDeps({
+      executeCapture: async () => ({
+        ...payload(),
+        pageHtml: '<img src="onefile-resource-0"><img src="onefile-resource-1">',
+        resources: [
+          { url: "https://example.com/a.png", kind: "image" as const },
+          { url: "https://example.com/b.png", kind: "image" as const },
+        ],
+      }),
+    });
+    await Effect.runPromise(saveTab({ id: 13 }, deps, new Map()));
+    const titles = deps.states.map((state) => state.title),
+      badges = deps.states.map((state) => state.badge);
+    expect(titles).toContain("Onefile is saving… (1/2)");
+    expect(titles).toContain("Onefile is saving… (2/2)");
+    expect(badges).toContain("50%");
+    expect(badges).toContain("100%");
   });
 });
