@@ -1,6 +1,6 @@
 import { Effect } from "effect";
 import { graphqlRequest, RequestFailure } from "./api.ts";
-import { readCredentials, type Operation } from "./capture.ts";
+import { currentUserId, readCredentials, type Operation } from "./capture.ts";
 import { parseTimeline, parseFolders, type Folder } from "./parser.ts";
 import { savePage, saveFolders, saveState, type ScanState } from "./storage.ts";
 
@@ -87,6 +87,7 @@ export async function collectTimeline(
     if (cursor) variables["cursor"] = cursor;
     const response = await requestWithRetry(userId, operation, variables, signal, report);
     stopped(signal);
+    if (await currentUserId() !== userId) throw new RequestFailure("auth", "X account changed before saving the page.");
     const result = parseTimeline(response, new Date().toISOString());
     if (!result.valid) throw new Error("X changed its timeline response. Partial results were preserved.");
     pages++;
@@ -118,6 +119,7 @@ async function collectFolderList(options: CollectionOptions): Promise<Folder[]> 
     const variables: Record<string, unknown> = cursor ? { cursor } : {};
     const response = await requestWithRetry(userId, "BookmarkFoldersSlice", variables, signal, report);
     stopped(signal);
+    if (await currentUserId() !== userId) throw new RequestFailure("auth", "X account changed before saving folders.");
     const result = parseFolders(response);
     if (!result.valid) throw new Error("X changed its bookmark folders response. Folder coverage is partial.");
     await saveFolders(db, result.folders);

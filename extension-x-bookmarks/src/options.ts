@@ -16,6 +16,7 @@ let db: IDBDatabase | null = null;
 let userId: string | null = null;
 let controller: AbortController | null = null;
 let busy = false;
+let connectionReady = false;
 
 function required<T extends HTMLElement>(id: string): T {
   const element = document.getElementById(id);
@@ -34,7 +35,7 @@ function errorMessage(cause: unknown): string {
 function setBusy(value: boolean): void {
   busy = value;
   refreshButton.disabled = value;
-  collectButton.disabled = value || !userId;
+  collectButton.disabled = value || !connectionReady;
   downloadButton.disabled = value || !db;
   stopButton.disabled = !value;
 }
@@ -53,6 +54,7 @@ async function refresh(): Promise<void> {
     captureElement.textContent = "Unavailable";
     countElement.textContent = "—";
     coverageElement.textContent = "—";
+    connectionReady = false;
     collectButton.disabled = true;
     downloadButton.disabled = true;
     status("Sign in to X and open the bookmarks page.");
@@ -64,7 +66,8 @@ async function refresh(): Promise<void> {
   captureElement.textContent = available.length
     ? available.join(", ") + (credentials.authorization ? "" : " (missing authorization header)")
     : "No requests captured — reload X bookmarks";
-  collectButton.disabled = !credentials.queryIds["Bookmarks"] || !credentials.authorization;
+  connectionReady = !!credentials.queryIds["Bookmarks"] && !!credentials.authorization;
+  collectButton.disabled = !connectionReady;
   downloadButton.disabled = false;
   countElement.textContent = String(await bookmarkCount(db));
   const previous = await loadState(db);
