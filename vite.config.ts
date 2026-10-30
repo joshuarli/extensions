@@ -80,6 +80,18 @@ const allowRightClickInjectedEntries = [
         emptyOutDir: false,
       })),
     ]),
+    "extension-x-bookmarks": defineExtension("extension-x-bookmarks", [
+      {
+        input: {
+          "service-worker": sourcePath("extension-x-bookmarks", "service-worker.ts"),
+          options: sourcePath("extension-x-bookmarks", "options.html"),
+        },
+        entryFileName: "[name].js",
+        format: "es",
+        target: "chrome120",
+        emptyOutDir: true,
+      },
+    ]),
     "extension-youtube-transcript": defineExtension("extension-youtube-transcript", [
       {
         input: {

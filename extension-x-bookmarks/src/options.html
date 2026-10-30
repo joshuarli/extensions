@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>X Bookmarks</title>
+  <style>
+    :root { color-scheme: light dark; font: 15px/1.55 system-ui, sans-serif; }
+    body { margin: 0; padding: 2rem 1.25rem; }
+    main { max-width: 42rem; margin: 0 auto; }
+    h1 { font-size: 1.5rem; margin: 0 0 .5rem; }
+    .subtle { opacity: .7; }
+    dl { display: grid; grid-template-columns: 10rem 1fr; gap: .3rem 1rem; margin: 1.5rem 0; }
+    dt { opacity: .7; }
+    dd { margin: 0; overflow-wrap: anywhere; }
+    .actions { display: flex; flex-wrap: wrap; gap: .65rem; }
+    button { font: inherit; padding: .5rem .9rem; cursor: pointer; }
+    button:disabled { cursor: not-allowed; opacity: .6; }
+    output { display: block; margin-top: 1.5rem; padding: .75rem; border: 1px solid currentColor;
+      border-radius: .35rem; white-space: pre-wrap; overflow-wrap: anywhere; min-height: 2.3rem; }
+    a { color: inherit; text-underline-offset: .15em; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>X Bookmarks</h1>
+    <p class="subtle">Local, incremental bookmark archive. No external service, dependencies, or analytics.</p>
+    <p>First <a href="https://x.com/i/bookmarks" target="_blank" rel="noopener noreferrer">open X bookmarks</a>
+      in a signed-in tab and reload that page so this extension can observe its current GraphQL requests.
+      Open a bookmark folder as well if you want folder assignments.</p>
+    <dl>
+      <dt>Account ID</dt><dd id="account">Checking…</dd>
+      <dt>API capture</dt><dd id="capture">Checking…</dd>
+      <dt>Saved posts</dt><dd id="count">Checking…</dd>
+      <dt>Last scan</dt><dd id="coverage">Not checked</dd>
+    </dl>
+    <div class="actions">
+      <button type="button" id="refresh">Refresh connection</button>
+      <button type="button" id="collect" disabled>Collect all</button>
+      <button type="button" id="stop" disabled>Stop</button>
+      <button type="button" id="download" disabled>Download JSON</button>
+    </div>
+    <output role="status" id="status" aria-live="polite">Ready.</output>
+    <p class="subtle">Posts are upserted after each page, including folder-only posts. Interrupted scans remain exportable.
+      Re-running retains historical posts; the exported file is cumulative, not a guarantee that every post remains bookmarked.
+      Completeness depends on what X returns. No media files are downloaded.</p>
+  </main>
+  <script type="module" src="./options.ts"></script>
+</body>
+</html>

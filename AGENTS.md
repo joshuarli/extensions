@@ -1,6 +1,6 @@
 # Repository guide
 
-This repository builds three Chromium Manifest V3 extensions with shared TypeScript and Vite tooling.
+This repository builds four Chromium Manifest V3 extensions with shared TypeScript and Vite tooling.
 
 ## Commands
 
@@ -22,4 +22,5 @@ This repository builds three Chromium Manifest V3 extensions with shared TypeScr
 - Shared setup, builds, and tests: [docs/development.md](docs/development.md)
 - Allow Right-Click architecture: [docs/allow-right-click.md](docs/allow-right-click.md)
 - YouTube user and message API: [extension-youtube-transcript/README.md](extension-youtube-transcript/README.md)
+- X Bookmarks collection/export: [extension-x-bookmarks/README.md](extension-x-bookmarks/README.md)
 - Onefile save and format: [extension-onefile/README.md](extension-onefile/README.md), [extension-onefile/ARCHITECTURE.md](extension-onefile/ARCHITECTURE.md), [extension-onefile/FORMAT.md](extension-onefile/FORMAT.md)

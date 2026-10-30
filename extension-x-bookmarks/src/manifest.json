@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "minimum_chrome_version": "120",
+  "name": "X Bookmarks",
+  "version": "0.1.0",
+  "description": "Archive X bookmarks and optional folders locally to JSON.",
+  "permissions": [
+    "cookies",
+    "storage",
+    "unlimitedStorage",
+    "webRequest",
+    "declarativeNetRequestWithHostAccess",
+    "downloads"
+  ],
+  "host_permissions": ["https://x.com/*"],
+  "background": {
+    "service_worker": "service-worker.js",
+    "type": "module"
+  },
+  "action": { "default_title": "Export X bookmarks" },
+  "options_page": "options.html"
+}

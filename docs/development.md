@@ -1,6 +1,6 @@
 # Development
 
-The root package owns dependencies and scripts for all three extensions. Node.js runs the build script; pnpm manages JavaScript dependencies and the lockfile. Requires Node.js 22.12 or newer.
+The root package owns dependencies and scripts for all four extensions. Node.js runs the build script; pnpm manages JavaScript dependencies and the lockfile. Requires Node.js 22.12 or newer.
 
 ## Setup and commands
 
@@ -16,6 +16,8 @@ The root package owns dependencies and scripts for all three extensions. Node.js
 Vite writes development and production bundles to separate generated trees. Load a production extension folder as an unpacked extension; the root README lists their names.
 
 ## Project structure and bundle boundaries
+
+X Bookmarks is a fourth, small MV3 extension using native IndexedDB for local archival.
 
 Each `extension-*/` directory contains a manifest, source files, and package-local tests. [vite.config.ts](../vite.config.ts) defines the extension entry points; [the build script](../scripts/build-extensions.mjs) bundles them and copies static assets.
 
