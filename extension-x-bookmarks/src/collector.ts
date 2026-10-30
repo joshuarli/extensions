@@ -1,7 +1,7 @@
 import { Effect } from "effect";
 import { graphqlRequest, RequestFailure } from "./api.ts";
 import { readCredentials, type Operation } from "./capture.ts";
-import { parseTimeline, parseFolders, type Bookmark, type Folder } from "./parser.ts";
+import { parseTimeline, parseFolders, type Folder } from "./parser.ts";
 import { savePage, saveFolders, saveState, type ScanState } from "./storage.ts";
 
 const PAGE_DELAY_MS = 2500;

@@ -7,8 +7,8 @@ const CredentialsSchema = Schema.Struct({
   authorization: Schema.optional(Schema.String),
   clientUuid: Schema.optional(Schema.String),
   transactionId: Schema.optional(Schema.String),
-  queryIds: Schema.Record({ key: Schema.String, value: Schema.String }),
-  features: Schema.Record({ key: Schema.String, value: Schema.String }),
+  queryIds: Schema.Record(Schema.String, Schema.String),
+  features: Schema.Record(Schema.String, Schema.String),
 });
 
 export type Credentials = Schema.Schema.Type<typeof CredentialsSchema>;
@@ -52,7 +52,7 @@ export interface Capture {
 export function captureRequest(
   url: string,
   initiator: string | undefined,
-  headers: readonly { name: string; value?: string }[],
+  headers: readonly { name: string; value?: string | undefined }[],
 ): Capture | null {
   if (initiator !== "https://x.com" && initiator !== "https://twitter.com") return null;
   const requestUrl = new URL(url);
@@ -74,12 +74,15 @@ export function captureRequest(
       }
     } catch { /* Ignore invalid feature flags. */ }
   }
+  const authorization = values.get("authorization");
+  const clientUuid = values.get("x-client-uuid");
+  const transactionId = values.get("x-client-transaction-id");
   return {
     operation,
     queryId,
-    ...(values.get("authorization") ? { authorization: values.get("authorization") } : {}),
-    ...(values.get("x-client-uuid") ? { clientUuid: values.get("x-client-uuid") } : {}),
-    ...(values.get("x-client-transaction-id") ? { transactionId: values.get("x-client-transaction-id") } : {}),
+    ...(authorization ? { authorization } : {}),
+    ...(clientUuid ? { clientUuid } : {}),
+    ...(transactionId ? { transactionId } : {}),
     ...(validatedFeatures ? { features: validatedFeatures } : {}),
   };
 }

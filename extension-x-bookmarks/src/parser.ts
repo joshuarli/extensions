@@ -215,8 +215,8 @@ export function parseTimeline(data: unknown, observedAt: string): ParsedPage {
 }
 
 export function parseFolders(data: unknown): ParsedFolders {
-  const slice = get(data, "data", "viewer", "user_results", "result", "bookmark_collections_slice");
-  if (!object(slice)) return { valid: false, folders: [], nextCursor: null };
+  const slice = object(get(data, "data", "viewer", "user_results", "result", "bookmark_collections_slice"));
+  if (!slice) return { valid: false, folders: [], nextCursor: null };
   const items = slice["items"];
   const cursor = get(slice, "slice_info", "next_cursor");
   if (!Array.isArray(items) || (cursor != null && typeof cursor !== "string")) {
