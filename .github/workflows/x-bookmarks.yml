@@ -29,5 +29,6 @@ jobs:
           node-version: "22"
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm run check
+      - run: pnpm run typecheck
+      - run: pnpm run vitest run extension-x-bookmarks
       - run: pnpm run dist
