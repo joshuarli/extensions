@@ -5,7 +5,7 @@ import type {
   TranscriptPanelData,
 } from "./types.ts";
 import { buildMarkdown } from "./metadata.ts";
-import { collectPageData, collectTranscriptPanel, updatePageProgress } from "./page.ts";
+import { readYouTubePage, updatePageProgress } from "./page.ts";
 import {
   fetchCaptionXmlText,
   fetchNextResponse,
@@ -274,9 +274,9 @@ function defaultDependencies(): BackgroundDependencies {
     progress: (tabId: number, message: string, done = false): Promise<void> =>
       sendProgress(tabId, message, done),
     readPageData: (tabId: number): Promise<unknown> =>
-      executePageScript(tabId, collectPageData),
+      executePageScript(tabId, readYouTubePage, "page"),
     readPanel: (tabId: number): Promise<unknown> =>
-      executePageScript(tabId, collectTranscriptPanel),
+      executePageScript(tabId, readYouTubePage, "panel"),
     schedule: (callback: () => void, delay: number) => {
       setTimeout(callback, delay);
     },
@@ -391,11 +391,14 @@ async function notifySafely(title: string, message: string): Promise<void> {
   }
 }
 
-function executePageScript(tabId: number, func: () => unknown): Promise<unknown> {
-  return chrome.scripting.executeScript({ func, target: { tabId } }).then((results) => {
-    const result = results[0]?.result;
-    return result;
-  });
+function executePageScript<Args extends unknown[]>(
+  tabId: number,
+  func: (...args: Args) => unknown,
+  ...args: Args
+): Promise<unknown> {
+  return chrome.scripting
+    .executeScript({ args, func, target: { tabId } })
+    .then((results) => results[0]?.result);
 }
 
 export function isYouTubeUrl(url: string): boolean {

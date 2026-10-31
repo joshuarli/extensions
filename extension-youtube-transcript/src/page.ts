@@ -1,189 +1,270 @@
 import type { PageData, TranscriptPanelData, TranscriptSegment } from "./types.ts";
 
-function parseTimestamp(value: string): number | null {
-  const parts = value.trim().split(":").map(Number);
-  if (parts.some((n) => Number.isNaN(n)) || (parts.length !== 2 && parts.length !== 3)) {
-    return null;
-  }
-  const [first = 0, second = 0, third = 0] = parts;
-  return parts.length === 3 ? first * 3600 + second * 60 + third : first * 60 + second;
-}
+type PageReadMode = "page" | "panel";
 
-function readLanguageCode(page: Document): string | undefined {
-  const button = page.querySelector(
-      'ytd-engagement-panel-section-list-renderer[target-id="engagement-panel-searchable-transcript"] #footer yt-dropdown-menu button',
-    ),
-    text = button?.textContent?.trim();
-  return text || undefined;
-}
-
-function readSegments(root: Element): TranscriptSegment[] {
-  const desktopSegments = [...root.querySelectorAll("ytd-transcript-segment-renderer")],
-    mobileSegments = [...root.querySelectorAll("transcript-segment-view-model")],
-    raw: { start: number | null; text: string }[] =
-      desktopSegments.length > 0
-        ? desktopSegments.map((segment) => ({
-            start: parseTimestamp(segment.querySelector(".segment-timestamp")?.textContent || ""),
-            text: segment.querySelector(".segment-text")?.textContent?.trim() || "",
-          }))
-        : mobileSegments.map((segment) => ({
-            start: parseTimestamp(
-              segment.querySelector(".ytwTranscriptSegmentViewModelTimestamp")?.textContent || "",
-            ),
-            text:
-              segment.querySelector("span.yt-core-attributed-string")?.textContent?.trim() || "",
-          }));
-  return raw.filter(
-    (segment): segment is { start: number; text: string } =>
-      segment.start !== null && Boolean(segment.text),
-  );
-}
-
-async function waitFor<T>(
-  predicate: () => T,
-  attempts = 20,
-): Promise<Exclude<T, false | null | undefined> | null> {
-  for (let attempt = 0; attempt < attempts; attempt++) {
-    const result = predicate();
-    if (result) {
-      return result as Exclude<T, false | null | undefined>;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 250));
-  }
-  return null;
-}
-
-export function collectPageData(doc: Document = document): PageData {
-  const parseGlobal = (name: string): Record<string, unknown> | null => {
-      const script = [...doc.scripts].find((item) => item.textContent?.includes(name));
-      if (!script?.textContent) {
+// chrome.scripting.executeScript serializes this function, so every helper it
+// calls must be nested here instead of at module scope.
+export async function readYouTubePage(
+  mode: PageReadMode,
+  doc: Document = document,
+): Promise<PageData | TranscriptPanelData | null> {
+  const parseTimestamp = (value: string): number | null => {
+      const parts = value.trim().split(":").map(Number);
+      if (parts.some((n) => Number.isNaN(n)) || (parts.length !== 2 && parts.length !== 3)) {
         return null;
       }
-      const source = script.textContent,
-        start = source.indexOf("{", source.indexOf(name));
-      if (start === -1) {
-        return null;
+      const [first = 0, second = 0, third = 0] = parts;
+      return parts.length === 3 ? first * 3600 + second * 60 + third : first * 60 + second;
+    },
+    readLanguageCode = (): string | undefined => {
+      const button = doc.querySelector(
+          'ytd-engagement-panel-section-list-renderer[target-id="engagement-panel-searchable-transcript"] #footer yt-dropdown-menu button',
+        ),
+        text = button?.textContent?.trim();
+      return text || undefined;
+    },
+    readSegments = (root: Element): TranscriptSegment[] => {
+      const desktopSegments = [...root.querySelectorAll("ytd-transcript-segment-renderer")],
+        mobileSegments = [...root.querySelectorAll("transcript-segment-view-model")],
+        raw: { start: number | null; text: string }[] =
+          desktopSegments.length > 0
+            ? desktopSegments.map((segment) => ({
+                start: parseTimestamp(
+                  segment.querySelector(".segment-timestamp")?.textContent || "",
+                ),
+                text: segment.querySelector(".segment-text")?.textContent?.trim() || "",
+              }))
+            : mobileSegments.map((segment) => ({
+                start: parseTimestamp(
+                  segment.querySelector(".ytwTranscriptSegmentViewModelTimestamp")?.textContent ||
+                    "",
+                ),
+                text:
+                  segment
+                    .querySelector(".ytAttributedStringHost, span.yt-core-attributed-string")
+                    ?.textContent?.trim() || "",
+              }));
+      return raw.filter(
+        (segment): segment is { start: number; text: string } =>
+          segment.start !== null && Boolean(segment.text),
+      );
+    },
+    TRANSCRIPT_PANEL_SELECTOR = "ytd-engagement-panel-section-list-renderer",
+    LEGACY_TRANSCRIPT_PANEL_SELECTOR = `${TRANSCRIPT_PANEL_SELECTOR}[target-id="engagement-panel-searchable-transcript"]`,
+    MOBILE_TRANSCRIPT_CONTAINER_SELECTOR =
+      "ytm-macro-markers-list-renderer .ytm-macro-markers-list-container",
+    isExpandedPanel = (panel: Element): boolean =>
+      panel.getAttribute("visibility") === "ENGAGEMENT_PANEL_VISIBILITY_EXPANDED",
+    findTranscriptContainer = (): Element | null => {
+      const legacyPanel = doc.querySelector(LEGACY_TRANSCRIPT_PANEL_SELECTOR),
+        legacyContainer = legacyPanel?.querySelector("#segments-container"),
+        modernPanels = [...doc.querySelectorAll(TRANSCRIPT_PANEL_SELECTOR)].filter((panel) =>
+          panel.querySelector("transcript-segment-view-model"),
+        ),
+        expandedModern = modernPanels.find(isExpandedPanel);
+      if (expandedModern) {
+        return expandedModern;
       }
-      let depth = 0;
-      for (let index = start; index < source.length; index++) {
-        if (source[index] === "{") {
-          depth++;
+      if (
+        legacyPanel &&
+        isExpandedPanel(legacyPanel) &&
+        legacyContainer?.querySelector("ytd-transcript-segment-renderer")
+      ) {
+        return legacyContainer;
+      }
+      if (modernPanels.length > 0) {
+        return modernPanels[0]!;
+      }
+      return legacyContainer || doc.querySelector(MOBILE_TRANSCRIPT_CONTAINER_SELECTOR);
+    };
+
+  const readPageData = (): PageData => {
+    const parseGlobal = (name: string): Record<string, unknown> | null => {
+        const script = [...doc.scripts].find((item) => item.textContent?.includes(name));
+        if (!script?.textContent) {
+          return null;
         }
-        if (source[index] === "}") {
-          depth--;
+        const source = script.textContent,
+          start = source.indexOf("{", source.indexOf(name));
+        if (start === -1) {
+          return null;
         }
-        if (depth === 0) {
-          try {
-            return JSON.parse(source.slice(start, index + 1)) as Record<string, unknown>;
-          } catch {
-            return null;
+        let depth = 0;
+        for (let index = start; index < source.length; index++) {
+          if (source[index] === "{") {
+            depth++;
+          }
+          if (source[index] === "}") {
+            depth--;
+          }
+          if (depth === 0) {
+            try {
+              return JSON.parse(source.slice(start, index + 1)) as Record<string, unknown>;
+            } catch {
+              return null;
+            }
           }
         }
-      }
-      return null;
-    },
-    getVideoId = (url: string): string => {
-      try {
-        const parsed = new URL(url);
-        if (parsed.hostname === "youtu.be") return parsed.pathname.slice(1).split("/")[0] || "";
-        if (parsed.pathname.includes("/shorts/"))
-          return parsed.pathname.split("/shorts/")[1]?.split("/")[0] || "";
-        return parsed.searchParams.get("v") || "";
-      } catch {
-        return "";
-      }
-    },
-    playerResponse = parseGlobal("ytInitialPlayerResponse"),
-    initialData = parseGlobal("ytInitialData");
-  let videoObject = [...doc.querySelectorAll('script[type="application/ld+json"]')]
-    .flatMap((script) => {
-      try {
-        const value = JSON.parse(script.textContent || "null") as unknown;
-        return Array.isArray(value) ? (value as Record<string, unknown>[]) : [value];
-      } catch {
-        return [];
-      }
-    })
-    .find((value) => {
-      const obj = value as Record<string, unknown>;
-      return obj?.["@type"] === "VideoObject";
-    }) as Record<string, unknown> | undefined;
-  const playerMicroformat = playerResponse?.["microformat"] as Record<string, unknown> | undefined;
-  let playerMicroformatRenderer = playerMicroformat?.["playerMicroformatRenderer"] as
-      | Record<string, unknown>
-      | undefined,
-    videoDetails = playerResponse?.["videoDetails"] as Record<string, unknown> | undefined;
+        return null;
+      },
+      getVideoId = (url: string): string => {
+        try {
+          const parsed = new URL(url);
+          if (parsed.hostname === "youtu.be") return parsed.pathname.slice(1).split("/")[0] || "";
+          if (parsed.pathname.includes("/shorts/"))
+            return parsed.pathname.split("/shorts/")[1]?.split("/")[0] || "";
+          return parsed.searchParams.get("v") || "";
+        } catch {
+          return "";
+        }
+      },
+      playerResponse = parseGlobal("ytInitialPlayerResponse"),
+      initialData = parseGlobal("ytInitialData");
+    let videoObject = [...doc.querySelectorAll('script[type="application/ld+json"]')]
+      .flatMap((script) => {
+        try {
+          const value = JSON.parse(script.textContent || "null") as unknown;
+          return Array.isArray(value) ? (value as Record<string, unknown>[]) : [value];
+        } catch {
+          return [];
+        }
+      })
+      .find((value) => {
+        const obj = value as Record<string, unknown>;
+        return obj?.["@type"] === "VideoObject";
+      }) as Record<string, unknown> | undefined;
+    const playerMicroformat = playerResponse?.["microformat"] as Record<string, unknown> | undefined;
+    let playerMicroformatRenderer = playerMicroformat?.["playerMicroformatRenderer"] as
+        | Record<string, unknown>
+        | undefined,
+      videoDetails = playerResponse?.["videoDetails"] as Record<string, unknown> | undefined;
 
-  const playerVideoId = videoDetails?.["videoId"] as string | undefined;
-  if (playerVideoId && playerVideoId !== getVideoId(doc.URL)) {
-    videoObject = undefined;
-    videoDetails = undefined;
-    playerMicroformatRenderer = undefined;
-  }
+    const playerVideoId = videoDetails?.["videoId"] as string | undefined;
+    if (playerVideoId && playerVideoId !== getVideoId(doc.URL)) {
+      videoObject = undefined;
+      videoDetails = undefined;
+      playerMicroformatRenderer = undefined;
+    }
 
-  const thumbnail = videoDetails?.["thumbnail"] as Record<string, unknown> | undefined,
-    thumbnails = (thumbnail?.["thumbnails"] as Record<string, unknown>[]) || [],
-    author =
-      ((videoObject?.["author"] as Record<string, unknown> | undefined)?.["name"] as
-        | string
-        | undefined) ||
-      (videoDetails?.["author"] as string | undefined) ||
-      (videoDetails?.["ownerChannelName"] as string | undefined) ||
-      (playerMicroformatRenderer?.["ownerChannelName"] as string | undefined) ||
-      doc
-        .querySelector("#owner-name a, ytd-video-owner-renderer #channel-name a")
-        ?.textContent?.trim() ||
-      "",
-    metadata = {
-      author,
-      description:
-        (videoObject?.["description"] as string | undefined) ||
-        ((playerMicroformatRenderer?.["description"] as Record<string, unknown> | undefined)?.[
-          "simpleText"
-        ] as string | undefined) ||
-        (doc.querySelector('meta[property="og:description"]') as HTMLMetaElement | null)?.content ||
+    const thumbnail = videoDetails?.["thumbnail"] as Record<string, unknown> | undefined,
+      thumbnails = (thumbnail?.["thumbnails"] as Record<string, unknown>[]) || [],
+      author =
+        ((videoObject?.["author"] as Record<string, unknown> | undefined)?.["name"] as
+          | string
+          | undefined) ||
+        (videoDetails?.["author"] as string | undefined) ||
+        (videoDetails?.["ownerChannelName"] as string | undefined) ||
+        (playerMicroformatRenderer?.["ownerChannelName"] as string | undefined) ||
+        doc
+          .querySelector("#owner-name a, ytd-video-owner-renderer #channel-name a")
+          ?.textContent?.trim() ||
         "",
-      image:
-        (Array.isArray(videoObject?.["thumbnailUrl"])
-          ? (videoObject["thumbnailUrl"] as string[])[0]
-          : (videoObject?.["thumbnailUrl"] as string | undefined) ||
-            (thumbnails.at(-1)?.["url"] as string | undefined) ||
-            (doc.querySelector('meta[property="og:image"]') as HTMLMetaElement | null)?.content) ||
-        "",
-      language: "",
-      published:
-        (videoObject?.["uploadDate"] as string | undefined) ||
-        (playerMicroformatRenderer?.["publishDate"] as string | undefined) ||
-        "",
-      site: "YouTube",
-      title:
-        (videoObject?.["name"] as string | undefined) ||
-        (videoDetails?.["title"] as string | undefined) ||
-        (doc.querySelector('meta[property="og:title"]') as HTMLMetaElement | null)?.content ||
-        doc.title.replace(/\s+-\s+YouTube\s*$/u, ""),
-    },
-    desktop =
-      'ytd-engagement-panel-section-list-renderer[target-id="engagement-panel-searchable-transcript"] #segments-container',
-    mobile = "ytm-macro-markers-list-renderer .ytm-macro-markers-list-container",
-    container = doc.querySelector(desktop) || doc.querySelector(mobile);
-  if (!container) {
-    return { initialData, metadata, playerResponse, transcript: null };
-  }
+      metadata = {
+        author,
+        description:
+          (videoObject?.["description"] as string | undefined) ||
+          ((playerMicroformatRenderer?.["description"] as Record<string, unknown> | undefined)?.[
+            "simpleText"
+          ] as string | undefined) ||
+          (doc.querySelector('meta[property="og:description"]') as HTMLMetaElement | null)
+            ?.content ||
+          "",
+        image:
+          (Array.isArray(videoObject?.["thumbnailUrl"])
+            ? (videoObject["thumbnailUrl"] as string[])[0]
+            : (videoObject?.["thumbnailUrl"] as string | undefined) ||
+              (thumbnails.at(-1)?.["url"] as string | undefined) ||
+              (doc.querySelector('meta[property="og:image"]') as HTMLMetaElement | null)
+                ?.content) || "",
+        language: "",
+        published:
+          (videoObject?.["uploadDate"] as string | undefined) ||
+          (playerMicroformatRenderer?.["publishDate"] as string | undefined) ||
+          "",
+        site: "YouTube",
+        title:
+          (videoObject?.["name"] as string | undefined) ||
+          (videoDetails?.["title"] as string | undefined) ||
+          (doc.querySelector('meta[property="og:title"]') as HTMLMetaElement | null)?.content ||
+          doc.title.replace(/\s+-\s+YouTube\s*$/u, ""),
+      },
+      container = findTranscriptContainer();
+    if (!container) {
+      return { initialData, metadata, playerResponse, transcript: null };
+    }
 
-  const segments = readSegments(container);
-  if (segments.length === 0) {
-    return { initialData, metadata, playerResponse, transcript: null };
-  }
-  const languageCode = readLanguageCode(doc);
-  return {
-    initialData,
-    metadata,
-    playerResponse,
-    transcript: {
-      ...(languageCode ? { languageCode } : {}),
-      segments,
-    },
+    const segments = readSegments(container);
+    if (segments.length === 0) {
+      return { initialData, metadata, playerResponse, transcript: null };
+    }
+    const languageCode = readLanguageCode();
+    return {
+      initialData,
+      metadata,
+      playerResponse,
+      transcript: {
+        ...(languageCode ? { languageCode } : {}),
+        segments,
+      },
+    };
   };
+
+  const readTranscriptPanel = async (): Promise<TranscriptPanelData | null> => {
+    const waitFor = async <T>(
+        predicate: () => T,
+        attempts = 20,
+      ): Promise<Exclude<T, false | null | undefined> | null> => {
+        for (let attempt = 0; attempt < attempts; attempt++) {
+          const result = predicate();
+          if (result) {
+            return result as Exclude<T, false | null | undefined>;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 250));
+        }
+        return null;
+      },
+      read = (): TranscriptPanelData | null => {
+        const container = findTranscriptContainer();
+        if (!container) {
+          return null;
+        }
+        const segments = readSegments(container);
+        if (segments.length === 0) {
+          return null;
+        }
+        const languageCode = readLanguageCode();
+        return { ...(languageCode ? { languageCode } : {}), segments };
+      },
+      existing = read();
+    if (existing) {
+      return existing;
+    }
+
+    if (doc.querySelector("ytm-slim-video-metadata-section-renderer")) {
+      (doc.querySelector('button[aria-label="Show more"]') as HTMLButtonElement | null)?.click();
+      const viewAll = await waitFor(() => doc.querySelector('button[aria-label="View all"]'));
+      if (!viewAll) {
+        return null;
+      }
+      (viewAll as HTMLButtonElement).click();
+      const timeline = await waitFor(() => doc.querySelector('button[aria-label="Timeline"]'));
+      if (!timeline) {
+        return null;
+      }
+      (timeline as HTMLButtonElement).click();
+    } else {
+      const button = doc.querySelector<HTMLButtonElement>(
+        "ytd-video-description-transcript-section-renderer button",
+      );
+      if (!button) {
+        return null;
+      }
+      button.click();
+    }
+    return waitFor(read);
+  };
+
+  return mode === "panel" ? readTranscriptPanel() : readPageData();
 }
 
 export function updatePageProgress(message: string, done: boolean = false): void {
@@ -249,51 +330,4 @@ export function updatePageProgress(message: string, done: boolean = false): void
   if (done) {
     setTimeout(() => host.remove(), 1800);
   }
-}
-
-export async function collectTranscriptPanel(
-  doc: Document = document,
-): Promise<TranscriptPanelData | null> {
-  const desktopContainer =
-      'ytd-engagement-panel-section-list-renderer[target-id="engagement-panel-searchable-transcript"] #segments-container',
-    mobileContainer = "ytm-macro-markers-list-renderer .ytm-macro-markers-list-container",
-    read = (): TranscriptPanelData | null => {
-      const container = doc.querySelector(desktopContainer) || doc.querySelector(mobileContainer);
-      if (!container) {
-        return null;
-      }
-      const segments = readSegments(container);
-      if (segments.length === 0) {
-        return null;
-      }
-      const languageCode = readLanguageCode(doc);
-      return { ...(languageCode ? { languageCode } : {}), segments };
-    },
-    existing = read();
-  if (existing) {
-    return existing;
-  }
-
-  if (doc.querySelector("ytm-slim-video-metadata-section-renderer")) {
-    (doc.querySelector('button[aria-label="Show more"]') as HTMLButtonElement | null)?.click();
-    const viewAll = await waitFor(() => doc.querySelector('button[aria-label="View all"]'));
-    if (!viewAll) {
-      return null;
-    }
-    (viewAll as HTMLButtonElement).click();
-    const timeline = await waitFor(() => doc.querySelector('button[aria-label="Timeline"]'));
-    if (!timeline) {
-      return null;
-    }
-    (timeline as HTMLButtonElement).click();
-  } else {
-    const button = doc.querySelector<HTMLButtonElement>(
-      "ytd-video-description-transcript-section-renderer button",
-    );
-    if (!button) {
-      return null;
-    }
-    (button as HTMLButtonElement)!.click();
-  }
-  return waitFor(read);
 }

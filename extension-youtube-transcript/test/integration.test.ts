@@ -1,4 +1,9 @@
-import type { BackgroundDependencies, PageData, TranscriptResult } from "../src/types.ts";
+import type {
+  BackgroundDependencies,
+  PageData,
+  TranscriptPanelData,
+  TranscriptResult,
+} from "../src/types.ts";
 import { describe, it, test } from "vitest";
 import { Effect } from "effect";
 import assert from "node:assert/strict";
@@ -13,7 +18,7 @@ import {
   isYouTubeUrl,
   getVideoId,
 } from "../src/service-worker.ts";
-import { collectPageData } from "../src/page.ts";
+import { readYouTubePage } from "../src/page.ts";
 import { resolveTranscript } from "../src/workflow.ts";
 import { fetchPlayerData, fetchTranscript, getCaptionTracks } from "../src/youtube-api.ts";
 import { CaptionFetchError } from "../src/error.ts";
@@ -292,22 +297,133 @@ test("service-worker reports malformed transcript panel data at the page boundar
   );
 });
 
-function segment(text: string) {
+function segment(text: string, timestamp = "0:05") {
   return {
     querySelector(selector: string) {
-      return selector.includes("timestamp")
-        ? { textContent: "0:05" }
-        : {
-            textContent: text,
-            trim() {
-              return text.trim();
-            },
-          };
+      if (selector.toLowerCase().includes("timestamp")) {
+        return { textContent: timestamp };
+      }
+      if (
+        selector === ".segment-text" ||
+        selector === ".ytAttributedStringHost, span.yt-core-attributed-string"
+      ) {
+        return {
+          textContent: text,
+          trim() {
+            return text.trim();
+          },
+        };
+      }
+      return null;
     },
   };
 }
 
-test("page collector extracts metadata and rendered transcript data", () => {
+interface FakeTranscriptPanelOptions {
+  layout: "legacy" | "modern";
+  segments: { text: string; timestamp?: string }[];
+  targetId?: string;
+  visibility: "EXPANDED" | "HIDDEN";
+}
+
+function fakeTranscriptPanel({
+  layout,
+  segments,
+  targetId,
+  visibility,
+}: FakeTranscriptPanelOptions) {
+  const elements = segments.map(({ text, timestamp }) => segment(text, timestamp)),
+    container = {
+      querySelector(selector: string) {
+        if (selector === "ytd-transcript-segment-renderer" && layout === "legacy") {
+          return elements[0] ?? null;
+        }
+        return null;
+      },
+      querySelectorAll(selector: string) {
+        if (selector === "ytd-transcript-segment-renderer") {
+          return layout === "legacy" ? elements : [];
+        }
+        if (selector === "transcript-segment-view-model") {
+          return layout === "modern" ? elements : [];
+        }
+        return [];
+      },
+    };
+  return {
+    ...(targetId === undefined ? {} : { targetId }),
+    getAttribute(name: string) {
+      return name === "visibility" ? `ENGAGEMENT_PANEL_VISIBILITY_${visibility}` : null;
+    },
+    querySelector(selector: string) {
+      if (selector === "#segments-container") return layout === "legacy" ? container : null;
+      if (selector === "transcript-segment-view-model" && layout === "modern") {
+        return elements[0] ?? null;
+      }
+      if (selector === "ytd-transcript-segment-renderer" && layout === "legacy") {
+        return elements[0] ?? null;
+      }
+      return null;
+    },
+    querySelectorAll: container.querySelectorAll,
+  };
+}
+
+function modernTranscriptPanel(
+  text: string,
+  visibility: "EXPANDED" | "HIDDEN" = "HIDDEN",
+  timestamp = "0:05",
+) {
+  return fakeTranscriptPanel({
+    layout: "modern",
+    segments: text ? [{ text, timestamp }] : [],
+    targetId: "PAmodern_transcript_view",
+    visibility,
+  });
+}
+
+function legacyTranscriptPanel(
+  text: string,
+  visibility: "EXPANDED" | "HIDDEN" = "HIDDEN",
+) {
+  return fakeTranscriptPanel({
+    layout: "legacy",
+    segments: text ? [{ text }] : [],
+    targetId: "engagement-panel-searchable-transcript",
+    visibility,
+  });
+}
+
+function transcriptDocument(
+  panels: ReturnType<typeof fakeTranscriptPanel>[],
+  mobile: unknown = null,
+): Document {
+  return {
+    scripts: [],
+    title: "Example - YouTube",
+    URL: "https://www.youtube.com/watch?v=current123",
+    querySelector(selector: string) {
+      if (
+        selector ===
+        'ytd-engagement-panel-section-list-renderer[target-id="engagement-panel-searchable-transcript"]'
+      ) {
+        return (
+          panels.find((panel) => panel.targetId === "engagement-panel-searchable-transcript") ?? null
+        );
+      }
+      if (selector === "ytm-macro-markers-list-renderer .ytm-macro-markers-list-container") {
+        return mobile;
+      }
+      return null;
+    },
+    querySelectorAll(selector: string) {
+      if (selector === "ytd-engagement-panel-section-list-renderer") return panels;
+      return [];
+    },
+  } as unknown as Document;
+}
+
+test("page collector extracts metadata and rendered transcript data", async () => {
   const scripts = [
       {
         textContent:
@@ -315,31 +431,73 @@ test("page collector extracts metadata and rendered transcript data", () => {
       },
       { textContent: "<not json>" },
     ],
-    transcriptRoot = {
-      querySelectorAll(selector: string) {
-        return selector.includes("ytd-transcript") ? [segment("Hello from DOM.")] : [];
-      },
-    },
+    transcriptRoot = legacyTranscriptPanel("Hello from DOM."),
     doc = {
       scripts,
       title: "Ignored - YouTube",
+      URL: "https://www.youtube.com/watch?v=current123",
       querySelector(selector: string) {
-        if (selector.includes("segments-container")) return transcriptRoot;
+        if (
+          selector ===
+          'ytd-engagement-panel-section-list-renderer[target-id="engagement-panel-searchable-transcript"]'
+        ) {
+          return transcriptRoot;
+        }
         return null;
       },
       querySelectorAll(selector: string) {
+        if (selector === "ytd-engagement-panel-section-list-renderer") return [transcriptRoot];
         if (selector === 'script[type="application/ld+json"]') return [];
         return [];
       },
     },
-    data = collectPageData(doc as unknown as Document);
+    data = (await readYouTubePage("page", doc as unknown as Document)) as PageData;
   assert.equal(data.metadata.title, "Player title");
   assert.equal(data.metadata.author, "Channel");
   assert.equal(data.metadata.published, "2024-01-02");
   assert.deepEqual(data.transcript!.segments, [{ start: 5, text: "Hello from DOM." }]);
 });
 
-test("page collector ignores player-derived metadata when response is stale", () => {
+test("page collector reads the modern desktop transcript panel", async () => {
+  const data = (await readYouTubePage(
+    "page",
+    transcriptDocument([modernTranscriptPanel("Welcome to the example video.", "HIDDEN", "0:00")]),
+  )) as PageData;
+
+  assert.deepEqual(data.transcript!.segments, [
+    { start: 0, text: "Welcome to the example video." },
+  ]);
+});
+
+test("page collector prefers the expanded transcript panel", async () => {
+  const render = async (panels: ReturnType<typeof fakeTranscriptPanel>[]) =>
+    ((await readYouTubePage("page", transcriptDocument(panels))) as PageData).transcript!
+      .segments[0]!.text;
+
+  assert.equal(
+    await render([modernTranscriptPanel("Hidden modern."), modernTranscriptPanel("Expanded modern.", "EXPANDED")]),
+    "Expanded modern.",
+  );
+  assert.equal(
+    await render([modernTranscriptPanel("Hidden modern."), legacyTranscriptPanel("Expanded legacy.", "EXPANDED")]),
+    "Expanded legacy.",
+  );
+  assert.equal(
+    await render([modernTranscriptPanel("Hidden modern."), legacyTranscriptPanel("", "HIDDEN")]),
+    "Hidden modern.",
+  );
+});
+
+test("panel reader returns an existing modern transcript", async () => {
+  const data = (await readYouTubePage(
+    "panel",
+    transcriptDocument([modernTranscriptPanel("Panel transcript.")]),
+  )) as TranscriptPanelData;
+
+  assert.deepEqual(data?.segments, [{ start: 5, text: "Panel transcript." }]);
+});
+
+test("page collector ignores player-derived metadata when response is stale", async () => {
   const scripts = [
       {
         textContent:
@@ -364,7 +522,7 @@ test("page collector ignores player-derived metadata when response is stale", ()
         return [];
       },
     },
-    data = collectPageData(doc as unknown as Document);
+    data = (await readYouTubePage("page", doc as unknown as Document)) as PageData;
   assert.equal(data.metadata.title, "New OG Title");
   assert.equal(data.metadata.author, "New Channel");
   assert.equal(data.metadata.description, "New OG Description");
