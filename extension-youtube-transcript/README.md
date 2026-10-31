@@ -2,6 +2,8 @@
 
 Copies the current YouTube video's transcript as Markdown with video metadata in YAML frontmatter, or copies subtitles in SRT format.
 
+Transcript extraction is adapted from [defuddle's YouTube extractor](https://github.com/kepano/defuddle/blob/main/src/extractors/youtube.ts).
+
 For browser installation, follow the [repository README](../README.md).
 
 ## Use
