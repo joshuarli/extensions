@@ -425,6 +425,10 @@ test("player API retries clients and stops at the first caption-bearing response
   assert.equal(getCaptionTracks(result)[0]?.languageCode, "en");
   assert.equal(requests.length, 2);
   assert.equal((requests[0]!.headers as Record<string, string>)["Accept-Language"], "fr");
+  assert.deepEqual(
+    requests.map((request) => JSON.parse(String(request.body)).context.client.clientName),
+    ["IOS", "ANDROID"],
+  );
 });
 
 test("does not fetch captions from inline player data for another video", async () => {

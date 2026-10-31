@@ -98,7 +98,7 @@ export function fetchPlayerData(
             headers["User-Agent"] = "com.google.android.youtube/20.10.38 (Linux; U; Android 14)";
           }
           const response = await client.fetch(PLAYER_URL, {
-            body: JSON.stringify({ context: { client }, videoId }),
+            body: JSON.stringify({ context: { client: context }, videoId }),
             headers,
             method: "POST",
             signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
