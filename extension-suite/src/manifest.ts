@@ -2,6 +2,13 @@ import { allowRightClickManifest } from "../../extension-allow-right-click/src/m
 import { onefileManifest } from "../../extension-onefile/src/manifest.fragment.ts";
 import { xBookmarksManifest } from "../../extension-x-bookmarks/src/manifest.fragment.ts";
 import { youtubeTranscriptManifest } from "../../extension-youtube-transcript/src/manifest.fragment.ts";
+import {
+  suiteActionTitle,
+  suiteDescription,
+  suiteName,
+  suiteShortName,
+  suiteVersion,
+} from "./identity.ts";
 
 function unique<T>(values: readonly T[]): T[] {
   return [...new Set(values)];
@@ -9,11 +16,10 @@ function unique<T>(values: readonly T[]): T[] {
 
 export const manifest = {
   manifest_version: 3,
-  name: "Browser Extensions",
-  short_name: "Extensions",
-  version: "0.1.0",
-  description:
-    "Save pages, copy YouTube transcripts, archive X bookmarks, and restore right-click on any page.",
+  name: suiteName,
+  short_name: suiteShortName,
+  version: suiteVersion,
+  description: suiteDescription,
   minimum_chrome_version: "120",
   icons: {
     "16": "icons/16.png",
@@ -22,7 +28,7 @@ export const manifest = {
     "128": "icons/128.png",
   },
   action: {
-    default_title: "Browser Extensions",
+    default_title: suiteActionTitle,
     default_popup: "popup.html",
     default_icon: {
       "16": "icons/16.png",

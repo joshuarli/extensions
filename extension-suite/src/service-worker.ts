@@ -13,6 +13,7 @@ import {
   xBookmarksRequestFilter,
 } from "../../extension-x-bookmarks/src/background.ts";
 import { createActionStatus } from "./action-status.ts";
+import { suiteActionTitle } from "./identity.ts";
 import {
   isSuiteRequest,
   SuiteResponseSchema,
@@ -20,9 +21,7 @@ import {
   type SuiteResponse,
 } from "./message-contract.ts";
 
-const defaultTitle = "Browser Extensions";
-
-const actionStatus = createActionStatus(defaultTitle, {
+const actionStatus = createActionStatus(suiteActionTitle, {
   setTitle: (tabId, title) => chrome.action.setTitle({ tabId, title }),
   setBadgeText: (tabId, text) => chrome.action.setBadgeText({ tabId, text }),
   setBadgeBackgroundColor: (tabId, color) =>
