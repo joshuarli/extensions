@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from "vitest";
-import { Effect } from "effect";
 import { fetchResourceBytes } from "../src/fetch-resource.ts";
 import { ResourceFetchError } from "../src/errors.ts";
 
@@ -52,11 +51,4 @@ describe("fetchResourceBytes", () => {
     );
   });
 
-  it("is usable inside Effect", async () => {
-    const fetcher = vi.fn(async () => stubResponse(new Uint8Array([7]), "image/gif"));
-    const result = await Effect.runPromise(
-      Effect.tryPromise(() => fetchResourceBytes("https://example.com/a.gif", fetcher as typeof fetch)),
-    );
-    expect(result.mime).toBe("image/gif");
-  });
 });

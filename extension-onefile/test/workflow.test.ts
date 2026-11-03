@@ -166,6 +166,65 @@ describe("saveTab", () => {
     expect(deps.states.at(-1)).toMatchObject({ tabId: 10, badge: "" });
   });
 
+  it("fails loudly with an action state when the download transport refuses", async () => {
+    const inFlight = new Map<number, string>(),
+      deps = stubDeps({
+        downloadBlob: async () => {
+          throw new Error("nope");
+        },
+      });
+    const error = await Effect.runPromise(saveTab({ id: 14, url: "https://example.com/page" }, deps, inFlight).pipe(Effect.flip));
+    expect(error).toMatchObject({ _tag: "DownloadFailedError", kind: "rejected" });
+    expect(deps.states.at(-1)).toMatchObject({ tabId: 14, title: "Onefile download failed", badge: "!" });
+    expect(inFlight.has(14)).toBe(false);
+  });
+
+  it("sanitizes hostile and empty titles into the chartered filename shape", async () => {
+    const hostile = stubDeps({
+      executeCapture: async () => ({ ...payload(), title: 'a<b>c:d"e/f\\g|h?i*j   k' }),
+    }),
+      hostileOutcome = await Effect.runPromise(
+        saveTab({ id: 15, url: "https://example.com/page" }, hostile, new Map()),
+      );
+    expect(hostileOutcome.filename).toBe(buildArchiveFilename('a<b>c:d"e/f\\g|h?i*j   k', new Date(capturedAtMs)));
+    expect(hostileOutcome.filename).toBe("abcdefghij k (2024-05-01 10-20-30).u.zip.html");
+    const empty = stubDeps({ executeCapture: async () => ({ ...payload(), title: "   " }) }),
+      emptyOutcome = await Effect.runPromise(
+        saveTab({ id: 16, url: "https://example.com/page" }, empty, new Map()),
+      );
+    expect(emptyOutcome.filename).toBe("Untitled page (2024-05-01 10-20-30).u.zip.html");
+  });
+
+  it("names entries from the mime map with url-extension and bin fallbacks", async () => {
+    const deps = stubDeps({
+      executeCapture: async () => ({
+        ...payload(),
+        pageHtml: '<img src="onefile-resource-0"><img src="onefile-resource-1"><img src="onefile-resource-2">',
+        resources: [
+          { url: "https://example.com/a.jpeg", kind: "image" as const },
+          { url: "https://example.com/b.custom", kind: "image" as const },
+          { url: "https://example.com/c", kind: "image" as const },
+        ],
+      }),
+      fetchResource: async (url) =>
+        url.endsWith("a.jpeg")
+          ? { data: imageBytes, mime: "image/png" }
+          : url.endsWith("b.custom")
+            ? { data: imageBytes, mime: "application/octet-stream" }
+            : { data: imageBytes, mime: "application/octet-stream" },
+    });
+    await Effect.runPromise(saveTab({ id: 17, url: "https://example.com/page" }, deps, new Map()));
+    const stored = deps.downloads.at(0),
+      archiveBytes = new Uint8Array(await stored?.blob.arrayBuffer() ?? []),
+      directory = readStoredArchive(archiveBytes);
+    expect(directory.entries.map((entry) => entry.name)).toEqual([
+      "resources/0.png",
+      "resources/1.custom",
+      "resources/2.bin",
+      "metadata.json",
+    ]);
+  });
+
   it("reports per-resource progress in the action title and badge", async () => {
     const deps = stubDeps({
       executeCapture: async () => ({

@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildPolyglot } from "../src/polyglot.ts";
 
@@ -24,7 +23,7 @@ describe("archive integrity with the system unzip binary", () => {
       capturedAtMs: 1_700_000_000_000,
       unresolved: [],
     });
-    const scratch = join(tmpdir(), `onefile-unzip-${process.pid}`);
+    const scratch = join(import.meta.dirname, "..", "..", ".work", "tmp", `onefile-unzip-${process.pid}-${Date.now()}`);
     mkdirSync(scratch, { recursive: true });
     try {
       const filePath = join(scratch, "probe.u.zip.html");
