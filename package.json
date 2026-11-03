@@ -8,6 +8,7 @@
   },
   "scripts": {
     "build:extensions": "node scripts/build-extensions.mjs",
+    "icons": "node scripts/render-icons.mjs",
     "typecheck": "tsrs --noEmit",
     "vitest": "vitest",
     "dev": "node scripts/build-extensions.mjs --watch",

@@ -381,7 +381,7 @@ function sendProgress(tabId: number, message: string, done?: boolean): Promise<v
 async function notifySafely(title: string, message: string): Promise<void> {
   try {
     await chrome.notifications.create({
-      iconUrl: chrome.runtime.getURL("icon.svg"),
+      iconUrl: chrome.runtime.getURL("icons/128.png"),
       message,
       title,
       type: "basic",

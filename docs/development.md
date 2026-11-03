@@ -11,6 +11,7 @@ The root package owns dependencies and scripts for all four extensions. Node.js 
 - `pnpm run test:browser` runs the Onefile Playwright browser tests.
 - `pnpm run build` builds development bundles; `pnpm run dist` builds production bundles. Both typecheck first.
 - `pnpm run dev` watches extension source files and rebuilds changed extensions.
+- `pnpm run icons` rasterizes each `src/icons/icon.svg` into 16, 32, 48, and 128 pixel PNGs. Edit the SVG and rerun it after changing an icon.
 - On macOS, `make install` builds production bundles and opens Helium's extensions page.
 
 Vite writes development and production bundles to separate generated trees. Load a production extension folder as an unpacked extension; the root README lists their names.

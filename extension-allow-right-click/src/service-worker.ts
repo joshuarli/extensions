@@ -33,9 +33,9 @@ chrome.runtime.onMessage.addListener((request: ArcRuntimeRequest, sender) => {
       void chrome.action.setIcon({
         tabId,
         path: {
-          "16": "/data/icons/active/16.png",
-          "32": "/data/icons/active/32.png",
-          "48": "/data/icons/active/48.png",
+          "16": "/icons/active/16.png",
+          "32": "/icons/active/32.png",
+          "48": "/icons/active/48.png",
         },
       });
     }
@@ -58,9 +58,9 @@ chrome.runtime.onMessage.addListener((request: ArcRuntimeRequest, sender) => {
     void chrome.action.setIcon({
       tabId,
       path: {
-        "16": "/data/icons/16.png",
-        "32": "/data/icons/32.png",
-        "48": "/data/icons/48.png",
+        "16": "/icons/16.png",
+        "32": "/icons/32.png",
+        "48": "/icons/48.png",
       },
     });
   }
