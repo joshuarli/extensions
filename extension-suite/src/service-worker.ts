@@ -3,6 +3,7 @@ import { createAllowRightClickBackground } from "../../extension-allow-right-cli
 import { createOnefileBackground } from "../../extension-onefile/src/background.ts";
 import {
   clearYouTubeTranscriptCaches,
+  forgetYouTubeTranscriptTab,
   handleExternalMessage,
   handleInternalMessage,
 } from "../../extension-youtube-transcript/src/background.ts";
@@ -13,6 +14,7 @@ import {
   xBookmarksRequestFilter,
 } from "../../extension-x-bookmarks/src/background.ts";
 import { createActionStatus } from "./action-status.ts";
+import { xBookmarksExporterPath } from "./feature-paths.ts";
 import { suiteActionTitle } from "./identity.ts";
 import {
   isSuiteRequest,
@@ -78,7 +80,7 @@ async function handleSuiteRequest(request: SuiteRequest): Promise<SuiteResponse>
     }
     case "x-bookmarks/open-exporter": {
       await chrome.tabs.create({
-        url: chrome.runtime.getURL("features/x-bookmarks/options.html"),
+        url: chrome.runtime.getURL(xBookmarksExporterPath),
       });
       return { ok: true };
     }
@@ -122,6 +124,8 @@ chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) =>
 
 chrome.tabs.onRemoved.addListener((tabId) => {
   clearYouTubeTranscriptCaches();
+  forgetYouTubeTranscriptTab(tabId);
+  onefile.forget(tabId);
   actionStatus.forgetTab(tabId);
 });
 

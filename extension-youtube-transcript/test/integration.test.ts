@@ -212,6 +212,28 @@ test("service-worker flow copies SRT subtitles", async () => {
   assert.deepEqual(deps.calls.titles, ["Fetching transcript…", "SRT subtitles copied"]);
 });
 
+test("a stale title revert does not clear a newer copy", async () => {
+  const callbacks: (() => void)[] = [],
+    cleared: number[] = [],
+    deps = dependencies({
+      schedule: (callback: () => void) => {
+        callbacks.push(callback);
+      },
+      clearTitle: async (tabId: number) => {
+        cleared.push(tabId);
+      },
+    }),
+    tab = { id: 30, url: "https://www.youtube.com/watch?v=abc123" } as unknown as chrome.tabs.Tab;
+
+  await handleActionClick(tab, deps);
+  await handleActionClick(tab, deps);
+
+  callbacks[0]!();
+  assert.deepEqual(cleared, []);
+  callbacks[1]!();
+  assert.deepEqual(cleared, [30]);
+});
+
 test("service-worker flow falls back to the opened panel when API extraction is empty", async () => {
   const deps = dependencies({
     fetchTranscript: () => Effect.succeed(undefined),

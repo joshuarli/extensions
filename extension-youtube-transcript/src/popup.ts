@@ -1,7 +1,10 @@
 import { Schema } from "effect";
+import { requiredElement, setStatus } from "../../lib/extension-ui.ts";
 import { ExtensionMessageSchema, ExtensionResponseSchema } from "./message-contract.ts";
 
 type Action = "copyTranscript" | "copySrt" | "downloadFixtures";
+
+const popupContext = "YouTube Transcript popup";
 
 export interface YouTubeTranscriptPopupOptions {
   tabId: number;
@@ -12,11 +15,31 @@ export function mountYouTubeTranscriptPopup({
   tabId,
   root,
 }: YouTubeTranscriptPopupOptions): void {
-  const transcriptButton = required<HTMLButtonElement>(root, "[data-yt-copy-transcript]"),
-    srtButton = required<HTMLButtonElement>(root, "[data-yt-copy-srt]"),
-    copyErrorButton = required<HTMLButtonElement>(root, "[data-yt-copy-error]"),
-    statusElement = required<HTMLDivElement>(root, "[data-yt-status]"),
-    settingsLink = required<HTMLAnchorElement>(root, "[data-yt-settings-link]");
+  const transcriptButton = requiredElement<HTMLButtonElement>(
+      root,
+      "[data-yt-copy-transcript]",
+      popupContext,
+    ),
+    srtButton = requiredElement<HTMLButtonElement>(
+      root,
+      "[data-yt-copy-srt]",
+      popupContext,
+    ),
+    copyErrorButton = requiredElement<HTMLButtonElement>(
+      root,
+      "[data-yt-copy-error]",
+      popupContext,
+    ),
+    statusElement = requiredElement<HTMLDivElement>(
+      root,
+      "[data-yt-status]",
+      popupContext,
+    ),
+    settingsLink = requiredElement<HTMLAnchorElement>(
+      root,
+      "[data-yt-settings-link]",
+      popupContext,
+    );
 
   let busy = false;
   let lastErrorDetail: string | undefined;
@@ -27,9 +50,21 @@ export function mountYouTubeTranscriptPopup({
   });
 
   if (import.meta.env.DEV) {
-    const developerToggle = required<HTMLAnchorElement>(root, "[data-yt-developer-toggle]"),
-      developerActions = required<HTMLDivElement>(root, "[data-yt-developer-actions]"),
-      fixturesButton = required<HTMLButtonElement>(root, "[data-yt-download-fixtures]");
+    const developerToggle = requiredElement<HTMLAnchorElement>(
+        root,
+        "[data-yt-developer-toggle]",
+        popupContext,
+      ),
+      developerActions = requiredElement<HTMLDivElement>(
+        root,
+        "[data-yt-developer-actions]",
+        popupContext,
+      ),
+      fixturesButton = requiredElement<HTMLButtonElement>(
+        root,
+        "[data-yt-download-fixtures]",
+        popupContext,
+      );
 
     developerToggle.hidden = false;
 
@@ -59,7 +94,7 @@ export function mountYouTubeTranscriptPopup({
         );
 
       if ("error" in response) {
-        setStatus(response.error, true);
+        setStatus(statusElement, response.error, true);
         if (response.errorDetail) showErrorDetails(response.errorDetail);
         busy = false;
         setBusy(false);
@@ -69,7 +104,7 @@ export function mountYouTubeTranscriptPopup({
     } catch (cause) {
       console.error("YouTube Transcript popup error:", cause);
       const error = cause instanceof Error ? cause : new Error(String(cause));
-      setStatus(error.message || "Something went wrong.", true);
+      setStatus(statusElement, error.message || "Something went wrong.", true);
       if (error.stack) showErrorDetails(error.stack);
       busy = false;
       setBusy(false);
@@ -80,10 +115,10 @@ export function mountYouTubeTranscriptPopup({
     if (!lastErrorDetail) return;
     try {
       await navigator.clipboard.writeText(lastErrorDetail);
-      setStatus("Error details copied.");
+      setStatus(statusElement, "Error details copied.");
       copyErrorButton.hidden = true;
     } catch {
-      setStatus("Could not copy error details.", true);
+      setStatus(statusElement, "Could not copy error details.", true);
     }
   }
 
@@ -96,15 +131,4 @@ export function mountYouTubeTranscriptPopup({
     transcriptButton.disabled = value;
     srtButton.disabled = value;
   }
-
-  function setStatus(message: string, isError = false): void {
-    statusElement.textContent = message;
-    statusElement.classList.toggle("error", isError);
-  }
-}
-
-function required<T extends Element>(root: ParentNode, selector: string): T {
-  const element = root.querySelector<T>(selector);
-  if (!element) throw new Error(`YouTube Transcript popup markup is missing ${selector}.`);
-  return element;
 }

@@ -1,12 +1,13 @@
 import { mountYouTubeTranscriptOptions } from "../../extension-youtube-transcript/src/options.ts";
+import { requiredElement } from "../../lib/extension-ui.ts";
+import { xBookmarksExporterPath } from "./feature-paths.ts";
 
 mountYouTubeTranscriptOptions(document);
 
-const xOpen = document.querySelector<HTMLButtonElement>("[data-x-open]");
-if (!xOpen) throw new Error("Options markup is missing [data-x-open].");
+const xOpen = requiredElement<HTMLButtonElement>(document, "[data-x-open]", "Options");
 
 xOpen.addEventListener("click", () => {
   void chrome.tabs.create({
-    url: chrome.runtime.getURL("features/x-bookmarks/options.html"),
+    url: chrome.runtime.getURL(xBookmarksExporterPath),
   });
 });

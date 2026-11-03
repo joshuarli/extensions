@@ -1,17 +1,24 @@
 import { Schema } from "effect";
+import {
+  errorMessage,
+  requiredElement,
+  setStatus,
+} from "../../lib/extension-ui.ts";
 import { mountYouTubeTranscriptPopup } from "../../extension-youtube-transcript/src/popup.ts";
 import { isYouTubeUrl } from "../../extension-youtube-transcript/src/url.ts";
 import { SuiteResponseSchema, type SuiteResponse } from "./message-contract.ts";
 
+const popupContext = "Popup";
+
 const [tab] = await chrome.tabs.query({ active: true, currentWindow: true }),
   tabId = tab?.id,
-  statusElement = required<HTMLDivElement>("#status"),
-  arcToggle = required<HTMLButtonElement>("[data-arc-toggle]"),
-  arcState = required<HTMLElement>("[data-arc-state]"),
-  onefileSave = required<HTMLButtonElement>("[data-onefile-save]"),
-  openOptions = required<HTMLAnchorElement>("[data-open-options]"),
-  ytSection = required<HTMLElement>("[data-yt-section]"),
-  xOpen = required<HTMLButtonElement>("[data-x-open]");
+  statusElement = requiredElement<HTMLDivElement>(document, "#status", popupContext),
+  arcToggle = requiredElement<HTMLButtonElement>(document, "[data-arc-toggle]", popupContext),
+  arcState = requiredElement<HTMLElement>(document, "[data-arc-state]", popupContext),
+  onefileSave = requiredElement<HTMLButtonElement>(document, "[data-onefile-save]", popupContext),
+  openOptions = requiredElement<HTMLAnchorElement>(document, "[data-open-options]", popupContext),
+  ytSection = requiredElement<HTMLElement>(document, "[data-yt-section]", popupContext),
+  xOpen = requiredElement<HTMLButtonElement>(document, "[data-x-open]", popupContext);
 
 openOptions.addEventListener("click", (event) => {
   event.preventDefault();
@@ -19,7 +26,7 @@ openOptions.addEventListener("click", (event) => {
 });
 
 if (tabId === undefined) {
-  setStatus("No active tab.", true);
+  setStatus(statusElement, "No active tab.", true);
   arcToggle.disabled = true;
   onefileSave.disabled = true;
 } else {
@@ -47,76 +54,39 @@ function wireAllowRightClick(tabId: number): void {
     });
 
   arcToggle.addEventListener("click", () => {
-    arcToggle.disabled = true;
-    void send({ kind: "allow-right-click/toggle", tabId })
-      .then((response) => {
-        if ("error" in response && response.error) {
-          setStatus(response.error, true);
-          arcToggle.disabled = false;
-          return;
-        }
-        window.close();
-      })
-      .catch((cause: unknown) => {
-        setStatus(errorMessage(cause), true);
-        arcToggle.disabled = false;
-      });
+    runSuiteAction(arcToggle, { kind: "allow-right-click/toggle", tabId });
   });
 }
 
 function wireOnefile(tabId: number): void {
   onefileSave.addEventListener("click", () => {
-    onefileSave.disabled = true;
-    void send({ kind: "onefile/save", tabId })
-      .then((response) => {
-        if ("error" in response && response.error) {
-          setStatus(response.error, true);
-          onefileSave.disabled = false;
-          return;
-        }
-        window.close();
-      })
-      .catch((cause: unknown) => {
-        setStatus(errorMessage(cause), true);
-        onefileSave.disabled = false;
-      });
+    runSuiteAction(onefileSave, { kind: "onefile/save", tabId });
   });
 }
 
 function wireXBookmarks(): void {
   xOpen.addEventListener("click", () => {
-    xOpen.disabled = true;
-    void send({ kind: "x-bookmarks/open-exporter" })
-      .then((response) => {
-        if ("error" in response && response.error) {
-          setStatus(response.error, true);
-          xOpen.disabled = false;
-          return;
-        }
-        window.close();
-      })
-      .catch((cause: unknown) => {
-        setStatus(errorMessage(cause), true);
-        xOpen.disabled = false;
-      });
+    runSuiteAction(xOpen, { kind: "x-bookmarks/open-exporter" });
   });
+}
+
+function runSuiteAction(button: HTMLButtonElement, request: unknown): void {
+  button.disabled = true;
+  void send(request)
+    .then((response) => {
+      if ("error" in response && response.error) {
+        setStatus(statusElement, response.error, true);
+        button.disabled = false;
+        return;
+      }
+      window.close();
+    })
+    .catch((cause: unknown) => {
+      setStatus(statusElement, errorMessage(cause), true);
+      button.disabled = false;
+    });
 }
 
 async function send(request: unknown): Promise<SuiteResponse> {
   return Schema.decodeUnknownSync(SuiteResponseSchema)(await chrome.runtime.sendMessage(request));
-}
-
-function setStatus(message: string, isError = false): void {
-  statusElement.textContent = message;
-  statusElement.classList.toggle("error", isError);
-}
-
-function errorMessage(cause: unknown): string {
-  return cause instanceof Error ? cause.message : String(cause);
-}
-
-function required<T extends Element>(selector: string): T {
-  const element = document.querySelector<T>(selector);
-  if (!element) throw new Error(`Popup markup is missing ${selector}.`);
-  return element;
 }

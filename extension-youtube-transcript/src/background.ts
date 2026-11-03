@@ -4,6 +4,7 @@ import type {
   ResolveTranscriptOutput,
   TranscriptPanelData,
 } from "./types.ts";
+import { createActionRevert } from "../../lib/action-revert.ts";
 import { buildMarkdown } from "./metadata.ts";
 import { readYouTubePage, updatePageProgress } from "./page.ts";
 import {
@@ -65,84 +66,99 @@ async function resolveTranscriptForTab(
   }));
 }
 
-export async function handleActionClick(
+interface CopyAction {
+  progress: string;
+  title: string;
+  notification: string;
+  doneProgress: string;
+  select: (result: ResolveTranscriptOutput) => string;
+  failure: string;
+}
+
+const titleRevert = createActionRevert();
+
+function scheduleTitleRevert(
+  tabId: number,
+  generation: number,
+  deps: BackgroundDependencies,
+): void {
+  titleRevert.schedule(
+    tabId,
+    generation,
+    deps.schedule,
+    2500,
+    () => {
+      if (deps.clearTitle) {
+        void deps.clearTitle(tabId);
+      } else {
+        void deps.setTitle(tabId, "Copy YouTube transcript");
+      }
+    },
+  );
+}
+
+async function copyTranscriptAction(
   tab: chrome.tabs.Tab,
-  overrides: Partial<BackgroundDependencies> = {},
+  overrides: Partial<BackgroundDependencies>,
+  action: CopyAction,
 ): Promise<ResolveTranscriptOutput> {
-  const deps = { ...defaultDependencies(), ...overrides };
+  if (tab.id === undefined) {
+    throw new InvalidPageError("No active tab.", tab.url || "");
+  }
+  const tabId = tab.id,
+    deps = { ...defaultDependencies(), ...overrides },
+    generation = titleRevert.begin(tabId);
   try {
     const result = await resolveTranscriptForTab(tab, deps, "interactive");
-    await deps.progress(tab.id!, "Copying transcript…");
-    await deps.copy(tab.id!, buildMarkdown(result.metadata, result.transcript.text));
-    await deps.setTitle(tab.id!, "Transcript copied");
-    await deps.notify("YouTube Transcript Copier", "Transcript copied to the clipboard.");
-    await deps.progress(tab.id!, "Transcript copied.", true);
-    deps.schedule(() => {
-      if (deps.clearTitle) {
-        void deps.clearTitle(tab.id!);
-      } else {
-        void deps.setTitle(tab.id!, "Copy YouTube transcript");
-      }
-    }, 2500);
+    await deps.progress(tabId, action.progress);
+    await deps.copy(tabId, action.select(result));
+    await deps.setTitle(tabId, action.title);
+    await deps.notify("YouTube Transcript Copier", action.notification);
+    await deps.progress(tabId, action.doneProgress, true);
+    scheduleTitleRevert(tabId, generation, deps);
     return result;
   } catch (error) {
     deps.log("YouTube Transcript Copier:", error as Error);
-    if (tab.id!) {
-      await deps.setTitle(tab.id!, "Copy failed");
-      await deps.notify(
-        "YouTube Transcript Copier",
-        (error as Error).message || "Could not copy the transcript.",
-      );
-      deps.schedule(() => {
-      if (deps.clearTitle) {
-        void deps.clearTitle(tab.id!);
-      } else {
-        void deps.setTitle(tab.id!, "Copy YouTube transcript");
-      }
-    }, 2500);
-    }
+    await deps.setTitle(tabId, "Copy failed");
+    await deps.notify(
+      "YouTube Transcript Copier",
+      (error as Error).message || action.failure,
+    );
+    scheduleTitleRevert(tabId, generation, deps);
     throw error;
   }
 }
 
-export async function handleActionClickSrt(
+export function handleActionClick(
   tab: chrome.tabs.Tab,
   overrides: Partial<BackgroundDependencies> = {},
 ): Promise<ResolveTranscriptOutput> {
-  const deps = { ...defaultDependencies(), ...overrides };
-  try {
-    const result = await resolveTranscriptForTab(tab, deps, "interactive");
-    await deps.progress(tab.id!, "Copying SRT subtitles…");
-    await deps.copy(tab.id!, result.transcript.srt);
-    await deps.setTitle(tab.id!, "SRT subtitles copied");
-    await deps.notify("YouTube Transcript Copier", "SRT subtitles copied to the clipboard.");
-    await deps.progress(tab.id!, "SRT subtitles copied.", true);
-    deps.schedule(() => {
-      if (deps.clearTitle) {
-        void deps.clearTitle(tab.id!);
-      } else {
-        void deps.setTitle(tab.id!, "Copy YouTube transcript");
-      }
-    }, 2500);
-    return result;
-  } catch (error) {
-    deps.log("YouTube Transcript Copier:", error as Error);
-    if (tab.id!) {
-      await deps.setTitle(tab.id!, "Copy failed");
-      await deps.notify(
-        "YouTube Transcript Copier",
-        (error as Error).message || "Could not copy the SRT subtitles.",
-      );
-      deps.schedule(() => {
-      if (deps.clearTitle) {
-        void deps.clearTitle(tab.id!);
-      } else {
-        void deps.setTitle(tab.id!, "Copy YouTube transcript");
-      }
-    }, 2500);
-    }
-    throw error;
-  }
+  return copyTranscriptAction(tab, overrides, {
+    progress: "Copying transcript…",
+    title: "Transcript copied",
+    notification: "Transcript copied to the clipboard.",
+    doneProgress: "Transcript copied.",
+    select: (result) => buildMarkdown(result.metadata, result.transcript.text),
+    failure: "Could not copy the transcript.",
+  });
+}
+
+export function handleActionClickSrt(
+  tab: chrome.tabs.Tab,
+  overrides: Partial<BackgroundDependencies> = {},
+): Promise<ResolveTranscriptOutput> {
+  return copyTranscriptAction(tab, overrides, {
+    progress: "Copying SRT subtitles…",
+    title: "SRT subtitles copied",
+    notification: "SRT subtitles copied to the clipboard.",
+    doneProgress: "SRT subtitles copied.",
+    select: (result) => result.transcript.srt,
+    failure: "Could not copy the SRT subtitles.",
+  });
+}
+
+export function forgetYouTubeTranscriptTab(tabId: number): void {
+  titleRevert.forget(tabId);
 }
 
 export async function handleGetTranscript(

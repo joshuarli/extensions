@@ -1,16 +1,19 @@
+import { errorMessage, requiredElement } from "../../lib/extension-ui.ts";
 import { currentUserId, readCredentials } from "./capture.ts";
 import { collect } from "./collector.ts";
 import { assembleArchive, bookmarkCount, loadState, openArchive } from "./storage.ts";
 
-const accountElement = required<HTMLElement>("account");
-const captureElement = required<HTMLElement>("capture");
-const countElement = required<HTMLElement>("count");
-const coverageElement = required<HTMLElement>("coverage");
-const statusElement = required<HTMLOutputElement>("status");
-const refreshButton = required<HTMLButtonElement>("refresh");
-const collectButton = required<HTMLButtonElement>("collect");
-const stopButton = required<HTMLButtonElement>("stop");
-const downloadButton = required<HTMLButtonElement>("download");
+const bookmarksContext = "X Bookmarks";
+
+const accountElement = requiredElement<HTMLElement>(document, "#account", bookmarksContext);
+const captureElement = requiredElement<HTMLElement>(document, "#capture", bookmarksContext);
+const countElement = requiredElement<HTMLElement>(document, "#count", bookmarksContext);
+const coverageElement = requiredElement<HTMLElement>(document, "#coverage", bookmarksContext);
+const statusElement = requiredElement<HTMLOutputElement>(document, "#status", bookmarksContext);
+const refreshButton = requiredElement<HTMLButtonElement>(document, "#refresh", bookmarksContext);
+const collectButton = requiredElement<HTMLButtonElement>(document, "#collect", bookmarksContext);
+const stopButton = requiredElement<HTMLButtonElement>(document, "#stop", bookmarksContext);
+const downloadButton = requiredElement<HTMLButtonElement>(document, "#download", bookmarksContext);
 
 let db: IDBDatabase | null = null;
 let userId: string | null = null;
@@ -18,18 +21,8 @@ let controller: AbortController | null = null;
 let busy = false;
 let connectionReady = false;
 
-function required<T extends HTMLElement>(id: string): T {
-  const element = document.getElementById(id);
-  if (!element) throw new Error("Missing extension UI element: " + id);
-  return element as T;
-}
-
 function status(message: string): void {
   statusElement.textContent = message;
-}
-
-function errorMessage(cause: unknown): string {
-  return cause instanceof Error ? cause.message : String(cause);
 }
 
 function setBusy(value: boolean): void {

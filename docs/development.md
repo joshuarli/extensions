@@ -20,6 +20,8 @@ Vite writes development and production bundles to separate generated trees. Load
 
 Each `extension-*/` directory is a feature package with its own source and package-local tests. [extension-suite](../extension-suite) is the composition root: it owns the single manifest, service worker, popup, options page, icons, and the per-tab action status. Feature packages expose background handlers and `manifest.fragment.ts` files; they do not register global Chrome listeners themselves.
 
+[lib](../lib) holds the helpers shared by feature packages and the suite: DOM/status helpers for extension pages and the generation guard that keeps delayed action-state reverts from clearing newer work. Domain logic stays in its feature package.
+
 [vite.config.ts](../vite.config.ts) defines the suite entry points; [the build script](../scripts/build-extensions.mjs) bundles them, copies static assets, and writes the composed manifest. One output folder contains one ES service worker, the ES popup and options bundles, feature pages, and classic injected scripts under `inject/<feature>/`.
 
 The service worker is emitted as an ES module. Scripts injected with `chrome.scripting.executeScript()` are emitted as classic scripts, so keep their formats separate. The UI uses browser DOM APIs directly; Effect and Schema handle extension I/O and boundary validation.

@@ -48,6 +48,7 @@ await buildSuite();
 if (process.argv.includes("--watch")) {
   const sourceDirectories = [
     suiteSourceDirectory,
+    resolve(repositoryRoot, "lib"),
     ...readdirSync(repositoryRoot, { withFileTypes: true })
       .filter((entry) => entry.isDirectory() && /^extension-(?!suite$)/u.test(entry.name))
       .map((entry) => resolve(repositoryRoot, entry.name, "src")),
