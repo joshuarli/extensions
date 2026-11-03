@@ -42,6 +42,23 @@ describe("fetchResourceBytes", () => {
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
 
+  it("sniffs common extension mimes and lets the header win", async () => {
+    for (const [file, mime] of [
+      ["a.jpg", "image/jpeg"],
+      ["a.svg", "image/svg+xml"],
+      ["a.woff", "font/woff"],
+      ["a.css", "text/css"],
+      ["a.unknown", "application/octet-stream"],
+    ] as const) {
+      const fetcher = vi.fn(async () => stubResponse(new Uint8Array([1]), null));
+      expect((await fetchResourceBytes(`https://example.com/${file}`, fetcher as typeof fetch)).mime).toBe(mime);
+    }
+    const headed = vi.fn(async () => stubResponse(new Uint8Array([1]), "text/html; charset=utf-8"));
+    expect(
+      (await fetchResourceBytes("https://example.com/a.png", headed as typeof fetch)).mime,
+    ).toBe("text/html");
+  });
+
   it("maps aborts to timeouts", async () => {
     const fetcher = vi.fn(async () => {
       throw new DOMException("The operation timed out.", "TimeoutError");
