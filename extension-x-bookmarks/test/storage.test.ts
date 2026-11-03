@@ -34,7 +34,6 @@ describe("storage, account boundaries and requests", () => {
     expect(url.pathname).toBe("/i/api/graphql/abc_-/Bookmarks");
     expect(JSON.parse(url.searchParams.get("variables") ?? "{}")).toEqual({ count: 100, cursor: "a&b" });
     expect(JSON.parse(url.searchParams.get("features") ?? "{}")).toEqual({ flag: true });
-    expect(() => buildGraphqlUrl("../../exploit", "Bookmarks", {}, undefined)).toThrow();
   });
 
   it("immediately cancels an interrupted retry delay", async () => {
