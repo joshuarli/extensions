@@ -6,4 +6,5 @@ export default defineConfig({
   outputDir: "../../.work/tmp/playwright-results",
   retries: 0,
   reporter: "line",
+  workers: 1,
 });
