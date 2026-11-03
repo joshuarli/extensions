@@ -5,7 +5,7 @@ Measure the product the same way every time, and gate only the egregious regress
 ## Measure the build
 
 1. Run `pnpm run build` and record the wall time.
-2. Record `dist/extension-onefile/service-worker.js`, `inject/capture.js`, and `inject/loader.js` in bytes.
+2. Record `dist/extension-suite/service-worker.js`, `dist/extension-suite/inject/onefile/capture.js`, and `dist/extension-suite/inject/onefile/loader.js` in bytes.
 3. Keep the Playwright dev dependency and the `test:browser` script inside the current build-time and bundle-size budgets: flag any change that moves either by more than 10 percent.
 
 ## Measure a save
@@ -39,3 +39,5 @@ Onefile component medians: capture 1-3 ms, resource fetch 1-3 ms, archive build 
 Verdict: no egregious signal, so no source changes. The time gap reflects policy, not tuning: upstream base64-embeds every resource while this format stores binaries and references them. The size gap on tiny fixtures reflects the fixed viewer and ZIP overhead (about 5 KB) against 73-byte fixture images; it reverses on real media where base64 costs a third. Heap deltas read identically zero in this environment, so peak memory stays omitted as unreliable.
 
 Production bundles on 2026-10-27: `service-worker.js` 96 KB, `inject/capture.js` 8 KB, `inject/loader.js` 5 KB. `pnpm run check` passes typecheck plus 106 unit tests in about 1.3 seconds.
+
+After the suite merge on 2026-11-02, Onefile shares the suite worker and lives under `dist/extension-suite/`: suite worker 132.52 KB, `inject/onefile/capture.js` 8.09 KB, `inject/onefile/loader.js` 4.78 KB. The capture and loader bundles stay within 10 percent of their prior sizes; the worker now also contains the other three features, so its size is not comparable to the former Onefile-only worker. `pnpm run check` passes typecheck plus 125 unit tests.

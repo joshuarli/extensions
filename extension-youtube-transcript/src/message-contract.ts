@@ -21,3 +21,12 @@ export const ExtensionMessageSchema = Schema.Struct({
 
 export type ExtensionMessage = Schema.Schema.Type<typeof ExtensionMessageSchema>;
 export type ExtensionResponse = Schema.Schema.Type<typeof ExtensionResponseSchema>;
+
+export function isYouTubeTranscriptMessage(message: unknown): message is ExtensionMessage {
+  try {
+    Schema.decodeUnknownSync(ExtensionMessageSchema)(message);
+    return true;
+  } catch {
+    return false;
+  }
+}

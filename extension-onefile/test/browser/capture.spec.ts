@@ -9,7 +9,7 @@ import { Schema } from "effect";
 const specDirectory = dirname(fileURLToPath(import.meta.url)),
   repoRoot = join(specDirectory, "..", "..", ".."),
   fixtureRoot = join(repoRoot, "extension-onefile", "test", "fixtures"),
-  captureSource = join(repoRoot, "build", "extension-onefile", "inject", "capture.js");
+  captureSource = join(repoRoot, "build", "extension-suite", "inject", "onefile", "capture.js");
 
 const onePixelPng = Buffer.from([
   0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,

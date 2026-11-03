@@ -108,6 +108,7 @@ export interface BackgroundDependencies {
   copy: (tabId: number, text: string) => Promise<void>;
   progress: (tabId: number, message: string, done?: boolean) => Promise<void>;
   setTitle: (tabId: number, title: string) => Promise<void>;
+  clearTitle?: (tabId: number) => Promise<void>;
   notify: (title: string, message: string) => Promise<void>;
   download?: (filename: string, content: Uint8Array | string, type?: string) => Promise<void>;
   schedule: (fn: () => void, ms: number) => void;

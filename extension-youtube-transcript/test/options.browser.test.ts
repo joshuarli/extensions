@@ -1,4 +1,6 @@
 import { afterEach, expect, test, vi } from "vitest";
+import { mountYouTubeTranscriptOptions } from "../src/options.ts";
+import { preferredLanguageStorageKey } from "../src/settings.ts";
 
 afterEach(() => {
   document.body.replaceChildren();
@@ -6,10 +8,9 @@ afterEach(() => {
 
 test("settings page loads and saves a trimmed language preference", async () => {
   document.body.innerHTML = `
-    <label for="language">Preferred transcript language</label>
-    <input id="language" />
-    <button id="save">Save</button>
-    <div id="status" role="status"></div>`;
+    <input data-yt-language />
+    <button data-yt-save>Save</button>
+    <div data-yt-status role="status"></div>`;
   let savedSettings: unknown;
   const chromeApi: unknown = Reflect.get(window, "chrome");
   if (typeof chromeApi !== "object" || chromeApi === null) {
@@ -18,7 +19,7 @@ test("settings page loads and saves a trimmed language preference", async () => 
   Object.assign(chromeApi, {
     storage: {
       local: {
-        get: vi.fn(async () => ({ language: "fr" })),
+        get: vi.fn(async () => ({ [preferredLanguageStorageKey]: "fr" })),
         set: vi.fn(async (settings: unknown) => {
           savedSettings = settings;
         }),
@@ -26,12 +27,14 @@ test("settings page loads and saves a trimmed language preference", async () => 
     },
   });
 
-  await import("../src/options.ts");
-  const languageInput = document.querySelector<HTMLInputElement>("#language")!;
-  expect(languageInput.value).toBe("fr");
+  mountYouTubeTranscriptOptions(document);
+  const languageInput = document.querySelector<HTMLInputElement>("[data-yt-language]")!;
+  await vi.waitFor(() => expect(languageInput.value).toBe("fr"));
   languageInput.value = "  zh-CN  ";
-  document.querySelector<HTMLButtonElement>("#save")!.click();
+  document.querySelector<HTMLButtonElement>("[data-yt-save]")!.click();
 
-  await vi.waitFor(() => expect(savedSettings).toEqual({ language: "zh-CN" }));
-  expect(document.querySelector("#status")?.textContent).toBe("Saved.");
+  await vi.waitFor(() =>
+    expect(savedSettings).toEqual({ [preferredLanguageStorageKey]: "zh-CN" }),
+  );
+  expect(document.querySelector("[data-yt-status]")?.textContent).toBe("Saved.");
 });

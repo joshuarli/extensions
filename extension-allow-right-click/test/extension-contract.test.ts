@@ -1,51 +1,92 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { test } from "vitest";
-import { extensionDefinitions } from "../../vite.config.ts";
+import { manifest } from "../../extension-suite/src/manifest.ts";
+import { suiteBundles } from "../../vite.config.ts";
 
-test("manifest exposes only the Chromium toolbar toggle runtime", () => {
-  const manifest = JSON.parse(
-    readFileSync(new URL("../src/manifest.json", import.meta.url), "utf8"),
-  ) as {
-    action: { default_title: string };
-    background: { service_worker: string; type: string };
-    manifest_version: number;
-    permissions: string[];
-  };
-
+test("composes one manifest from the feature fragments", () => {
   assert.equal(manifest.manifest_version, 3);
-  assert.deepEqual(manifest.permissions, ["activeTab", "scripting"]);
+  assert.equal(manifest.name, "Browser Extensions");
+  assert.equal(manifest.version, "0.1.0");
+  assert.equal(manifest.minimum_chrome_version, "120");
   assert.deepEqual(manifest.background, {
     service_worker: "service-worker.js",
     type: "module",
   });
-  assert.match(manifest.action.default_title, /enable or disable/u);
+  assert.equal(manifest.action.default_popup, "popup.html");
+  assert.equal(manifest.options_page, "options.html");
+  assert.deepEqual(manifest.permissions, [
+    "activeTab",
+    "scripting",
+    "downloads",
+    "offscreen",
+    "clipboardWrite",
+    "notifications",
+    "declarativeNetRequestWithHostAccess",
+    "storage",
+    "cookies",
+    "unlimitedStorage",
+    "webRequest",
+  ]);
+  assert.deepEqual(manifest.host_permissions, [
+    "https://www.youtube.com/*",
+    "https://m.youtube.com/*",
+    "https://youtube.com/*",
+    "https://youtu.be/*",
+    "https://x.com/*",
+  ]);
+  assert.deepEqual(manifest.declarative_net_request, {
+    rule_resources: [
+      {
+        id: "youtube-headers",
+        enabled: true,
+        path: "rules/youtube-headers.json",
+      },
+    ],
+  });
+  assert.deepEqual(manifest.externally_connectable, {
+    matches: ["https://www.youtube.com/*", "https://m.youtube.com/*", "https://youtube.com/*"],
+  });
 });
 
-test("build config keeps the worker and injected scripts separate", () => {
-  const extension = extensionDefinitions["extension-allow-right-click"];
-  assert.ok(extension);
-  const bundles = extension.bundles;
-  const serviceWorkerBundle = bundles[0];
-  assert.ok(serviceWorkerBundle);
-  assert.equal(serviceWorkerBundle.entryFileName, "service-worker.js");
-  assert.equal(serviceWorkerBundle.format, "es");
-  assert.equal(serviceWorkerBundle.target, "chrome110");
-  assert.equal(serviceWorkerBundle.emptyOutDir, true);
-  assert.equal(typeof serviceWorkerBundle.input, "string");
-  if (typeof serviceWorkerBundle.input === "string") {
-    assert.match(serviceWorkerBundle.input, /service-worker\.ts$/u);
-  }
+test("builds one worker, one UI bundle, and namespaced classic injections", () => {
+  const worker = suiteBundles.find((bundle) => bundle.entryFileName === "service-worker.js");
+  assert.ok(worker);
+  assert.equal(worker.format, "es");
+  assert.equal(worker.target, "chrome120");
+  assert.match(String(worker.input), /extension-suite\/src\/service-worker\.ts$/u);
+
+  const ui = suiteBundles.find(
+    (bundle) => typeof bundle.input === "object" && "popup" in bundle.input,
+  );
+  assert.ok(ui);
+  assert.equal(ui.format, "es");
+  assert.equal(ui.entryFileName, "[name].js");
+
+  const injected = suiteBundles.filter((bundle) => bundle.entryFileName.startsWith("inject/"));
   assert.deepEqual(
-    bundles.slice(1).map(({ entryFileName, format }) => ({ entryFileName, format })),
+    injected.map(({ entryFileName, format }) => ({ entryFileName, format })),
     [
-      { entryFileName: "data/inject/core.js", format: "iife" },
-      { entryFileName: "data/inject/mouse.js", format: "iife" },
-      { entryFileName: "data/inject/styles.js", format: "iife" },
-      { entryFileName: "data/inject/user-select/isolated.js", format: "iife" },
-      { entryFileName: "data/inject/user-select/main.js", format: "iife" },
-      { entryFileName: "data/inject/listen/isolated.js", format: "iife" },
-      { entryFileName: "data/inject/listen/main.js", format: "iife" },
+      { entryFileName: "inject/allow-right-click/core.js", format: "iife" },
+      { entryFileName: "inject/allow-right-click/mouse.js", format: "iife" },
+      { entryFileName: "inject/allow-right-click/styles.js", format: "iife" },
+      { entryFileName: "inject/allow-right-click/user-select/isolated.js", format: "iife" },
+      { entryFileName: "inject/allow-right-click/user-select/main.js", format: "iife" },
+      { entryFileName: "inject/allow-right-click/listen/isolated.js", format: "iife" },
+      { entryFileName: "inject/allow-right-click/listen/main.js", format: "iife" },
+      { entryFileName: "inject/onefile/capture.js", format: "iife" },
+      { entryFileName: "inject/onefile/loader.js", format: "iife" },
     ],
   );
+
+  const xOptions = suiteBundles.find(
+    (bundle) => bundle.entryFileName === "options.js",
+  );
+  assert.ok(xOptions);
+  assert.match(xOptions.outputDirectory, /features\/x-bookmarks$/u);
+
+  const onefileOffscreen = suiteBundles.find(
+    (bundle) => bundle.entryFileName === "offscreen.js",
+  );
+  assert.ok(onefileOffscreen);
+  assert.match(onefileOffscreen.outputDirectory, /features\/onefile$/u);
 });

@@ -186,15 +186,3 @@ export function saveTab(
     Effect.ensuring(release),
   );
 }
-
-export function scheduleTitleRevert(
-  deps: Pick<SaveDependencies, "setActionState" | "log">,
-  tabId: number,
-  title: string,
-): void {
-  setTimeout(() => {
-    deps.setActionState(tabId, title, "").catch((error: unknown) => {
-      deps.log("Onefile title revert failed:", error);
-    });
-  }, capturePolicy.saveTitleRevertMs);
-}

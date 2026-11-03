@@ -4,7 +4,7 @@ import {
   ExtensionMessageSchema,
   ExtensionResponseSchema,
 } from "../src/message-contract.ts";
-import { resolveMessageTab } from "../src/service-worker.ts";
+import { resolveMessageTab } from "../src/background.ts";
 
 test("decodes extension messages before dispatch", () => {
   expect(

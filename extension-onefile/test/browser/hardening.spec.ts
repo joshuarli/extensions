@@ -8,8 +8,8 @@ import { Schema } from "effect";
 
 const specDirectory = dirname(fileURLToPath(import.meta.url)),
   repoRoot = join(specDirectory, "..", "..", ".."),
-  captureSource = join(repoRoot, "build", "extension-onefile", "inject", "capture.js"),
-  loaderSource = readFileSync(join(repoRoot, "build", "extension-onefile", "inject", "loader.js"), "utf8"),
+  captureSource = join(repoRoot, "build", "extension-suite", "inject", "onefile", "capture.js"),
+  loaderSource = readFileSync(join(repoRoot, "build", "extension-suite", "inject", "onefile", "loader.js"), "utf8"),
   scratchRoot = join(repoRoot, ".work", "tmp", "browser-artifacts");
 
 async function captureLive(page: Page): Promise<Schema.Schema.Type<typeof CapturePayloadSchema>> {

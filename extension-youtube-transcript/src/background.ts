@@ -24,6 +24,8 @@ import {
   TabNotAccessibleError,
 } from "./error.ts";
 import { cachedFetch, clearResponseCache } from "./http.ts";
+import { readPreferredLanguageSettings } from "./settings.ts";
+import { getVideoId, isYouTubeUrl } from "./url.ts";
 import { Effect, Schema } from "effect";
 import {
   PageDataSchema,
@@ -75,7 +77,13 @@ export async function handleActionClick(
     await deps.setTitle(tab.id!, "Transcript copied");
     await deps.notify("YouTube Transcript Copier", "Transcript copied to the clipboard.");
     await deps.progress(tab.id!, "Transcript copied.", true);
-    deps.schedule(() => deps.setTitle(tab.id!, "Copy YouTube transcript"), 2500);
+    deps.schedule(() => {
+      if (deps.clearTitle) {
+        void deps.clearTitle(tab.id!);
+      } else {
+        void deps.setTitle(tab.id!, "Copy YouTube transcript");
+      }
+    }, 2500);
     return result;
   } catch (error) {
     deps.log("YouTube Transcript Copier:", error as Error);
@@ -85,7 +93,13 @@ export async function handleActionClick(
         "YouTube Transcript Copier",
         (error as Error).message || "Could not copy the transcript.",
       );
-      deps.schedule(() => deps.setTitle(tab.id!, "Copy YouTube transcript"), 2500);
+      deps.schedule(() => {
+      if (deps.clearTitle) {
+        void deps.clearTitle(tab.id!);
+      } else {
+        void deps.setTitle(tab.id!, "Copy YouTube transcript");
+      }
+    }, 2500);
     }
     throw error;
   }
@@ -103,7 +117,13 @@ export async function handleActionClickSrt(
     await deps.setTitle(tab.id!, "SRT subtitles copied");
     await deps.notify("YouTube Transcript Copier", "SRT subtitles copied to the clipboard.");
     await deps.progress(tab.id!, "SRT subtitles copied.", true);
-    deps.schedule(() => deps.setTitle(tab.id!, "Copy YouTube transcript"), 2500);
+    deps.schedule(() => {
+      if (deps.clearTitle) {
+        void deps.clearTitle(tab.id!);
+      } else {
+        void deps.setTitle(tab.id!, "Copy YouTube transcript");
+      }
+    }, 2500);
     return result;
   } catch (error) {
     deps.log("YouTube Transcript Copier:", error as Error);
@@ -113,7 +133,13 @@ export async function handleActionClickSrt(
         "YouTube Transcript Copier",
         (error as Error).message || "Could not copy the SRT subtitles.",
       );
-      deps.schedule(() => deps.setTitle(tab.id!, "Copy YouTube transcript"), 2500);
+      deps.schedule(() => {
+      if (deps.clearTitle) {
+        void deps.clearTitle(tab.id!);
+      } else {
+        void deps.setTitle(tab.id!, "Copy YouTube transcript");
+      }
+    }, 2500);
     }
     throw error;
   }
@@ -268,7 +294,7 @@ function defaultDependencies(): BackgroundDependencies {
     },
     fetch: cachedFetch(globalThis.fetch.bind(globalThis) as typeof globalThis.fetch),
     fetchTranscript: fetchTranscriptApi,
-    getSettings: (): Promise<unknown> => chrome.storage.local.get({ language: "" }),
+    getSettings: (): Promise<unknown> => readPreferredLanguageSettings(),
     log: (...args: unknown[]) => console.error(...args),
     notify: (title: string, message: string) => notifySafely(title, message),
     progress: (tabId: number, message: string, done = false): Promise<void> =>
@@ -401,41 +427,27 @@ function executePageScript<Args extends unknown[]>(
     .then((results) => results[0]?.result);
 }
 
-export function isYouTubeUrl(url: string): boolean {
-  try {
-    const { hostname } = new URL(url);
-    return (
-      hostname === "youtube.com" || hostname.endsWith(".youtube.com") || hostname === "youtu.be"
-    );
-  } catch {
-    return false;
-  }
+export { getVideoId, isYouTubeUrl };
+
+export function clearYouTubeTranscriptCaches(): void {
+  clearResponseCache();
 }
 
-export function getVideoId(url: string): string {
-  const parsed = new URL(url);
-  if (parsed.hostname === "youtu.be") {
-    return parsed.pathname.slice(1).split("/")[0] || "";
-  }
-  if (parsed.pathname.includes("/shorts/")) {
-    return parsed.pathname.split("/shorts/")[1]?.split("/")[0] || "";
-  }
-  return parsed.searchParams.get("v") || "";
+export function handleInternalMessage(
+  message: unknown,
+  sender: chrome.runtime.MessageSender,
+  sendResponse: (response: unknown) => void,
+  overrides: Partial<BackgroundDependencies> = {},
+): true {
+  return handleMessage(message, sender, sendResponse, "internal", overrides);
 }
 
-if (typeof chrome !== "undefined") {
-  chrome.runtime.onMessage.addListener((message, sender, sendResponse) =>
-    handleMessage(message, sender, sendResponse, "internal"),
-  );
-  chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) =>
-    handleMessage(message, sender, sendResponse, "external"),
-  );
-  chrome.tabs.onRemoved.addListener(() => clearResponseCache());
-  chrome.tabs.onUpdated.addListener((_tabId, changeInfo) => {
-    if (changeInfo.url || changeInfo.status === "loading") {
-      clearResponseCache();
-    }
-  });
+export function handleExternalMessage(
+  message: unknown,
+  sender: chrome.runtime.MessageSender,
+  sendResponse: (response: unknown) => void,
+): true {
+  return handleMessage(message, sender, sendResponse, "external");
 }
 
 type MessageSource = "internal" | "external";
@@ -464,6 +476,7 @@ function handleMessage(
   sender: chrome.runtime.MessageSender,
   sendResponse: (response: unknown) => void,
   source: MessageSource,
+  overrides: Partial<BackgroundDependencies> = {},
 ): true {
   void (async () => {
     let request: ExtensionMessage | undefined;
@@ -480,28 +493,28 @@ function handleMessage(
       let result: ExtensionResponse;
       switch (request.action) {
         case "copyTranscript": {
-          await handleActionClick(tab);
+          await handleActionClick(tab, overrides);
           result = { label: "Transcript copied!" };
           break;
         }
         case "copySrt": {
-          await handleActionClickSrt(tab);
+          await handleActionClickSrt(tab, overrides);
           result = { label: "SRT subtitles copied!" };
           break;
         }
         case "getTranscript": {
-          result = { transcript: await handleGetTranscript(tab) };
+          result = { transcript: await handleGetTranscript(tab, overrides) };
           break;
         }
         case "getSubtitle": {
-          result = { transcript: await handleGetSubtitle(tab) };
+          result = { transcript: await handleGetSubtitle(tab, overrides) };
           break;
         }
         case "downloadFixtures": {
           if (process.env["NODE_ENV"] === "production") {
             result = { error: "Fixtures download is only available in development builds." };
           } else {
-            result = await handleDownloadFixtures!(tab);
+            result = await handleDownloadFixtures!(tab, overrides);
           }
           break;
         }

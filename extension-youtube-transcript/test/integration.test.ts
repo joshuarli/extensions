@@ -17,7 +17,7 @@ import {
   handleGetTranscript,
   isYouTubeUrl,
   getVideoId,
-} from "../src/service-worker.ts";
+} from "../src/background.ts";
 import { readYouTubePage } from "../src/page.ts";
 import { resolveTranscript } from "../src/workflow.ts";
 import { fetchPlayerData, fetchTranscript, getCaptionTracks } from "../src/youtube-api.ts";

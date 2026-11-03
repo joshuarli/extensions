@@ -1,9 +1,13 @@
 import { captureRequest, credentialKey, currentUserId, mergeCapture, readCredentials } from "./capture.ts";
 
-const GRAPHQL_URLS = ["https://x.com/i/api/graphql/*"];
+export const xBookmarksRequestFilter: chrome.webRequest.RequestFilter = {
+  urls: ["https://x.com/i/api/graphql/*"],
+  types: ["xmlhttprequest"],
+};
+
 let updateQueue: Promise<void> = Promise.resolve();
 
-function installHeaderRule(): void {
+export function installXBookmarksHeaderRule(): void {
   void chrome.declarativeNetRequest.updateDynamicRules({
     removeRuleIds: [1],
     addRules: [{
@@ -25,11 +29,9 @@ function installHeaderRule(): void {
   }).catch((error: unknown) => console.warn("X bookmarks header setup failed", error));
 }
 
-chrome.runtime.onInstalled.addListener(installHeaderRule);
-chrome.runtime.onStartup.addListener(installHeaderRule);
-chrome.action.onClicked.addListener(() => void chrome.runtime.openOptionsPage());
-
-chrome.webRequest.onSendHeaders.addListener((details) => {
+export function handleXBookmarksRequest(
+  details: chrome.webRequest.OnSendHeadersDetails,
+): void {
   const capture = captureRequest(details.url, details.initiator, details.requestHeaders ?? []);
   if (!capture) return;
   updateQueue = updateQueue.then(async () => {
@@ -40,4 +42,4 @@ chrome.webRequest.onSendHeaders.addListener((details) => {
       [credentialKey(userId)]: mergeCapture(previous, capture),
     });
   }).catch(() => { /* The options page reports missing or stale credentials. */ });
-}, { urls: GRAPHQL_URLS, types: ["xmlhttprequest"] }, ["requestHeaders", "extraHeaders"]);
+}

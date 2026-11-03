@@ -3,20 +3,17 @@ import { defineConfig, type UserConfig } from "vite";
 
 const repositoryRoot = resolve(import.meta.dirname),
   isProductionBuild = process.env["NODE_ENV"] === "production",
-  outputRoot = resolvePath(repositoryRoot, isProductionBuild ? "dist" : "build");
+  outputRoot = resolvePath(repositoryRoot, isProductionBuild ? "dist" : "build"),
+  suiteOutputDirectory = resolvePath(outputRoot, "extension-suite"),
+  suiteSourceDirectory = resolvePath(repositoryRoot, "extension-suite", "src");
 
-interface ExtensionBundle {
+export interface SuiteBundle {
+  root: string;
   input: string | Record<string, string>;
+  outputDirectory: string;
   entryFileName: string;
   format: "es" | "iife";
   target: string;
-  emptyOutDir: boolean;
-}
-
-interface ExtensionDefinition {
-  sourceDirectory: string;
-  outputDirectory: string;
-  bundles: ExtensionBundle[];
 }
 
 function resolvePath(...segments: string[]): string {
@@ -27,124 +24,100 @@ function sourcePath(extensionName: string, ...segments: string[]): string {
   return resolvePath(repositoryRoot, extensionName, "src", ...segments);
 }
 
-function defineExtension(
+function injectedBundles(
   extensionName: string,
-  bundles: ExtensionBundle[],
-): ExtensionDefinition {
-  return {
-    sourceDirectory: sourcePath(extensionName),
-    outputDirectory: resolvePath(outputRoot, extensionName),
-    bundles,
-  };
+  entries: readonly { source: string; output: string }[],
+): SuiteBundle[] {
+  return entries.map(({ source, output }) => ({
+    root: sourcePath(extensionName),
+    input: sourcePath(extensionName, source),
+    outputDirectory: suiteOutputDirectory,
+    entryFileName: `inject/${extensionName.replace(/^extension-/u, "")}/${output}.js`,
+    format: "iife",
+    target: "chrome120",
+  }));
 }
 
-const allowRightClickInjectedEntries = [
-    "data/inject/core.ts",
-    "data/inject/mouse.ts",
-    "data/inject/styles.ts",
-    "data/inject/user-select/isolated.ts",
-    "data/inject/user-select/main.ts",
-    "data/inject/listen/isolated.ts",
-    "data/inject/listen/main.ts",
-  ],
-  extensionDefinitions: Record<string, ExtensionDefinition> = {
-    "extension-allow-right-click": defineExtension("extension-allow-right-click", [
-      {
-        input: sourcePath("extension-allow-right-click", "service-worker.ts"),
-        entryFileName: "service-worker.js",
-        format: "es",
-        target: "chrome110",
-        emptyOutDir: true,
-      },
-      ...allowRightClickInjectedEntries.map((entry) => ({
-        input: sourcePath("extension-allow-right-click", entry),
-        entryFileName: `${entry.replace(/\.ts$/u, "")}.js`,
-        format: "iife" as const,
-        target: "chrome110",
-        emptyOutDir: false,
-      })),
-    ]),
-    "extension-onefile": defineExtension("extension-onefile", [
-      {
-        input: sourcePath("extension-onefile", "service-worker.ts"),
-        entryFileName: "service-worker.js",
-        format: "es",
-        target: "chrome110",
-        emptyOutDir: true,
-      },
-      ...["inject/capture.ts", "inject/loader.ts"].map((entry) => ({
-        input: sourcePath("extension-onefile", entry),
-        entryFileName: `${entry.replace(/\.ts$/u, "")}.js`,
-        format: "iife" as const,
-        target: "chrome110",
-        emptyOutDir: false,
-      })),
-    ]),
-    "extension-x-bookmarks": defineExtension("extension-x-bookmarks", [
-      {
-        input: {
-          "service-worker": sourcePath("extension-x-bookmarks", "service-worker.ts"),
-          options: sourcePath("extension-x-bookmarks", "options.html"),
-        },
-        entryFileName: "[name].js",
-        format: "es",
-        target: "chrome120",
-        emptyOutDir: true,
-      },
-    ]),
-    "extension-youtube-transcript": defineExtension("extension-youtube-transcript", [
-      {
-        input: {
-          "service-worker": sourcePath("extension-youtube-transcript", "service-worker.ts"),
-          popup: sourcePath("extension-youtube-transcript", "popup.html"),
-          options: sourcePath("extension-youtube-transcript", "options.html"),
-        },
-        entryFileName: "[name].js",
-        format: "es",
-        target: "chrome110",
-        emptyOutDir: true,
-      },
-    ]),
-  };
+export const suiteBundles: SuiteBundle[] = [
+  {
+    root: suiteSourceDirectory,
+    input: sourcePath("extension-suite", "service-worker.ts"),
+    outputDirectory: suiteOutputDirectory,
+    entryFileName: "service-worker.js",
+    format: "es",
+    target: "chrome120",
+  },
+  {
+    root: suiteSourceDirectory,
+    input: {
+      popup: sourcePath("extension-suite", "popup.html"),
+      options: sourcePath("extension-suite", "options.html"),
+    },
+    outputDirectory: suiteOutputDirectory,
+    entryFileName: "[name].js",
+    format: "es",
+    target: "chrome120",
+  },
+  {
+    root: sourcePath("extension-x-bookmarks"),
+    input: sourcePath("extension-x-bookmarks", "options.html"),
+    outputDirectory: resolvePath(suiteOutputDirectory, "features", "x-bookmarks"),
+    entryFileName: "options.js",
+    format: "es",
+    target: "chrome120",
+  },
+  {
+    root: sourcePath("extension-onefile"),
+    input: sourcePath("extension-onefile", "offscreen.html"),
+    outputDirectory: resolvePath(suiteOutputDirectory, "features", "onefile"),
+    entryFileName: "offscreen.js",
+    format: "es",
+    target: "chrome120",
+  },
+  ...injectedBundles("extension-allow-right-click", [
+    { source: "data/inject/core.ts", output: "core" },
+    { source: "data/inject/mouse.ts", output: "mouse" },
+    { source: "data/inject/styles.ts", output: "styles" },
+    { source: "data/inject/user-select/isolated.ts", output: "user-select/isolated" },
+    { source: "data/inject/user-select/main.ts", output: "user-select/main" },
+    { source: "data/inject/listen/isolated.ts", output: "listen/isolated" },
+    { source: "data/inject/listen/main.ts", output: "listen/main" },
+  ]),
+  ...injectedBundles("extension-onefile", [
+    { source: "inject/capture.ts", output: "capture" },
+    { source: "inject/loader.ts", output: "loader" },
+  ]),
+];
 
-export const outputRootPath = outputRoot;
-export { extensionDefinitions, repositoryRoot };
+export { repositoryRoot, suiteOutputDirectory, suiteSourceDirectory };
 
-export function createExtensionBuildConfigs(
+export function createSuiteBuildConfigs(
   production = isProductionBuild,
 ): UserConfig[] {
-  const configs: UserConfig[] = [];
-
-  for (const extension of Object.values(extensionDefinitions)) {
-    for (const bundle of extension.bundles) {
-      configs.push({
-        root: extension.sourceDirectory,
-        base: "./",
-        define: {
-          "process.env.NODE_ENV": JSON.stringify(production ? "production" : "development"),
+  return suiteBundles.map((bundle) => ({
+    root: bundle.root,
+    base: "./",
+    define: {
+      "process.env.NODE_ENV": JSON.stringify(production ? "production" : "development"),
+    },
+    build: {
+      outDir: bundle.outputDirectory,
+      emptyOutDir: false,
+      copyPublicDir: false,
+      target: bundle.target,
+      minify: production,
+      sourcemap: production ? false : "inline",
+      rolldownOptions: {
+        input: bundle.input,
+        output: {
+          format: bundle.format,
+          entryFileNames: bundle.entryFileName,
+          chunkFileNames: "chunks/[name]-[hash].js",
+          assetFileNames: "[name][extname]",
         },
-        build: {
-          outDir: extension.outputDirectory,
-          emptyOutDir: bundle.emptyOutDir,
-          copyPublicDir: false,
-          target: bundle.target,
-          minify: production,
-          sourcemap: production ? false : "inline",
-          rolldownOptions: {
-            input: bundle.input,
-            output: {
-              format: bundle.format,
-              entryFileNames: bundle.entryFileName,
-              chunkFileNames: "chunks/[name]-[hash].js",
-              assetFileNames: "[name][extname]",
-            },
-          },
-        },
-      });
-    }
-  }
-
-  return configs;
+      },
+    },
+  }));
 }
 
 export default defineConfig({

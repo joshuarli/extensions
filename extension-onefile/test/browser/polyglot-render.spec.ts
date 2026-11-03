@@ -7,7 +7,7 @@ import { buildPolyglot } from "../../src/polyglot.ts";
 
 const specDirectory = dirname(fileURLToPath(import.meta.url)),
   repoRoot = join(specDirectory, "..", "..", ".."),
-  loaderSource = readFileSync(join(repoRoot, "build", "extension-onefile", "inject", "loader.js"), "utf8");
+  loaderSource = readFileSync(join(repoRoot, "build", "extension-suite", "inject", "onefile", "loader.js"), "utf8");
 
 const scratchRoot = join(repoRoot, ".work", "tmp", "browser-artifacts");
 

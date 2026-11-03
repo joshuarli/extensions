@@ -1,7 +1,13 @@
-import { cpSync, mkdirSync, readdirSync, readFileSync, statSync, watch, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, readdirSync, rmSync, statSync, watch, writeFileSync } from "node:fs";
 import { relative, resolve } from "node:path";
 import { build } from "vite";
-import { createExtensionBuildConfigs, extensionDefinitions } from "../vite.config.ts";
+import {
+  createSuiteBuildConfigs,
+  repositoryRoot,
+  suiteOutputDirectory,
+  suiteSourceDirectory,
+} from "../vite.config.ts";
+import { manifest } from "../extension-suite/src/manifest.ts";
 import { createRebuildQueue } from "./rebuild-queue.ts";
 
 function copyStaticSource(sourceDirectory, outputDirectory) {
@@ -10,83 +16,52 @@ function copyStaticSource(sourceDirectory, outputDirectory) {
     filter(sourcePath) {
       const relativePath = relative(sourceDirectory, sourcePath);
       if (relativePath === "") return true;
-      return (
-        relativePath !== "manifest.json" &&
-        !/\.(?:ts|html|css)$/u.test(relativePath)
-      );
+      return !/(?:^|\/)(?:manifest\.ts|.*\.(?:ts|html|css))$/u.test(relativePath);
     },
   });
 }
 
-async function buildExtension(extensionName, extension, bundleConfigs) {
-  for (const bundleConfig of bundleConfigs) {
+async function buildSuite() {
+  rmSync(suiteOutputDirectory, { recursive: true, force: true });
+  mkdirSync(suiteOutputDirectory, { recursive: true });
+
+  for (const bundleConfig of createSuiteBuildConfigs()) {
     await build({ ...bundleConfig, configFile: false });
   }
 
-  mkdirSync(extension.outputDirectory, { recursive: true });
-  copyStaticSource(extension.sourceDirectory, extension.outputDirectory);
-
-  const manifestPath = resolve(extension.sourceDirectory, "manifest.json"),
-    manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+  copyStaticSource(suiteSourceDirectory, suiteOutputDirectory);
+  mkdirSync(resolve(suiteOutputDirectory, "rules"), { recursive: true });
+  cpSync(
+    resolve(repositoryRoot, "extension-youtube-transcript", "src", "rules.json"),
+    resolve(suiteOutputDirectory, "rules", "youtube-headers.json"),
+  );
   writeFileSync(
-    resolve(extension.outputDirectory, "manifest.json"),
+    resolve(suiteOutputDirectory, "manifest.json"),
     `${JSON.stringify(manifest, null, 2)}\n`,
   );
 
-  console.log(`Built ${extensionName} in ${extension.outputDirectory}`);
+  console.log(`Built extension-suite in ${suiteOutputDirectory}`);
 }
 
-const definitions = Object.entries(extensionDefinitions),
-  configs = createExtensionBuildConfigs();
-let configIndex = 0;
-const definitionConfigs = new Map();
-
-for (const [extensionName, extension] of definitions) {
-  const bundleConfigs = configs.slice(configIndex, configIndex + extension.bundles.length);
-  configIndex += extension.bundles.length;
-  definitionConfigs.set(extensionName, bundleConfigs);
-  await buildExtension(extensionName, extension, bundleConfigs);
-}
+await buildSuite();
 
 if (process.argv.includes("--watch")) {
-  const sourceDirectories = definitions.map(([, extension]) => extension.sourceDirectory);
-  let pendingExtensions = new Set(),
-    rebuildTimer;
+  const sourceDirectories = [
+    suiteSourceDirectory,
+    ...readdirSync(repositoryRoot, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && /^extension-(?!suite$)/u.test(entry.name))
+      .map((entry) => resolve(repositoryRoot, entry.name, "src")),
+  ];
   const enqueueRebuild = createRebuildQueue((error) => {
-    console.error("Failed to rebuild extensions:", error);
+    console.error("Failed to rebuild extension-suite:", error);
   });
-
-  function findExtension(changedPath) {
-    return definitions.find(([, extension]) =>
-      changedPath === extension.sourceDirectory ||
-      changedPath.startsWith(`${extension.sourceDirectory}/`)
-    )?.[0];
-  }
+  let rebuildTimer;
 
   function scheduleRebuild() {
     clearTimeout(rebuildTimer);
     rebuildTimer = setTimeout(() => {
-      const extensionsToRebuild = [...pendingExtensions];
-      pendingExtensions = new Set();
-      enqueueRebuild(async () => {
-        for (const extensionName of extensionsToRebuild) {
-          const extension = extensionDefinitions[extensionName];
-          await buildExtension(
-            extensionName,
-            extension,
-            definitionConfigs.get(extensionName),
-          );
-        }
-      });
+      enqueueRebuild(buildSuite);
     }, 200);
-  }
-
-  function handleChangedPath(changedPath) {
-    const changedExtension = findExtension(changedPath);
-    if (changedExtension) {
-      pendingExtensions.add(changedExtension);
-      scheduleRebuild();
-    }
   }
 
   function collectDirectories(root) {
@@ -117,7 +92,7 @@ if (process.argv.includes("--watch")) {
           watchDirectory(subdirectory);
         }
       }
-      handleChangedPath(changedPath);
+      scheduleRebuild();
     });
     watcher.on("error", (error) => {
       console.error(`Failed to watch ${directory}:`, error);

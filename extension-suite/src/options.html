@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Browser Extensions settings</title>
+    <link rel="stylesheet" href="./options.css" />
+  </head>
+  <body>
+    <main>
+      <h1>Browser Extensions</h1>
+
+      <section>
+        <h2>YouTube Transcript</h2>
+        <label for="language">Preferred transcript language</label>
+        <div class="row">
+          <input
+            id="language"
+            data-yt-language
+            placeholder="Default, en, zh-CN, fr"
+            autocomplete="off"
+          />
+          <button type="button" data-yt-save>Save</button>
+        </div>
+        <p class="subtle">
+          Leave this blank to use YouTube's default caption selection. The setting applies to
+          both transcripts and SRT subtitles.
+        </p>
+        <div data-yt-status role="status"></div>
+      </section>
+
+      <section>
+        <h2>X Bookmarks</h2>
+        <p>
+          The exporter collects bookmarks into a local IndexedDB archive and downloads a
+          cumulative JSON file. Open it after signing in to X and reloading the bookmarks page.
+        </p>
+        <button type="button" data-x-open>Open bookmark exporter</button>
+      </section>
+
+      <section>
+        <h2>Allow Right-Click</h2>
+        <p>
+          Open the toolbar popup on any page to enable or disable right-click, selection, copy,
+          paste, and drag restoration for that tab.
+        </p>
+      </section>
+
+      <section>
+        <h2>Onefile</h2>
+        <p>
+          Open the toolbar popup on any page and choose <strong>Save page</strong> to download a
+          self-extracting offline archive.
+        </p>
+      </section>
+    </main>
+    <script type="module" src="./options.ts"></script>
+  </body>
+</html>

@@ -11,8 +11,8 @@ import { Schema } from "effect";
 const specDirectory = dirname(fileURLToPath(import.meta.url)),
   repoRoot = join(specDirectory, "..", "..", ".."),
   fixtureRoot = join(repoRoot, "extension-onefile", "test", "fixtures"),
-  distCapture = join(repoRoot, "dist", "extension-onefile", "inject", "capture.js"),
-  distLoader = readFileSync(join(repoRoot, "dist", "extension-onefile", "inject", "loader.js"), "utf8"),
+  distCapture = join(repoRoot, "dist", "extension-suite", "inject", "onefile", "capture.js"),
+  distLoader = readFileSync(join(repoRoot, "dist", "extension-suite", "inject", "onefile", "loader.js"), "utf8"),
   upstreamRoot = join(repoRoot, ".work", "tmp", "upstream-base", "node_modules", "single-file-core"),
   resultRoot = join(repoRoot, ".work", "tmp", "perf-results");
 

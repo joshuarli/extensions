@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Browser Extensions</title>
+    <link rel="stylesheet" href="./popup.css" />
+  </head>
+  <body>
+    <main>
+      <h1>Browser Extensions</h1>
+
+      <section class="feature" id="allow-right-click">
+        <div class="feature-heading">
+          <h2>Allow Right-Click</h2>
+          <span class="state" data-arc-state>Checking…</span>
+        </div>
+        <p class="subtle">Restore right-click, selection, copy, paste, and drag on this page.</p>
+        <button type="button" data-arc-toggle>Toggle right-click</button>
+      </section>
+
+      <section class="feature" id="onefile">
+        <div class="feature-heading">
+          <h2>Onefile</h2>
+        </div>
+        <p class="subtle">Save this tab as a self-extracting offline archive.</p>
+        <button type="button" data-onefile-save>Save page</button>
+      </section>
+
+      <section class="feature" data-yt-section hidden>
+        <div class="feature-heading">
+          <h2>YouTube Transcript</h2>
+        </div>
+        <div class="buttons">
+          <button type="button" data-yt-copy-transcript>Copy Transcript</button>
+          <button type="button" data-yt-copy-srt>Copy SRT Subtitles</button>
+        </div>
+        <a data-yt-developer-toggle href="#" aria-expanded="false" hidden>Developer tools</a>
+        <div class="developer-actions" data-yt-developer-actions hidden>
+          <button type="button" data-yt-download-fixtures>Download fixtures</button>
+        </div>
+        <div class="status" data-yt-status role="status"></div>
+        <button type="button" class="link-button" data-yt-copy-error hidden>
+          Copy error details
+        </button>
+        <a data-yt-settings-link href="#">Transcript settings</a>
+      </section>
+
+      <section class="feature" data-x-section>
+        <div class="feature-heading">
+          <h2>X Bookmarks</h2>
+        </div>
+        <p class="subtle">Collect and export your X bookmarks to a local JSON archive.</p>
+        <button type="button" data-x-open>Open bookmark exporter</button>
+      </section>
+
+      <div id="status" role="status"></div>
+      <a class="settings-link" data-open-options href="#">All settings</a>
+    </main>
+    <script type="module" src="./popup.ts"></script>
+  </body>
+</html>

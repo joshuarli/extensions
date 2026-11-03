@@ -9,13 +9,14 @@ dependencies beyond the shared Effect 4 already used by this repository.
 
 1. From the repository root, run pnpm install and pnpm run dist.
 2. Open chrome://extensions, enable Developer mode, and load
-   dist/extension-x-bookmarks as an unpacked extension.
+   dist/extension-suite as an unpacked extension.
 3. Sign in to X and **reload** [your bookmarks](https://x.com/i/bookmarks).
-   The service worker passively captures the current GraphQL query ID,
+   The suite service worker passively captures the current GraphQL query ID,
    request features, and X web-app authorization header.
-4. Click the X Bookmarks extension icon to open its page and select
-   **Collect all**. Each page is saved locally to IndexedDB; retries and
-   throttling handle transient failures and HTTP 429 responses.
+4. Click the suite toolbar icon and choose **Open bookmark exporter** (or use
+   **All settings**). Select **Collect all**. Each page is saved locally to
+   IndexedDB; retries and throttling handle transient failures and HTTP 429
+   responses.
 5. To include premium bookmark folders, first open a folder on X as well,
    allowing its GraphQL operation to be captured. The exporter will list
    available folders and scan each one when both operation IDs are present.
@@ -33,8 +34,9 @@ The browser page must remain open for collection to continue.
 ## Implementation and security
 
 - Authenticated requests execute from the extension page using the logged-in
-  browser session. The service worker observes only X bookmark GraphQL requests,
-  and an extension-scoped DNR rule adds X Origin/Referer request headers.
+  browser session. The suite service worker observes only X bookmark GraphQL
+  requests, and an extension-scoped DNR rule adds X Origin/Referer request
+  headers.
 - No cookies or authorization headers are written into archive JSON. Captured
   header information stays in extension-local storage, scoped by the numeric
   session user ID. The CSRF cookie is reread on every request.
@@ -52,5 +54,5 @@ The browser page must remain open for collection to continue.
 ## Development
 
 pnpm run check runs strict typechecking and unit tests. pnpm run dist
-builds all four Chromium extensions. extension-x-bookmarks/test covers
-response parsing, account safety, credential capture, and merging.
+builds the unified extension. extension-x-bookmarks/test covers response
+parsing, account safety, credential capture, and merging.
