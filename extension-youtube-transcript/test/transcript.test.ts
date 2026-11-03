@@ -271,6 +271,28 @@ test("selects captions for YouTube's default audio language", () => {
   })?.languageCode, "ja");
 });
 
+test("falls back through default caption indices, associated tracks, and English", () => {
+  assert.equal(
+    pickCaptionTrack([{ languageCode: "es" }, { languageCode: "fr" }], undefined, {
+      captions: {
+        playerCaptionsTracklistRenderer: { defaultCaptionTrackIndex: 1 },
+      },
+    } as never)?.languageCode,
+    "fr",
+  );
+  assert.equal(
+    pickCaptionTrack(
+      [{ languageCode: "de" }, { languageCode: "en" }],
+    )?.languageCode,
+    "en",
+  );
+  assert.equal(
+    pickCaptionTrack([{ languageCode: "de", kind: "asr" }, { languageCode: "en", kind: "asr" }])?.languageCode,
+    "de",
+  );
+  assert.equal(pickCaptionTrack([], "en"), undefined);
+});
+
 test("uses the only audio track without an explicit default index", () => {
   const tracks = [{ languageCode: "en", kind: "asr" }, { languageCode: "ja" }],
     playerData = {

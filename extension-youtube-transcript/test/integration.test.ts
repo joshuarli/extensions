@@ -13,15 +13,22 @@ import {
   handleActionClick,
   handleActionClickSrt,
   handleDownloadFixtures,
+  handleExternalMessage,
   handleGetSubtitle,
   handleGetTranscript,
+  handleInternalMessage,
   isYouTubeUrl,
   getVideoId,
+  resolveMessageTab,
 } from "../src/background.ts";
 import { readYouTubePage } from "../src/page.ts";
 import { resolveTranscript } from "../src/workflow.ts";
 import { fetchPlayerData, fetchTranscript, getCaptionTracks } from "../src/youtube-api.ts";
 import { CaptionFetchError } from "../src/error.ts";
+import {
+  readPreferredLanguageSettings,
+  savePreferredLanguageSettings,
+} from "../src/settings.ts";
 
 async function decompress(buffer: Uint8Array): Promise<string> {
   const stream = new Blob([buffer as unknown as BlobPart])
@@ -519,6 +526,48 @@ test("panel reader returns an existing modern transcript", async () => {
   assert.deepEqual(data?.segments, [{ start: 5, text: "Panel transcript." }]);
 });
 
+test("page collector prefers linked-data metadata over player data", async () => {
+  const scripts = [
+      {
+        textContent:
+          'var ytInitialPlayerResponse = {"videoDetails":{"videoId":"CURRENT_VID","title":"Player title","author":"Player author","thumbnail":{"thumbnails":[{"url":"https://img/player"}]}},"microformat":{"playerMicroformatRenderer":{"publishDate":"2024-01-01"}}}',
+      },
+    ],
+    doc = {
+      scripts,
+      URL: "https://www.youtube.com/watch?v=CURRENT_VID",
+      title: "Fallback - YouTube",
+      querySelector: (selector: string) => {
+        if (selector.includes('meta[property="og:title"]')) return { content: "OG Title" };
+        if (selector.includes('meta[property="og:description"]')) return { content: "OG Description" };
+        if (selector.includes('meta[property="og:image"]')) return { content: "https://img/og" };
+        if (selector.includes("#owner-name a")) return null;
+        return null;
+      },
+      querySelectorAll: (selector: string) => {
+        if (selector === 'script[type="application/ld+json"]') {
+          return [{
+            textContent: JSON.stringify({
+              "@type": "VideoObject",
+              name: "LD title",
+              author: { name: "LD author" },
+              description: "LD description",
+              thumbnailUrl: "https://img/ld",
+              uploadDate: "2024-02-03",
+            }),
+          }];
+        }
+        return [];
+      },
+    },
+    data = (await readYouTubePage("page", doc as unknown as Document)) as PageData;
+  assert.equal(data.metadata.title, "LD title");
+  assert.equal(data.metadata.author, "LD author");
+  assert.equal(data.metadata.description, "LD description");
+  assert.equal(data.metadata.image, "https://img/ld");
+  assert.equal(data.metadata.published, "2024-02-03");
+});
+
 test("page collector ignores player-derived metadata when response is stale", async () => {
   const scripts = [
       {
@@ -743,6 +792,53 @@ describe("fixtures", () => {
       assert.match(calls[0]!, new RegExp(`language: ${JSON.stringify(f.languageCode)}`));
     });
 
+    it(`${f.videoId} reproduces the captured transcript from captured player inputs`, async () => {
+      const { fetchMock } = fixtureFetch(f),
+        pageData = (await readYouTubePage(
+          "page",
+          {
+            scripts: [{
+              textContent: `var ytInitialPlayerResponse = ${JSON.stringify(f.innertube["playerResponse"])};`,
+            }],
+            title: "Ignored - YouTube",
+            URL: `https://www.youtube.com/watch?v=${f.videoId}&t=9s`,
+            querySelector: () => null,
+            querySelectorAll: () => [],
+          } as unknown as Document,
+        )) as PageData,
+        calls: string[] = [];
+      await handleActionClick(
+        {
+          id: 10,
+          url: `https://www.youtube.com/watch?v=${f.videoId}&t=9s`,
+        } as unknown as chrome.tabs.Tab,
+        {
+          fetch: fetchMock as typeof globalThis.fetch,
+          getSettings: async () => ({ language: "" }),
+          readPageData: async (): Promise<PageData> => pageData,
+          readPanel: async () => null,
+          copy: async (_tabId: number, text: string): Promise<void> => {
+            calls.push(text);
+          },
+          progress: async () => {},
+          setTitle: async () => {},
+          notify: async () => {},
+          schedule: () => {},
+          log: () => {},
+        },
+      );
+
+      assert.equal(transcriptBody(calls[0]!), transcriptBody(f.expectedTranscript));
+      assert.ok(calls[0]!.includes(`title: ${JSON.stringify(f.title)}`));
+      assert.ok(calls[0]!.includes(`author:\n  - ${JSON.stringify(`[[${f.author}]]`)}`));
+      assert.ok(
+        calls[0]!.includes(
+          `source: ${JSON.stringify(`https://www.youtube.com/watch?v=${f.videoId}&t=9s`)}`,
+        ),
+      );
+      assert.ok(calls[0]!.includes(`language: ${JSON.stringify(f.languageCode)}`));
+    });
+
     it(`${f.videoId} produces the captured SRT through the action workflow`, async () => {
       const { fetchMock } = fixtureFetch(f),
         calls: string[] = [],
@@ -938,4 +1034,112 @@ test("getVideoId extracts video IDs from YouTube URLs", () => {
   assert.equal(getVideoId("https://www.youtube.com/shorts/abc123"), "abc123");
   assert.equal(getVideoId("https://www.youtube.com/watch?v=abc123&t=30"), "abc123");
   assert.equal(getVideoId("https://youtu.be/abc123?t=30"), "abc123");
+});
+
+function internalRequest(
+  message: unknown,
+  sender: chrome.runtime.MessageSender,
+  overrides: Partial<BackgroundDependencies> = {},
+): Promise<unknown> {
+  return new Promise((resolve) => {
+    handleInternalMessage(message, sender, resolve, overrides);
+  });
+}
+
+function senderTab(id: number, url: string): chrome.runtime.MessageSender {
+  return { tab: { id, url } as unknown as chrome.tabs.Tab };
+}
+
+test("message dispatch copies the transcript and answers with a label", async () => {
+  const deps = dependencies(),
+    response = await internalRequest(
+      { action: "copyTranscript" },
+      senderTab(7, "https://www.youtube.com/watch?v=abc123"),
+      deps,
+    );
+  assert.deepEqual(response, { label: "Transcript copied!" });
+  assert.match(deps.calls.copied[0]!, /\*\*0:00\*\* · Hello from API\./);
+});
+
+test("message dispatch answers subtitle requests with SRT text", async () => {
+  const deps = dependencies(),
+    response = await internalRequest(
+      { action: "getSubtitle" },
+      senderTab(16, "https://www.youtube.com/watch?v=abc123"),
+      deps,
+    );
+  assert.match(
+    (response as { transcript: string }).transcript,
+    /^1\n00:00:00,000 --> 00:00:05,000/,
+  );
+});
+
+test("message dispatch answers SRT copy requests with a label", async () => {
+  const deps = dependencies(),
+    response = await internalRequest(
+      { action: "copySrt" },
+      senderTab(14, "https://www.youtube.com/watch?v=abc123"),
+      deps,
+    );
+  assert.deepEqual(response, { label: "SRT subtitles copied!" });
+  assert.match(deps.calls.copied[0]!, /^1\n00:00:00,000 --> 00:00:05,000/);
+});
+
+test("message dispatch answers unknown actions with an error", async () => {
+  const response = (await internalRequest(
+    { action: "runUnknownAction" },
+    senderTab(7, "https://www.youtube.com/watch?v=abc123"),
+    dependencies(),
+  )) as { error: string; errorDetail: string };
+  assert.equal(typeof response.error, "string");
+  assert.ok(response.error.length > 0);
+  assert.ok(response.errorDetail.length > 0);
+});
+
+test("message dispatch rejects cross-tab external access", async () => {
+  const response = (await new Promise<unknown>((resolve) => {
+    handleExternalMessage({ action: "copyTranscript", tabId: 2 }, senderTab(1, "https://www.youtube.com/watch?v=abc123"), resolve);
+  })) as { error: string; errorDetail: string };
+  assert.equal(response.error, "External requests can only access the sending tab.");
+  assert.ok(response.errorDetail.includes("TabNotAccessibleError"));
+});
+
+test("message tab resolution keeps internal callers on their own tab", async () => {
+  const tab = { id: 9, url: "https://www.youtube.com/watch?v=abc123" } as unknown as chrome.tabs.Tab,
+    sender = senderTab(9, tab.url!);
+  assert.equal(await resolveMessageTab({ action: "copyTranscript" }, sender, "internal"), sender.tab);
+  assert.equal(
+    await resolveMessageTab({ action: "copyTranscript", tabId: 9 }, senderTab(1, tab.url!), "internal", async () => tab),
+    tab,
+  );
+  await assert.rejects(
+    resolveMessageTab({ action: "copyTranscript", tabId: 2 }, senderTab(1, tab.url!), "external"),
+    /only access the sending tab/,
+  );
+  await assert.rejects(
+    resolveMessageTab({ action: "copyTranscript" }, {}, "external"),
+    /must come from a browser tab/,
+  );
+});
+
+test("language preference round-trips through extension storage", async () => {
+  const stored: Record<string, unknown> = {},
+    previous = (globalThis as Record<string, unknown>)["chrome"];
+  (globalThis as Record<string, unknown>)["chrome"] = {
+    storage: {
+      local: {
+        get: async (items: Record<string, unknown>) =>
+          Object.fromEntries(Object.entries(items).map(([key, fallback]) => [key, stored[key] ?? fallback])),
+        set: async (items: Record<string, unknown>) => Object.assign(stored, items),
+      },
+    },
+  };
+  try {
+    assert.deepEqual(await readPreferredLanguageSettings(), { language: "" });
+    await savePreferredLanguageSettings({ language: "fr" });
+    assert.deepEqual(await readPreferredLanguageSettings(), { language: "fr" });
+  } finally {
+    if (previous === undefined) delete (globalThis as Record<string, unknown>)["chrome"];
+    else (globalThis as Record<string, unknown>)["chrome"] = previous;
+  }
 });
