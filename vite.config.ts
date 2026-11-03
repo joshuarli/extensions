@@ -95,6 +95,7 @@ export function createSuiteBuildConfigs(
   production = isProductionBuild,
 ): UserConfig[] {
   return suiteBundles.map((bundle) => ({
+    mode: production ? "production" : "development",
     root: bundle.root,
     base: "./",
     define: {
