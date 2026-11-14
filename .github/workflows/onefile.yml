@@ -2,6 +2,7 @@ name: onefile
 
 on:
   push:
+    branches: [main]
     paths:
       - "extension-onefile/**"
       - "vite.config.ts"

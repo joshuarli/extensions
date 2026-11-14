@@ -2,6 +2,7 @@ name: x-bookmarks
 
 on:
   push:
+    branches: [main]
     paths:
       - "extension-x-bookmarks/**"
       - "vite.config.ts"
