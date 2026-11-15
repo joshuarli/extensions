@@ -86,6 +86,12 @@ async function handleSuiteRequest(request: SuiteRequest): Promise<SuiteResponse>
       });
       return { ok: true };
     }
+    case "x-bookmarks/collect-profile": {
+      await chrome.tabs.create({
+        url: chrome.runtime.getURL(xBookmarksExporterPath) + "?collect=profile&export=1",
+      });
+      return { ok: true };
+    }
   }
 }
 

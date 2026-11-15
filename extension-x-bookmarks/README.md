@@ -17,12 +17,13 @@ It does two things:
 Right-click anywhere on an x.com page to get:
 
 - **Open X archive exporter** — opens the exporter page in a new tab.
-- **Toggle profile capture (arm/disarm)** — arms capture (a notification confirms);
-  while armed, the extension records the GraphQL requests the profile pages make.
-  Toggle again to disarm. This is the same toggle as the button on the exporter page.
-- **Collect profile posts…** / **Collect bookmarks…** — opens the exporter and, when
-  collection is ready, starts it automatically. If it isn't ready, the page explains
-  what's missing instead of starting.
+- **Collect and download profile posts…** — opens the exporter, collects the last
+  visited profile, and downloads the archive folder (posts.json + media) in one
+  step. If capture isn't ready the page explains what's missing.
+- **Collect and download bookmarks…** — same for the bookmark archive JSON.
+
+The toolbar popup also has the one-click path: visit the profile you want, open
+the toolbar icon, and click **Download @handle archive**.
 
 ## Use: bookmarks
 
@@ -50,21 +51,24 @@ original posts, reposts, and replies — as `posts.json` plus the actual media
 files (photos and videos). X serves a profile timeline through the same private
 GraphQL mechanism as bookmarks, so the same capture-then-paginate strategy
 applies; the page scrolls itself, no autoscrolling of the visible tab is
-required.
+required. Profile requests are captured passively whenever a profile issues
+them, so no manual arming is needed: whatever profile you opened most recently
+is the one being archived.
 
-1. Open the X archive exporter (toolbar icon → **Open X archive exporter**).
-2. Select **Arm profile capture**.
-3. In a signed-in tab, open the profile, e.g. `https://x.com/jack`, and load:
+1. In a signed-in tab, open the profile, e.g. `https://x.com/jack`, and load:
    - the **Posts** tab (captures `UserTweets` — original posts and reposts), and
    - the **Replies** tab (captures `UserTweetsAndReplies` — additionally the
      replies; X only serves it there). Loading both gives a complete archive.
-4. Select **Disarm profile capture**.
-5. Select **Collect profile posts**. The exporter paginates the captured
-   timeline (preferring `UserTweetsAndReplies`, the superset) into IndexedDB,
-   per account and per target profile. Stop any time; re-running is safe.
-6. Select the profile in **Archive to export** and click **Download archive**.
-   (Right-click → **Collect profile posts…** on any x.com page opens the exporter
-   and starts collection in one step when capture is ready.)
+2. Then either:
+   - open the toolbar popup and click **Download @handle archive**, or
+   - right-click the page and choose **Collect and download profile posts…**, or
+   - open the X archive exporter (toolbar icon → **Open X archive exporter**),
+     select **Collect profile posts**, then **Download archive**.
+
+Collection paginates the captured timeline (preferring `UserTweetsAndReplies`,
+the superset) into IndexedDB, per account and per target profile. Stop any
+time; re-running is safe. The popup and context menu paths collect first, then
+export the freshly updated archive automatically.
 
 The export creates a folder `x-profile-<handle>-<date>/` in your downloads:
 
@@ -183,12 +187,13 @@ collection to continue.
 ## Implementation and security
 
 - Authenticated requests execute from the extension page using the logged-in
-  browser session. The suite service worker only observes X GraphQL requests,
-  and only when it is looking at a URL shape it recognizes; bookmark capture is
-  passive, while **profile capture additionally requires capture to be armed**
-  from the exporter page. An extension-scoped DNR rule adds X Origin/Referer
-  request headers; a second DNR rule sets a Referer on X's media CDNs
-  (`pbs.twimg.com`, `video.twimg.com`) for the extension's own downloads.
+  browser session. The suite service worker passively observes X GraphQL
+  requests, only when the URL shape is one it recognizes; it records the
+  current query IDs, feature flags, an authorization header, and the last
+  visited profile's user id — never post content. An extension-scoped DNR
+  rule adds X Origin/Referer request headers; a second DNR rule sets a
+  Referer on X's media CDNs (`pbs.twimg.com`, `video.twimg.com`) for the
+  extension's own downloads.
 - No cookies or authorization headers are written into the archive JSON.
   Captured header information stays in extension-local storage, scoped by the
   numeric session user ID. The CSRF cookie is reread on every request.

@@ -2,9 +2,7 @@ import { errorMessage, requiredElement } from "../../lib/extension-ui.ts";
 import {
   currentUserId,
   readCredentials,
-  readProfileCaptureArmed,
   readProfileTarget,
-  writeProfileCaptureArmed,
   BOOKMARK_OPERATIONS,
   PROFILE_OPERATIONS,
 } from "./capture.ts";
@@ -27,7 +25,6 @@ const captureElement = requiredElement<HTMLElement>(document, "#capture", pageCo
 const countElement = requiredElement<HTMLElement>(document, "#count", pageContext);
 const coverageElement = requiredElement<HTMLElement>(document, "#coverage", pageContext);
 const profileCaptureElement = requiredElement<HTMLElement>(document, "#profile-capture", pageContext);
-const profileTargetElement = requiredElement<HTMLElement>(document, "#profile-target", pageContext);
 const profileCountElement = requiredElement<HTMLElement>(document, "#profile-count", pageContext);
 const profileCoverageElement = requiredElement<HTMLElement>(document, "#profile-coverage", pageContext);
 const statusElement = requiredElement<HTMLOutputElement>(document, "#status", pageContext);
@@ -35,7 +32,6 @@ const refreshButton = requiredElement<HTMLButtonElement>(document, "#refresh", p
 const collectButton = requiredElement<HTMLButtonElement>(document, "#collect", pageContext);
 const stopButton = requiredElement<HTMLButtonElement>(document, "#stop", pageContext);
 const downloadButton = requiredElement<HTMLButtonElement>(document, "#download", pageContext);
-const armButton = requiredElement<HTMLButtonElement>(document, "#arm-capture", pageContext);
 const collectProfileButton = requiredElement<HTMLButtonElement>(document, "#collect-profile", pageContext);
 const profileSelect = requiredElement<HTMLSelectElement>(document, "#profile-select", pageContext);
 const downloadProfileButton = requiredElement<HTMLButtonElement>(document, "#download-profile", pageContext);
@@ -164,11 +160,10 @@ function setBusy(value: boolean): void {
   collectProfileButton.disabled = value || !profileReady;
   downloadButton.disabled = value || !db;
   downloadProfileButton.disabled = value || !profileDb || profileSelect.options.length === 0;
-  armButton.disabled = value || !userId;
   stopButton.disabled = !value;
   if (value) {
     stopButton.title = "Stops the current run; saved pages are retained";
-    for (const button of [refreshButton, collectButton, collectProfileButton, downloadButton, downloadProfileButton, armButton]) {
+    for (const button of [refreshButton, collectButton, collectProfileButton, downloadButton, downloadProfileButton]) {
       button.title = "Working — click Stop to cancel";
     }
   }
@@ -241,7 +236,6 @@ async function refresh(): Promise<void> {
     countElement.textContent = "—";
     coverageElement.textContent = "—";
     profileCaptureElement.textContent = "Unavailable";
-    profileTargetElement.textContent = "Sign in to X";
     profileCountElement.textContent = "—";
     profileCoverageElement.textContent = "—";
     profileSelect.replaceChildren();
@@ -255,8 +249,6 @@ async function refresh(): Promise<void> {
     collectProfileButton.title = "Disabled: sign in to x.com in this browser first";
     downloadProfileButton.disabled = true;
     downloadProfileButton.title = "Disabled: sign in to x.com in this browser first";
-    armButton.disabled = true;
-    armButton.title = "Disabled: sign in to x.com in this browser first";
     refreshButton.disabled = false;
     refreshButton.title = "Re-check sign-in and captured requests";
     stopButton.title = "Nothing is running";
@@ -287,33 +279,24 @@ async function refresh(): Promise<void> {
     ? "Bookmarks: " + previous.bookmarks + "; folders: " + previous.folders + ". " + previous.reason
     : "Not scanned";
 
-  const armed = await readProfileCaptureArmed(account);
   const profileNames = [...PROFILE_OPERATIONS];
   const profileAvailable = profileNames.filter((name) => !!credentials.queryIds[name]);
-  armButton.textContent = armed ? "Disarm profile capture" : "Arm profile capture";
-  profileCaptureElement.textContent = armed
-    ? "Armed" + (profileAvailable.length ? "; captured: " + profileAvailable.join(", ") : "; nothing captured yet — load the profile's Posts and Replies tabs on x.com")
-    : "Disarmed" + (profileAvailable.length ? "; captured: " + profileAvailable.join(", ") : "");
   const target = await readProfileTarget(account);
   const targets = await refreshProfileTargets(account);
   const scannedTarget = target
     ? targets.find((entry) => entry.targetUserId === target.targetUserId)
     : undefined;
   const handle = scannedTarget?.state.profile?.screen_name;
-  const handlePart = handle ? "@" + handle + " (" : "";
-  const handleClose = handle ? ")" : "";
-  profileTargetElement.textContent = target
-    ? handlePart + "user " + target.targetUserId + ", " + target.operation + ", "
-      + new Date(target.capturedAt).toLocaleString() + handleClose
-    : "None captured — arm capture and open the profile on x.com";
+  profileCaptureElement.textContent = target
+    ? (handle ? "@" + handle + " " : "") + "user " + target.targetUserId
+      + " (" + target.operation + ") — visited " + new Date(target.capturedAt).toLocaleString()
+      + (profileAvailable.length ? "" : " — no requests captured yet; load the profile on x.com")
+    : "None captured — visit a profile on x.com (Posts and Replies tabs)";
   profileReady = !!target && !!(credentials.queryIds["UserTweetsAndReplies"] || credentials.queryIds["UserTweets"]);
   collectProfileButton.disabled = !profileReady;
   collectProfileButton.title = profileReady
     ? "Collect the captured profile's posts (and replies, when the Replies tab was captured)"
-    : "Disabled: arm capture, load the profile's Posts and Replies tabs, then disarm";
-  armButton.title = armed
-    ? "Disarm — stop recording profile requests"
-    : "Arm — record the next profile you visit on x.com";
+    : "Disabled: visit a profile on x.com first";
   downloadProfileButton.disabled = profileSelect.options.length === 0;
   downloadProfileButton.title = profileSelect.options.length === 0
     ? "Disabled: no profile archive yet — collect one first"
@@ -334,19 +317,6 @@ refreshButton.addEventListener("click", () => {
   void refresh().catch((cause: unknown) => status("Connection error: " + errorMessage(cause)));
 });
 
-armButton.addEventListener("click", () => {
-  if (busy || !userId) return;
-  const account = userId;
-  void (async () => {
-    const armed = await readProfileCaptureArmed(account);
-    await writeProfileCaptureArmed(account, !armed);
-    status(!armed
-      ? "Profile capture armed. Open the profile on x.com, load its Posts and Replies tabs, then disarm."
-      : "Profile capture disarmed.");
-    await refresh();
-  })().catch((cause: unknown) => status("Could not toggle capture: " + errorMessage(cause)));
-});
-
 profileSelect.addEventListener("change", () => {
   if (!profileDb) return;
   const archiveDb = profileDb;
@@ -360,6 +330,8 @@ profileSelect.addEventListener("change", () => {
   })().catch(() => { /* Selection refresh is cosmetic. */ });
 });
 
+let autoExportAfterCollect: "profile" | "bookmarks" | null = null;
+
 function runCollection(
   label: "bookmarks" | "profile",
   lockName: string,
@@ -370,6 +342,7 @@ function runCollection(
   const account = userId;
   controller = new AbortController();
   const signal = controller.signal;
+  let succeeded = false;
   setBusy(true);
   startHud(label === "bookmarks" ? "Collecting bookmarks" : "Collecting profile posts");
   void navigator.locks.request(lockName + "-" + account, { ifAvailable: true }, async (lock) => {
@@ -388,6 +361,7 @@ function runCollection(
     };
     return job(options, signal);
   }).then((result) => {
+    succeeded = true;
     const reason = (result as { reason?: string } | null)?.reason;
     finishHud(true, label === "bookmarks" ? "Bookmarks collected" : "Profile collected", reason ?? "Saved pages are retained.");
     status("Collection finished" + (reason ? ": " + reason : "."));
@@ -398,7 +372,15 @@ function runCollection(
   }).finally(() => {
     controller = null;
     setBusy(false);
-    void refresh().catch((cause: unknown) => status("Refresh error: " + errorMessage(cause)));
+    const shouldExport = succeeded && autoExportAfterCollect === label;
+    autoExportAfterCollect = null;
+    void refresh()
+      .then(() => {
+        if (shouldExport) {
+          (label === "profile" ? downloadProfileButton : downloadButton).click();
+        }
+      })
+      .catch((cause: unknown) => status("Refresh error: " + errorMessage(cause)));
   });
 }
 
@@ -491,21 +473,27 @@ downloadProfileButton.addEventListener("click", () => {
   });
 });
 
+const autoParams = new URLSearchParams(location.search);
+const autoCollectKind = autoParams.get("collect");
+const autoExport = autoParams.get("export") === "1";
+
 function maybeAutoCollect(kind: string | null): void {
+  if (kind === "profile" && !collectProfileButton.disabled) {
+    autoExportAfterCollect = autoExport ? "profile" : null;
+    collectProfileButton.click();
+    return;
+  }
+  if (kind === "bookmarks" && !collectButton.disabled) {
+    autoExportAfterCollect = autoExport ? "bookmarks" : null;
+    collectButton.click();
+    return;
+  }
   if (kind === "profile") {
-    if (!collectProfileButton.disabled) {
-      collectProfileButton.click();
-      return;
-    }
     status("Opened from the context menu, but profile collection isn't ready yet: "
-      + "arm capture, load the profile's Posts and Replies tabs on x.com, disarm, then click Collect profile posts.");
+      + "visit a profile on x.com in this browser first, then click Collect profile posts.");
     return;
   }
   if (kind === "bookmarks") {
-    if (!collectButton.disabled) {
-      collectButton.click();
-      return;
-    }
     status("Opened from the context menu, but bookmark collection isn't ready: "
       + "sign in to x.com in this browser, reload https://x.com/i/bookmarks, then click Collect bookmarks.");
   }
@@ -513,5 +501,5 @@ function maybeAutoCollect(kind: string | null): void {
 
 clearBadge();
 void refresh()
-  .then(() => maybeAutoCollect(new URLSearchParams(location.search).get("collect")))
+  .then(() => maybeAutoCollect(autoCollectKind))
   .catch((cause: unknown) => status("Initialization failed: " + errorMessage(cause)));

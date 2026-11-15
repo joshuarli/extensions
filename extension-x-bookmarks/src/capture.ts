@@ -57,24 +57,15 @@ export interface Capture {
   targetUserId?: string;
 }
 
-export interface CaptureOptions {
-  profileCaptureArmed?: boolean;
-}
-
 export function captureRequest(
   url: string,
   initiator: string | undefined,
   headers: readonly { name: string; value?: string | undefined }[],
-  options: CaptureOptions = {},
 ): Capture | null {
   if (initiator !== "https://x.com" && initiator !== "https://twitter.com") return null;
   const requestUrl = new URL(url);
   if (requestUrl.origin !== "https://x.com") return null;
-  const bookmarkMatch = /^\/i\/api\/graphql\/([A-Za-z0-9_-]+)\/(Bookmarks|BookmarkFoldersSlice|BookmarkFolderTimeline)$/u.exec(requestUrl.pathname);
-  const profileMatch = options.profileCaptureArmed === true
-    ? /^\/i\/api\/graphql\/([A-Za-z0-9_-]+)\/(UserTweets|UserTweetsAndReplies)$/u.exec(requestUrl.pathname)
-    : null;
-  const match = bookmarkMatch ?? profileMatch;
+  const match = /^\/i\/api\/graphql\/([A-Za-z0-9_-]+)\/(Bookmarks|BookmarkFoldersSlice|BookmarkFolderTimeline|UserTweets|UserTweetsAndReplies)$/u.exec(requestUrl.pathname);
   if (!match) return null;
   const queryId = match[1];
   const operation = match[2] as Operation;
@@ -135,10 +126,6 @@ export function mergeCapture(credentials: Credentials, capture: Capture): Creden
   };
 }
 
-export function profileArmedKey(userId: string): string {
-  return "x_profile_armed_" + userId;
-}
-
 export function profileTargetKey(userId: string): string {
   return "x_profile_target_" + userId;
 }
@@ -154,15 +141,6 @@ const ProfileTargetSchema = Schema.Struct({
   operation: Schema.Literals(PROFILE_OPERATIONS),
   capturedAt: Schema.String,
 });
-
-export async function readProfileCaptureArmed(userId: string): Promise<boolean> {
-  const key = profileArmedKey(userId);
-  return (await chrome.storage.local.get(key))[key] === true;
-}
-
-export async function writeProfileCaptureArmed(userId: string, armed: boolean): Promise<void> {
-  await chrome.storage.local.set({ [profileArmedKey(userId)]: armed });
-}
 
 export async function readProfileTarget(userId: string): Promise<ProfileTarget | null> {
   const key = profileTargetKey(userId);

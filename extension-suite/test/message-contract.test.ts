@@ -24,7 +24,13 @@ test("accepts namespaced suite requests", () => {
       kind: "x-bookmarks/open-exporter",
     }),
   ).toEqual({ kind: "x-bookmarks/open-exporter" });
+  expect(
+    Schema.decodeUnknownSync(SuiteRequestSchema)({
+      kind: "x-bookmarks/collect-profile",
+    }),
+  ).toEqual({ kind: "x-bookmarks/collect-profile" });
   expect(isSuiteRequest({ kind: "allow-right-click/status", tabId: 7 })).toBe(true);
+  expect(isSuiteRequest({ kind: "x-bookmarks/collect-profile" })).toBe(true);
 });
 
 test("rejects unknown or malformed suite requests", () => {

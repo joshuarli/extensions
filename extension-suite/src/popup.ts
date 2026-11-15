@@ -6,6 +6,8 @@ import {
 } from "../../lib/extension-ui.ts";
 import { mountYouTubeTranscriptPopup } from "../../extension-youtube-transcript/src/popup.ts";
 import { isYouTubeUrl } from "../../extension-youtube-transcript/src/url.ts";
+import { currentUserId, readProfileTarget } from "../../extension-x-bookmarks/src/capture.ts";
+import { loadProfileState, openProfileArchive } from "../../extension-x-bookmarks/src/profile-storage.ts";
 import { SuiteResponseSchema, type SuiteResponse } from "./message-contract.ts";
 
 const popupContext = "Popup";
@@ -18,7 +20,9 @@ const [tab] = await chrome.tabs.query({ active: true, currentWindow: true }),
   onefileSave = requiredElement<HTMLButtonElement>(document, "[data-onefile-save]", popupContext),
   openOptions = requiredElement<HTMLAnchorElement>(document, "[data-open-options]", popupContext),
   ytSection = requiredElement<HTMLElement>(document, "[data-yt-section]", popupContext),
-  xOpen = requiredElement<HTMLButtonElement>(document, "[data-x-open]", popupContext);
+  xOpen = requiredElement<HTMLButtonElement>(document, "[data-x-open]", popupContext),
+  xProfileState = requiredElement<HTMLElement>(document, "[data-x-profile]", popupContext),
+  xProfileDownload = requiredElement<HTMLButtonElement>(document, "[data-x-profile-download]", popupContext);
 
 openOptions.addEventListener("click", (event) => {
   event.preventDefault();
@@ -33,6 +37,7 @@ if (tabId === undefined) {
   wireAllowRightClick(tabId);
   wireOnefile(tabId);
   wireXBookmarks();
+  wireXProfileArchive();
 
   if (isYouTubeUrl(tab?.url ?? "")) {
     ytSection.hidden = false;
@@ -68,6 +73,44 @@ function wireXBookmarks(): void {
   xOpen.addEventListener("click", () => {
     runSuiteAction(xOpen, { kind: "x-bookmarks/open-exporter" });
   });
+  xProfileDownload.addEventListener("click", () => {
+    runSuiteAction(xProfileDownload, { kind: "x-bookmarks/collect-profile" });
+  });
+}
+
+function wireXProfileArchive(): void {
+  xProfileDownload.disabled = true;
+  void (async () => {
+    try {
+      const userId = await currentUserId();
+      if (!userId) {
+        xProfileState.textContent = "Not signed in to X";
+        xProfileDownload.title = "Disabled: sign in to x.com in this browser first";
+        return;
+      }
+      const target = await readProfileTarget(userId);
+      if (!target) {
+        xProfileState.textContent = "Visit a profile on x.com first";
+        xProfileDownload.title = "Disabled: visit a profile on x.com first";
+        return;
+      }
+      let handle: string | null = null;
+      try {
+        const db = await openProfileArchive(userId);
+        const state = await loadProfileState(db, target.targetUserId);
+        db.close();
+        handle = state?.profile?.screen_name ?? null;
+      } catch { /* Handle stays unknown until the first scan. */ }
+      const label = handle ? "@" + handle : "user " + target.targetUserId;
+      xProfileState.textContent = label;
+      xProfileDownload.disabled = false;
+      xProfileDownload.textContent = "Download " + label;
+      xProfileDownload.title = "Collect the full archive (posts, reposts, replies) and save it to your downloads";
+    } catch {
+      xProfileState.textContent = "Unavailable";
+      xProfileDownload.title = "Disabled: could not read the X session in this browser";
+    }
+  })();
 }
 
 function runSuiteAction(button: HTMLButtonElement, request: unknown): void {

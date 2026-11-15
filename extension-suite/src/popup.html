@@ -49,9 +49,14 @@
       <section class="feature" data-x-section>
         <div class="feature-heading">
           <h2>X Archive</h2>
+          <span class="state" data-x-profile>Checking…</span>
         </div>
-        <p class="subtle">Collect and export X bookmarks and profile posts to a local archive.</p>
-        <button type="button" data-x-open>Open X archive exporter</button>
+        <p class="subtle">Visit any profile on x.com, then click Download — the archive
+          (posts.json + media) is collected fresh and saved to your downloads.</p>
+        <div class="buttons">
+          <button type="button" data-x-profile-download>Download archive</button>
+          <button type="button" data-x-open class="link-button">Open X archive exporter</button>
+        </div>
       </section>
 
       <div id="status" role="status"></div>

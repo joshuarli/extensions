@@ -81,17 +81,16 @@
 
     <h2>Profile posts</h2>
     <p>Archive the full post history of any profile you can view on X — original posts, reposts, and replies.
-      <strong>Arm capture</strong>, then visit the profile on x.com and load both its <em>Posts</em> tab and its <em>Replies</em> tab
-      (replies require the Replies tab to be captured), then <strong>disarm</strong>. Collection paginates the timeline
-      on its own; no scrolling is required.</p>
+      The exporter automatically remembers the last profile you visit on x.com (loading its
+      <em>Posts</em> tab is enough; loading the <em>Replies</em> tab additionally includes replies).
+      Even simpler: visit the profile, open the toolbar popup, and click <strong>Download archive</strong> —
+      collection and export happen automatically.</p>
     <dl>
-      <dt>Capture</dt><dd id="profile-capture">Checking…</dd>
-      <dt>Target profile</dt><dd id="profile-target">None captured</dd>
+      <dt>Last profile</dt><dd id="profile-capture">None visited</dd>
       <dt>Saved posts</dt><dd id="profile-count">—</dd>
       <dt>Last scan</dt><dd id="profile-coverage">Not scanned</dd>
     </dl>
     <div class="actions">
-      <button type="button" id="arm-capture" disabled>Arm profile capture</button>
       <button type="button" id="collect-profile" disabled>Collect profile posts</button>
     </div>
     <div class="actions" style="margin-top:.65rem">

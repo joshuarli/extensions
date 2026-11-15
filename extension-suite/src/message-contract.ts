@@ -5,6 +5,7 @@ export const SuiteRequestSchema = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("allow-right-click/status"), tabId: Schema.Number }),
   Schema.Struct({ kind: Schema.Literal("onefile/save"), tabId: Schema.Number }),
   Schema.Struct({ kind: Schema.Literal("x-bookmarks/open-exporter") }),
+  Schema.Struct({ kind: Schema.Literal("x-bookmarks/collect-profile") }),
 ]);
 
 export type SuiteRequest = Schema.Schema.Type<typeof SuiteRequestSchema>;

@@ -77,11 +77,10 @@ function credentials(operation: "UserTweets" | "UserTweetsAndReplies" = "UserTwe
   };
 }
 
-function armCapture(): void {
-  stored["x_profile_armed_" + userId] = true;
+function seedProfileTarget(targetOperations = "UserTweetsAndReplies"): void {
   stored["x_profile_target_" + userId] = {
     targetUserId,
-    operation: "UserTweetsAndReplies",
+    operation: targetOperations,
     capturedAt: "2026-11-15T00:00:00.000Z",
   };
 }
@@ -216,7 +215,7 @@ describe("profile media planning", () => {
 describe("profile archive", () => {
   it("collects a two-page profile timeline end to end and exports a cumulative archive", async () => {
     stubChrome();
-    armCapture();
+    seedProfileTarget();
     credentials();
     const db = await openTestProfileArchive(),
       fetchImpl = timelineFetch([
@@ -259,7 +258,7 @@ describe("profile archive", () => {
 
   it("falls back to the Posts tab capture and records that replies may be missing", async () => {
     stubChrome();
-    armCapture();
+    seedProfileTarget();
     credentials("UserTweets");
     const db = await openTestProfileArchive(),
       fetchImpl = timelineFetch([
@@ -283,7 +282,7 @@ describe("profile archive", () => {
     }
   }, 10_000);
 
-  it("fails loudly when no profile capture is armed", async () => {
+  it("fails loudly when no profile has been captured", async () => {
     stubChrome();
     credentials();
     const db = await openTestProfileArchive();
@@ -298,7 +297,7 @@ describe("profile archive", () => {
 
   it("keeps the richer record when X returns a tombstone on re-scan", async () => {
     stubChrome();
-    armCapture();
+    seedProfileTarget();
     credentials();
     const db = await openTestProfileArchive(),
       fetchImpl = timelineFetch([

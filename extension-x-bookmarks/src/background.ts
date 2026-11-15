@@ -5,8 +5,6 @@ import {
   isProfileOperation,
   mergeCapture,
   readCredentials,
-  readProfileCaptureArmed,
-  writeProfileCaptureArmed,
   writeProfileTarget,
 } from "./capture.ts";
 
@@ -55,7 +53,6 @@ export function installXBookmarksHeaderRule(): void {
 
 const X_ARCHIVE_MENU = {
   openExporter: "x-archive-open-exporter",
-  toggleCapture: "x-archive-toggle-capture",
   collectProfile: "x-archive-collect-profile",
   collectBookmarks: "x-archive-collect-bookmarks",
 } as const;
@@ -66,18 +63,9 @@ export function installXBookmarksContextMenus(): void {
   void chrome.contextMenus.removeAll().then(() => {
     const page: chrome.contextMenus.CreateProperties = { contexts: ["page"], documentUrlPatterns: [...X_ARCHIVE_MENU_PATTERNS] };
     chrome.contextMenus.create({ ...page, id: X_ARCHIVE_MENU.openExporter, title: "Open X archive exporter" });
-    chrome.contextMenus.create({ ...page, id: X_ARCHIVE_MENU.toggleCapture, title: "Toggle profile capture (arm/disarm)" });
-    chrome.contextMenus.create({ ...page, id: X_ARCHIVE_MENU.collectProfile, title: "Collect profile posts…" });
-    chrome.contextMenus.create({ ...page, id: X_ARCHIVE_MENU.collectBookmarks, title: "Collect bookmarks…" });
+    chrome.contextMenus.create({ ...page, id: X_ARCHIVE_MENU.collectProfile, title: "Collect and download profile posts…" });
+    chrome.contextMenus.create({ ...page, id: X_ARCHIVE_MENU.collectBookmarks, title: "Collect and download bookmarks…" });
   }).catch((error: unknown) => console.warn("X archive context menus setup failed", error));
-}
-
-function notify(title: string, message: string): void {
-  try {
-    void chrome.notifications.create({ type: "basic", iconUrl: "icons/128.png", title, message });
-  } catch (error) {
-    console.warn("X archive notification failed", error);
-  }
 }
 
 export function handleXBookmarksContextMenuClick(info: chrome.contextMenus.OnClickData): void {
@@ -88,27 +76,11 @@ export function handleXBookmarksContextMenuClick(info: chrome.contextMenus.OnCli
         await chrome.tabs.create({ url: exporterUrl });
         return;
       case X_ARCHIVE_MENU.collectProfile:
-        await chrome.tabs.create({ url: exporterUrl + "?collect=profile" });
+        await chrome.tabs.create({ url: exporterUrl + "?collect=profile&export=1" });
         return;
       case X_ARCHIVE_MENU.collectBookmarks:
-        await chrome.tabs.create({ url: exporterUrl + "?collect=bookmarks" });
+        await chrome.tabs.create({ url: exporterUrl + "?collect=bookmarks&export=1" });
         return;
-      case X_ARCHIVE_MENU.toggleCapture: {
-        const userId = await currentUserId();
-        if (!userId) {
-          notify("Not signed in to X", "Sign in to x.com in this browser, then toggle capture again.");
-          return;
-        }
-        const armed = await readProfileCaptureArmed(userId);
-        await writeProfileCaptureArmed(userId, !armed);
-        notify(
-          armed ? "Profile capture disarmed" : "Profile capture armed",
-          armed
-            ? "Capture is off. Nothing will be recorded."
-            : "Load the profile's Posts and Replies tabs on x.com, then toggle capture again to disarm.",
-        );
-        return;
-      }
     }
   }).catch((error: unknown) => console.warn("X archive context menu action failed", error));
 }
@@ -119,10 +91,7 @@ export function handleXBookmarksRequest(
   updateQueue = updateQueue.then(async () => {
     const userId = await currentUserId();
     if (!userId) return;
-    const armed = await readProfileCaptureArmed(userId);
-    const capture = captureRequest(details.url, details.initiator, details.requestHeaders ?? [], {
-      profileCaptureArmed: armed,
-    });
+    const capture = captureRequest(details.url, details.initiator, details.requestHeaders ?? []);
     if (!capture) return;
     const previous = await readCredentials(userId);
     await chrome.storage.local.set({
