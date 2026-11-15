@@ -1,8 +1,9 @@
 import { Effect } from "effect";
 import { graphqlRequest, RequestFailure } from "./api.ts";
-import { currentUserId, readCredentials, type Operation } from "./capture.ts";
-import { parseTimeline, parseFolders, type Folder } from "./parser.ts";
+import { currentUserId, readCredentials, readProfileTarget, type Operation, type ProfileOperation } from "./capture.ts";
+import { parseTimeline, parseFolders, parseProfileTimeline, type Folder } from "./parser.ts";
 import { savePage, saveFolders, saveState, type ScanState } from "./storage.ts";
+import { saveProfilePage, saveProfileState, type ProfileScanProfile, type ProfileScanState } from "./profile-storage.ts";
 
 const PAGE_DELAY_MS = 2500;
 const MAX_EMPTY_PAGES = 3;
@@ -61,19 +62,30 @@ async function requestWithRetry(
   throw new RequestFailure("network", "Request retries exhausted.");
 }
 
+export interface ProgressSnapshot {
+  posts: number;
+  pages: number;
+}
+
 export interface CollectionOptions {
   userId: string;
   db: IDBDatabase;
   signal: AbortSignal;
   report: (message: string) => void;
+  onProgress?: (snapshot: ProgressSnapshot) => void;
 }
 
-export async function collectTimeline(
-  options: CollectionOptions,
-  operation: "Bookmarks" | "BookmarkFolderTimeline",
-  folderId?: string,
-): Promise<number> {
-  const { userId, db, signal, report } = options;
+interface PageSpec<Item> {
+  operation: Operation;
+  buildVariables(cursor: string | null): Record<string, unknown>;
+  parse(data: unknown, observedAt: string): { valid: boolean; items: Item[]; nextCursor: string | null };
+  save(items: Item[]): Promise<void>;
+  label: string;
+  invalidMessage: string;
+}
+
+async function scanPages<Item>(options: CollectionOptions, spec: PageSpec<Item>): Promise<number> {
+  const { userId, signal, report } = options;
   const visited = new Set<string>();
   let cursor: string | null = null;
   let pages = 0;
@@ -81,24 +93,22 @@ export async function collectTimeline(
   let empty = 0;
   while (true) {
     stopped(signal);
-    const variables: Record<string, unknown> = operation === "Bookmarks"
-      ? { count: 100 }
-      : { bookmark_collection_id: folderId, count: 50, includePromotedContent: false };
-    if (cursor) variables["cursor"] = cursor;
-    const response = await requestWithRetry(userId, operation, variables, signal, report);
+    const variables = spec.buildVariables(cursor);
+    const response = await requestWithRetry(userId, spec.operation, variables, signal, report);
     stopped(signal);
     if (await currentUserId() !== userId) throw new RequestFailure("auth", "X account changed before saving the page.");
-    const result = parseTimeline(response, new Date().toISOString());
-    if (!result.valid) throw new Error("X changed its timeline response. Partial results were preserved.");
+    const result = spec.parse(response, new Date().toISOString());
+    if (!result.valid) throw new Error(spec.invalidMessage);
     pages++;
-    if (result.bookmarks.length) {
-      await savePage(db, result.bookmarks, folderId);
-      total += result.bookmarks.length;
+    if (result.items.length) {
+      await spec.save(result.items);
+      total += result.items.length;
       empty = 0;
     } else {
       empty++;
     }
-    report(operation + ": " + total + " posts across " + pages + " pages saved.");
+    report(spec.label + ": " + total + " posts across " + pages + " pages saved.");
+    options.onProgress?.({ posts: total, pages });
     const next = result.nextCursor;
     if (!next) return total;
     if (visited.has(next) || next === cursor) throw new Error("X returned a repeated cursor. Collection is partial.");
@@ -107,6 +117,30 @@ export async function collectTimeline(
     cursor = next;
     await delay(PAGE_DELAY_MS + Math.random() * 1250, signal);
   }
+}
+
+export async function collectTimeline(
+  options: CollectionOptions,
+  operation: "Bookmarks" | "BookmarkFolderTimeline",
+  folderId?: string,
+): Promise<number> {
+  return scanPages(options, {
+    operation,
+    buildVariables: (cursor) => {
+      const variables: Record<string, unknown> = operation === "Bookmarks"
+        ? { count: 100 }
+        : { bookmark_collection_id: folderId, count: 50, includePromotedContent: false };
+      if (cursor) variables["cursor"] = cursor;
+      return variables;
+    },
+    parse: (data, observedAt) => {
+      const result = parseTimeline(data, observedAt);
+      return { valid: result.valid, items: result.bookmarks, nextCursor: result.nextCursor };
+    },
+    save: (items) => savePage(options.db, items, folderId),
+    label: operation,
+    invalidMessage: "X changed its timeline response. Partial results were preserved.",
+  });
 }
 
 async function collectFolderList(options: CollectionOptions): Promise<Folder[]> {
@@ -179,6 +213,93 @@ export async function collect(options: CollectionOptions): Promise<ScanState> {
     state.reason = "complete";
     await persist();
     report("Collection complete. Export the accumulated archive to JSON.");
+    return state;
+  } catch (error) {
+    state.reason = error instanceof Error ? error.message : String(error);
+    await persist();
+    throw error;
+  }
+}
+
+export async function collectProfileTimeline(
+  options: CollectionOptions,
+  operation: ProfileOperation,
+  targetUserId: string,
+): Promise<{ total: number; profile: ProfileScanProfile | null }> {
+  let profile: ProfileScanProfile | null = null;
+  const total = await scanPages(options, {
+    operation,
+    buildVariables: (cursor) => {
+      const variables: Record<string, unknown> = { userId: targetUserId, count: 20, includePromotedContent: false };
+      if (cursor) variables["cursor"] = cursor;
+      return variables;
+    },
+    parse: (data, observedAt) => {
+      const result = parseProfileTimeline(data, observedAt);
+      if (result.valid && result.profile) profile = result.profile;
+      return result.valid
+        ? { valid: true, items: result.posts, nextCursor: result.nextCursor }
+        : { valid: false, items: [], nextCursor: null };
+    },
+    save: (items) => saveProfilePage(options.db, items, targetUserId),
+    label: operation,
+    invalidMessage: "X changed its profile timeline response. Partial results were preserved.",
+  });
+  return { total, profile };
+}
+
+export async function collectProfile(options: CollectionOptions): Promise<ProfileScanState> {
+  const { db, signal, userId, report } = options;
+  const target = await readProfileTarget(userId);
+  if (!target) {
+    throw new RequestFailure("query",
+      "No profile is captured. Arm profile capture in the exporter, open the profile on x.com, and reload this page.");
+  }
+  const credentials = await readCredentials(userId);
+  const operation: ProfileOperation | null = credentials.queryIds["UserTweetsAndReplies"]
+    ? "UserTweetsAndReplies"
+    : credentials.queryIds["UserTweets"] ? "UserTweets" : null;
+  const started = new Date().toISOString();
+  const baseProfile: ProfileScanProfile = {
+    user_id: target.targetUserId,
+    screen_name: null,
+    name: null,
+    profile_image_url: null,
+    followers_count: 0,
+    verified: false,
+    description: null,
+  };
+  const state: ProfileScanState = {
+    started_at: started,
+    updated_at: started,
+    posts: "partial",
+    reason: "in_progress",
+    ...(operation ? { operation } : {}),
+    profile: baseProfile,
+  };
+  const persist = async () => {
+    state.updated_at = new Date().toISOString();
+    await saveProfileState(db, target.targetUserId, state);
+  };
+  await persist();
+  try {
+    if (!operation) {
+      throw new RequestFailure("query",
+        "No profile timeline request captured. Arm capture, open the profile on x.com (Posts and Replies tabs), then reload this page.");
+    }
+    stopped(signal);
+    report(operation === "UserTweetsAndReplies"
+      ? "Scanning profile posts and replies. Existing saved posts are retained."
+      : "Scanning profile posts. Existing saved posts are retained.");
+    const result = await collectProfileTimeline(options, operation, target.targetUserId);
+    if (result.profile) state.profile = { ...baseProfile, ...result.profile };
+    state.posts = "complete";
+    state.reason = operation === "UserTweetsAndReplies" ? "complete" : "complete_without_replies";
+    if (operation === "UserTweets") {
+      report("Only the Posts tab was captured. Arm capture and open the Replies tab to include replies next run.");
+    }
+    await persist();
+    report("Profile collection complete. Use Download archive to save JSON and media.");
     return state;
   } catch (error) {
     state.reason = error instanceof Error ? error.message : String(error);

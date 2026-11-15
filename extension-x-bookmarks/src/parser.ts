@@ -18,6 +18,7 @@ export const BookmarkSchema = Schema.Struct({
   media: Schema.optional(Schema.Unknown),
   quoted_tweet: Schema.optional(Schema.Unknown),
   card: Schema.optional(Schema.Unknown),
+  repost_of: Schema.optional(Schema.String),
   folder_ids: Schema.Array(Schema.String),
   observed_at: Schema.String,
 });
@@ -59,6 +60,50 @@ function unavailable(id: string, sortIndex: string | null, reason: string, obser
     unavailable_reason: reason, folder_ids: [], observed_at: observedAt };
 }
 
+type MediaItem = {
+  type: string | null;
+  url: string | null;
+  alt_text: string | null;
+  thumbnail_url?: string | null;
+  duration_ms?: number | null;
+  variants?: Array<{ bitrate: number; content_type: "video/mp4"; url: string | null }>;
+};
+
+function mediaItems(raw: unknown): MediaItem[] {
+  return array(raw).map((value) => {
+    const type = string(get(value, "type"));
+    const base = string(get(value, "media_url_https"));
+    return {
+      type,
+      url: type === "photo" && base ? base + "?format=jpg&name=orig" : base,
+      alt_text: string(get(value, "ext_alt_text")),
+      ...(type === "video" || type === "animated_gif" ? {
+        thumbnail_url: base,
+        duration_ms: number(get(value, "video_info", "duration_millis")) || null,
+        variants: array(get(value, "video_info", "variants"))
+          .filter((variant) => get(variant, "content_type") === "video/mp4")
+          .map((variant) => ({
+            bitrate: number(get(variant, "bitrate")),
+            content_type: "video/mp4" as const,
+            url: string(get(variant, "url")),
+          }))
+          .sort((a, b) => b.bitrate - a.bitrate),
+      } : {}),
+    };
+  });
+}
+
+function unwrapTweet(value: unknown): ObjectValue | null {
+  const result = object(value);
+  if (!result) return null;
+  if (get(result, "__typename") === "TweetWithVisibilityResults") return object(get(result, "tweet"));
+  return result;
+}
+
+function isTombstone(value: ObjectValue): boolean {
+  return ["TweetTombstone", "TweetUnavailable"].includes(string(get(value, "__typename")) ?? "");
+}
+
 function extractTweet(entry: ObjectValue, observedAt: string): Bookmark | null {
   const entryId = string(entry["entryId"]);
   const id = entryId?.slice("tweet-".length) ?? "";
@@ -73,19 +118,28 @@ function extractTweet(entry: ObjectValue, observedAt: string): Bookmark | null {
   }
 
   const tweetId = string(get(result, "rest_id")) ?? string(get(result, "legacy", "id_str")) ?? id;
-  const legacy = get(result, "legacy");
-  const core = get(result, "core", "user_results", "result");
+  const repostSource = unwrapTweet(get(result, "legacy", "retweeted_status_result", "result")) ??
+    unwrapTweet(get(result, "retweeted_status_result", "result"));
+  if (repostSource && isTombstone(repostSource)) {
+    return unavailable(tweetId, sortIndex, "Reposted post is unavailable.", observedAt);
+  }
+  const content = repostSource ?? result;
+  const repostOf = repostSource
+    ? string(get(repostSource, "rest_id")) ?? string(get(repostSource, "legacy", "id_str")) ?? null
+    : null;
+  const legacy = get(content, "legacy");
+  const core = get(content, "core", "user_results", "result");
   const userLegacy = get(core, "legacy");
-  const note = get(result, "note_tweet", "note_tweet_results", "result");
+  const note = get(content, "note_tweet", "note_tweet_results", "result");
   const noteText = string(get(note, "text"));
   const entities = get(note, "entity_set") ?? get(legacy, "entities");
   const rawMedia = array(get(legacy, "extended_entities", "media") ?? get(legacy, "entities", "media"));
 
-  const quoted = get(result, "quoted_status_result", "result");
+  const quoted = get(content, "quoted_status_result", "result");
   let quotedTweet: unknown = null;
   if (quoted !== undefined && quoted !== null) {
-    const actual = get(quoted, "__typename") === "TweetWithVisibilityResults" ? get(quoted, "tweet") : quoted;
-    if (!object(actual) || ["TweetTombstone", "TweetUnavailable"].includes(string(get(actual, "__typename")) ?? "")) {
+    const actual = unwrapTweet(quoted);
+    if (!actual || isTombstone(actual)) {
       quotedTweet = { status: "unavailable" };
     } else {
       const quotedCore = get(actual, "core", "user_results", "result");
@@ -97,17 +151,18 @@ function extractTweet(entry: ObjectValue, observedAt: string): Bookmark | null {
           screen_name: string(get(quotedCore, "core", "screen_name")) ?? string(get(quotedCore, "legacy", "screen_name")),
           name: string(get(quotedCore, "core", "name")) ?? string(get(quotedCore, "legacy", "name")),
         },
+        media: mediaItems(get(actual, "legacy", "extended_entities", "media") ?? get(actual, "legacy", "entities", "media")),
       };
     }
   }
 
   const bindings: Record<string, string | null> = {};
-  for (const binding of array(get(result, "card", "legacy", "binding_values"))) {
+  for (const binding of array(get(content, "card", "legacy", "binding_values"))) {
     const key = string(get(binding, "key"));
     if (key) bindings[key] = string(get(binding, "value", "string_value")) ??
       string(get(binding, "value", "scribe_value", "description"));
   }
-  const card = get(result, "card", "legacy");
+  const card = get(content, "card", "legacy") ?? get(result, "card", "legacy");
 
   return {
     tweet_id: tweetId,
@@ -116,7 +171,7 @@ function extractTweet(entry: ObjectValue, observedAt: string): Bookmark | null {
     created_at: string(get(legacy, "created_at")),
     full_text: noteText ?? string(get(legacy, "full_text")) ?? "",
     lang: string(get(legacy, "lang")),
-    source: string(get(result, "source")),
+    source: string(get(content, "source")) ?? string(get(result, "source")),
     conversation_id: string(get(legacy, "conversation_id_str")),
     in_reply_to_tweet_id: string(get(legacy, "in_reply_to_status_id_str")),
     in_reply_to_user_id: string(get(legacy, "in_reply_to_user_id_str")),
@@ -133,7 +188,7 @@ function extractTweet(entry: ObjectValue, observedAt: string): Bookmark | null {
       retweets: number(get(legacy, "retweet_count")),
       replies: number(get(legacy, "reply_count")),
       bookmarks: number(get(legacy, "bookmark_count")),
-      views: Number.parseInt(string(get(result, "views", "count")) ?? "0", 10) || 0,
+      views: Number.parseInt(string(get(content, "views", "count")) ?? string(get(result, "views", "count")) ?? "0", 10) || 0,
     },
     entities: {
       urls: array(get(entities, "urls")).map((value) => ({
@@ -147,27 +202,7 @@ function extractTweet(entry: ObjectValue, observedAt: string): Bookmark | null {
         user_id: string(get(value, "id_str")),
       })),
     },
-    media: rawMedia.map((value) => {
-      const type = string(get(value, "type"));
-      const base = string(get(value, "media_url_https"));
-      return {
-        type,
-        url: type === "photo" && base ? base + "?format=jpg&name=orig" : base,
-        alt_text: string(get(value, "ext_alt_text")),
-        ...(type === "video" || type === "animated_gif" ? {
-          thumbnail_url: base,
-          duration_ms: number(get(value, "video_info", "duration_millis")) || null,
-          variants: array(get(value, "video_info", "variants"))
-            .filter((variant) => get(variant, "content_type") === "video/mp4")
-            .map((variant) => ({
-              bitrate: number(get(variant, "bitrate")),
-              content_type: "video/mp4",
-              url: string(get(variant, "url")),
-            }))
-            .sort((a, b) => b.bitrate - a.bitrate),
-        } : {}),
-      };
-    }),
+    media: mediaItems(rawMedia),
     quoted_tweet: quotedTweet,
     card: object(card) ? {
       type: string(get(card, "name")),
@@ -175,35 +210,44 @@ function extractTweet(entry: ObjectValue, observedAt: string): Bookmark | null {
       title: bindings["title"] ?? null,
       description: bindings["description"] ?? null,
     } : null,
+    ...(repostOf ? { repost_of: repostOf } : {}),
     folder_ids: [],
     observed_at: observedAt,
   };
 }
 
-export function parseTimeline(data: unknown, observedAt: string): ParsedPage {
-  const instructions = get(data, "data", "bookmark_timeline_v2", "timeline", "instructions") ??
-    get(data, "data", "bookmark_timeline", "timeline", "instructions") ??
-    get(data, "data", "bookmark_collection_timeline", "timeline", "instructions");
+type EntriesResult = { valid: true; entries: unknown[] } | { valid: false };
+
+function instructionEntries(instruction: unknown): EntriesResult {
+  const kind = get(instruction, "type");
+  if (kind === "TimelineTerminateTimeline" || kind === "TimelineClearCache") return { valid: true, entries: [] };
+  if (kind !== "TimelineAddEntries" && kind !== "TimelineReplaceEntry" && kind !== "TimelinePinEntry") {
+    return { valid: false };
+  }
+  const entries: unknown = kind === "TimelineAddEntries"
+    ? get(instruction, "entries") : [get(instruction, "entry")];
+  return Array.isArray(entries) ? { valid: true, entries } : { valid: false };
+}
+
+function parseInstructions(instructions: unknown, observedAt: string): ParsedPage {
   const invalid = (): ParsedPage => ({ valid: false, bookmarks: [], nextCursor: null });
   if (!Array.isArray(instructions)) return invalid();
   const bookmarks: Bookmark[] = [];
   let nextCursor: string | null = null;
   for (const instruction of instructions) {
-    const kind = get(instruction, "type");
-    if (kind === "TimelineTerminateTimeline") continue;
-    if (kind !== "TimelineAddEntries" && kind !== "TimelineReplaceEntry") return invalid();
-    const entries: unknown = kind === "TimelineReplaceEntry"
-      ? [get(instruction, "entry")] : get(instruction, "entries");
-    if (!Array.isArray(entries)) return invalid();
-    for (const entry of entries) {
-      const id = string(get(entry, "entryId"));
-      if (!id || !object(entry)) return invalid();
+    const parsed = instructionEntries(instruction);
+    if (!parsed.valid) return invalid();
+    for (const entry of parsed.entries) {
+      const entryObject = object(entry);
+      if (!entryObject) return invalid();
+      const id = string(entryObject["entryId"]);
+      if (!id) return invalid();
       if (id.startsWith("tweet-")) {
-        const bookmark = extractTweet(entry, observedAt);
+        const bookmark = extractTweet(entryObject, observedAt);
         if (!bookmark || !bookmark.tweet_id) return invalid();
         bookmarks.push(bookmark);
       } else if (id.startsWith("cursor-bottom-")) {
-        const value = string(get(entry, "content", "value"));
+        const value = string(get(entryObject, "content", "value"));
         if (!value) return invalid();
         nextCursor = value;
       } else if (!id.startsWith("cursor-top-")) {
@@ -212,6 +256,51 @@ export function parseTimeline(data: unknown, observedAt: string): ParsedPage {
     }
   }
   return { valid: true, bookmarks, nextCursor };
+}
+
+export function parseTimeline(data: unknown, observedAt: string): ParsedPage {
+  const instructions = get(data, "data", "bookmark_timeline_v2", "timeline", "instructions") ??
+    get(data, "data", "bookmark_timeline", "timeline", "instructions") ??
+    get(data, "data", "bookmark_collection_timeline", "timeline", "instructions");
+  return parseInstructions(instructions, observedAt);
+}
+
+export interface ProfileInfo {
+  user_id: string | null;
+  screen_name: string | null;
+  name: string | null;
+  profile_image_url: string | null;
+  description: string | null;
+  followers_count: number;
+  verified: boolean;
+}
+
+export type ParsedProfilePage =
+  | { valid: true; posts: Bookmark[]; nextCursor: string | null; profile: ProfileInfo | null }
+  | { valid: false; posts: []; nextCursor: null; profile: null };
+
+export function parseProfileInfo(source: unknown): ProfileInfo | null {
+  if (!object(source)) return null;
+  const core = get(source, "core");
+  const legacy = get(source, "legacy");
+  return {
+    user_id: string(get(source, "rest_id")) ?? string(get(legacy, "id_str")),
+    screen_name: string(get(core, "screen_name")) ?? string(get(legacy, "screen_name")),
+    name: string(get(core, "name")) ?? string(get(legacy, "name")),
+    profile_image_url: string(get(source, "avatar", "image_url")) ?? string(get(legacy, "profile_image_url_https")),
+    description: string(get(legacy, "description")),
+    followers_count: number(get(legacy, "followers_count")),
+    verified: get(source, "is_blue_verified") === true || get(legacy, "verified") === true,
+  };
+}
+
+export function parseProfileTimeline(data: unknown, observedAt: string): ParsedProfilePage {
+  const source = get(data, "data", "user", "result");
+  const instructions = get(source, "timeline", "timeline", "instructions") ??
+    get(source, "timeline_v2", "timeline", "instructions");
+  const base = parseInstructions(instructions, observedAt);
+  if (!base.valid) return { valid: false, posts: [], nextCursor: null, profile: null };
+  return { valid: true, posts: base.bookmarks, nextCursor: base.nextCursor, profile: parseProfileInfo(source) };
 }
 
 export function parseFolders(data: unknown): ParsedFolders {

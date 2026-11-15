@@ -29,6 +29,35 @@ describe("session and request capture", () => {
     });
   });
 
+  it("gates profile timeline requests behind the armed flag and reads the target user id", () => {
+    const headers = [{ name: "Authorization", value: "Bearer actual" }];
+    const profileUrl = "https://x.com/i/api/graphql/Pq4VXKQ1bWQ7n1wXsBznqg/UserTweetsAndReplies" +
+      "?variables=%7B%22userId%22%3A%2244196397%22%2C%22count%22%3A20%7D" +
+      "&features=%7B%22enabled%22%3Atrue%7D";
+    expect(captureRequest(profileUrl, "https://x.com", headers)).toBeNull();
+    expect(captureRequest(profileUrl, "https://x.com", headers, { profileCaptureArmed: false })).toBeNull();
+    const armed = captureRequest(profileUrl, "https://x.com", headers, { profileCaptureArmed: true });
+    expect(armed).toMatchObject({
+      operation: "UserTweetsAndReplies",
+      queryId: "Pq4VXKQ1bWQ7n1wXsBznqg",
+      authorization: "Bearer actual",
+      targetUserId: "44196397",
+      features: '{"enabled":true}',
+    });
+  });
+
+  it("captures a profile operation without a target when variables are malformed", () => {
+    const profileUrl = "https://x.com/i/api/graphql/Pq4VXKQ1bWQ7n1wXsBznqg/UserTweets?variables=not-json";
+    const armed = captureRequest(profileUrl, "https://x.com", [], { profileCaptureArmed: true });
+    expect(armed).toMatchObject({ operation: "UserTweets", queryId: "Pq4VXKQ1bWQ7n1wXsBznqg" });
+    expect(armed?.targetUserId).toBeUndefined();
+  });
+
+  it("keeps bookmark capture working while profile capture is disarmed", () => {
+    const result = captureRequest(bookmarkUrl, "https://x.com", [], { profileCaptureArmed: false });
+    expect(result).toMatchObject({ operation: "Bookmarks", queryId: "AbC_123" });
+  });
+
   it("keeps query IDs separate and rejects malformed feature flags", () => {
     const malformed = captureRequest(bookmarkUrl.replace("%7B%22enabled%22%3Atrue%7D", "%5B%5D"),
       "https://x.com", []);

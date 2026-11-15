@@ -1,7 +1,14 @@
 import { Schema } from "effect";
 
-export const OPERATIONS = ["Bookmarks", "BookmarkFoldersSlice", "BookmarkFolderTimeline"] as const;
+export const BOOKMARK_OPERATIONS = ["Bookmarks", "BookmarkFoldersSlice", "BookmarkFolderTimeline"] as const;
+export const PROFILE_OPERATIONS = ["UserTweets", "UserTweetsAndReplies"] as const;
+export const OPERATIONS = [...BOOKMARK_OPERATIONS, ...PROFILE_OPERATIONS] as const;
 export type Operation = (typeof OPERATIONS)[number];
+export type ProfileOperation = (typeof PROFILE_OPERATIONS)[number];
+
+export function isProfileOperation(operation: Operation): operation is ProfileOperation {
+  return (PROFILE_OPERATIONS as readonly Operation[]).includes(operation);
+}
 
 const CredentialsSchema = Schema.Struct({
   authorization: Schema.optional(Schema.String),
@@ -47,17 +54,27 @@ export interface Capture {
   clientUuid?: string;
   transactionId?: string;
   features?: string;
+  targetUserId?: string;
+}
+
+export interface CaptureOptions {
+  profileCaptureArmed?: boolean;
 }
 
 export function captureRequest(
   url: string,
   initiator: string | undefined,
   headers: readonly { name: string; value?: string | undefined }[],
+  options: CaptureOptions = {},
 ): Capture | null {
   if (initiator !== "https://x.com" && initiator !== "https://twitter.com") return null;
   const requestUrl = new URL(url);
   if (requestUrl.origin !== "https://x.com") return null;
-  const match = /^\/i\/api\/graphql\/([A-Za-z0-9_-]+)\/(Bookmarks|BookmarkFoldersSlice|BookmarkFolderTimeline)$/u.exec(requestUrl.pathname);
+  const bookmarkMatch = /^\/i\/api\/graphql\/([A-Za-z0-9_-]+)\/(Bookmarks|BookmarkFoldersSlice|BookmarkFolderTimeline)$/u.exec(requestUrl.pathname);
+  const profileMatch = options.profileCaptureArmed === true
+    ? /^\/i\/api\/graphql\/([A-Za-z0-9_-]+)\/(UserTweets|UserTweetsAndReplies)$/u.exec(requestUrl.pathname)
+    : null;
+  const match = bookmarkMatch ?? profileMatch;
   if (!match) return null;
   const queryId = match[1];
   const operation = match[2] as Operation;
@@ -77,6 +94,7 @@ export function captureRequest(
   const authorization = values.get("authorization");
   const clientUuid = values.get("x-client-uuid");
   const transactionId = values.get("x-client-transaction-id");
+  const targetUserId = isProfileOperation(operation) ? profileTargetFromVariables(requestUrl) : undefined;
   return {
     operation,
     queryId,
@@ -84,7 +102,23 @@ export function captureRequest(
     ...(clientUuid ? { clientUuid } : {}),
     ...(transactionId ? { transactionId } : {}),
     ...(validatedFeatures ? { features: validatedFeatures } : {}),
+    ...(targetUserId ? { targetUserId } : {}),
   };
+}
+
+function profileTargetFromVariables(requestUrl: URL): string | undefined {
+  const raw = requestUrl.searchParams.get("variables");
+  if (!raw) return undefined;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return undefined;
+    const userId = (parsed as Record<string, unknown>)["userId"];
+    if (typeof userId !== "string" && typeof userId !== "number") return undefined;
+    const digits = String(userId);
+    return /^\d+$/u.test(digits) ? digits : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export function mergeCapture(credentials: Credentials, capture: Capture): Credentials {
@@ -99,4 +133,48 @@ export function mergeCapture(credentials: Credentials, capture: Capture): Creden
       ...(capture.features ? { [capture.operation]: capture.features } : {}),
     },
   };
+}
+
+export function profileArmedKey(userId: string): string {
+  return "x_profile_armed_" + userId;
+}
+
+export function profileTargetKey(userId: string): string {
+  return "x_profile_target_" + userId;
+}
+
+export interface ProfileTarget {
+  targetUserId: string;
+  operation: ProfileOperation;
+  capturedAt: string;
+}
+
+const ProfileTargetSchema = Schema.Struct({
+  targetUserId: Schema.String,
+  operation: Schema.Literals(PROFILE_OPERATIONS),
+  capturedAt: Schema.String,
+});
+
+export async function readProfileCaptureArmed(userId: string): Promise<boolean> {
+  const key = profileArmedKey(userId);
+  return (await chrome.storage.local.get(key))[key] === true;
+}
+
+export async function writeProfileCaptureArmed(userId: string, armed: boolean): Promise<void> {
+  await chrome.storage.local.set({ [profileArmedKey(userId)]: armed });
+}
+
+export async function readProfileTarget(userId: string): Promise<ProfileTarget | null> {
+  const key = profileTargetKey(userId);
+  try {
+    return Schema.decodeUnknownSync(ProfileTargetSchema)((await chrome.storage.local.get(key))[key]);
+  } catch {
+    return null;
+  }
+}
+
+export async function writeProfileTarget(userId: string, target: ProfileTarget): Promise<void> {
+  await chrome.storage.local.set({
+    [profileTargetKey(userId)]: Schema.decodeUnknownSync(ProfileTargetSchema)(target),
+  });
 }

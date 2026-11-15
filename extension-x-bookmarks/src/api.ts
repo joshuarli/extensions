@@ -45,7 +45,7 @@ export function graphqlRequest(
       const authorization = credentials.authorization;
       const queryId = credentials.queryIds[operation];
       if (!authorization || !queryId) {
-        throw new RequestFailure("auth", "Open X bookmarks and reload the extension page to capture fresh API credentials.");
+        throw new RequestFailure("auth", "Open X and reload it to capture fresh API credentials.");
       }
       const csrf = await chrome.cookies.get({ url: "https://x.com/", name: "ct0" });
       if (!csrf?.value) throw new RequestFailure("auth", "Missing X CSRF cookie. Sign in to X again.");
@@ -75,10 +75,10 @@ export function graphqlRequest(
 
       if (response.status === 429) throw new RequestFailure("rate_limit", "X rate limit reached (HTTP 429).");
       if (response.status === 401 || response.status === 403) {
-        throw new RequestFailure("auth", "X rejected the session (HTTP " + response.status + "). Revisit X bookmarks.");
+        throw new RequestFailure("auth", "X rejected the session (HTTP " + response.status + "). Revisit X and try again.");
       }
       if ([400, 404, 422].includes(response.status)) {
-        throw new RequestFailure("query", "X rejected the captured query (HTTP " + response.status + "). Revisit X bookmarks.");
+        throw new RequestFailure("query", "X rejected the captured query (HTTP " + response.status + "). Revisit X and try again.");
       }
       if (!response.ok) throw new RequestFailure("network", "X returned HTTP " + response.status + ".");
       let data: unknown;
