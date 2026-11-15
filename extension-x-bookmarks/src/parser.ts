@@ -118,15 +118,18 @@ function extractTweet(entry: ObjectValue, observedAt: string): Bookmark | null {
   }
 
   const tweetId = string(get(result, "rest_id")) ?? string(get(result, "legacy", "id_str")) ?? id;
-  const repostSource = unwrapTweet(get(result, "legacy", "retweeted_status_result", "result")) ??
-    unwrapTweet(get(result, "retweeted_status_result", "result"));
-  if (repostSource && isTombstone(repostSource)) {
-    return unavailable(tweetId, sortIndex, "Reposted post is unavailable.", observedAt);
+  const rawRepost = get(result, "legacy", "retweeted_status_result", "result") ??
+    get(result, "retweeted_status_result", "result");
+  const repostOfId = string(get(rawRepost, "rest_id")) ?? string(get(rawRepost, "legacy", "id_str"));
+  const repostSource = unwrapTweet(rawRepost);
+  if (rawRepost != null && (!repostSource || isTombstone(repostSource))) {
+    return {
+      ...unavailable(tweetId, sortIndex, "Reposted post is unavailable.", observedAt),
+      ...(repostOfId ? { repost_of: repostOfId } : {}),
+    };
   }
   const content = repostSource ?? result;
-  const repostOf = repostSource
-    ? string(get(repostSource, "rest_id")) ?? string(get(repostSource, "legacy", "id_str")) ?? null
-    : null;
+  const repostOf = repostSource ? repostOfId : null;
   const legacy = get(content, "legacy");
   const core = get(content, "core", "user_results", "result");
   const userLegacy = get(core, "legacy");

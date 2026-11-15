@@ -97,6 +97,7 @@ function hudSetDetail(message: string): void {
 
 function startHud(phase: string): void {
   hudStartedAt = Date.now();
+  setBadge("…", "#1a73e8");
   hudPhase.textContent = phase;
   hudPosts.textContent = "0";
   hudPages.textContent = "0";
@@ -176,9 +177,12 @@ function optionLabel(target: SavedProfileTarget): string {
   return handle + suffix + " — " + target.postCount + " posts" + coverage;
 }
 
+let lastTargets: SavedProfileTarget[] = [];
+
 async function refreshProfileTargets(account: string): Promise<SavedProfileTarget[]> {
   if (!profileDb) return [];
   const targets = await listProfileStates(profileDb);
+  lastTargets = targets;
   const previous = profileSelect.value;
   profileSelect.replaceChildren();
   for (const target of targets) {
@@ -202,7 +206,6 @@ async function refreshProfileTargets(account: string): Promise<SavedProfileTarge
 
 async function refresh(): Promise<void> {
   if (busy) return;
-  clearBadge();
   const activeId = await currentUserId();
   if (activeId !== userId) {
     db?.close();
@@ -211,8 +214,19 @@ async function refresh(): Promise<void> {
     profileDb = null;
     userId = activeId;
     if (userId) {
-      db = await openArchive(userId);
-      profileDb = await openProfileArchive(userId);
+      try {
+        db = await openArchive(userId);
+        profileDb = await openProfileArchive(userId);
+      } catch (error) {
+        db?.close();
+        profileDb?.close();
+        db = null;
+        profileDb = null;
+        userId = null;
+        accountElement.textContent =
+          "Archive failed to open (" + errorMessage(error) + "). Click Refresh to retry.";
+        throw error;
+      }
     }
   }
   accountElement.textContent = userId ?? "Not signed in to X";
@@ -260,12 +274,19 @@ async function refresh(): Promise<void> {
     ? "Armed" + (profileAvailable.length ? "; captured: " + profileAvailable.join(", ") : "; nothing captured yet — load the profile's Posts and Replies tabs on x.com")
     : "Disarmed" + (profileAvailable.length ? "; captured: " + profileAvailable.join(", ") : "");
   const target = await readProfileTarget(account);
+  const targets = await refreshProfileTargets(account);
+  const scannedTarget = target
+    ? targets.find((entry) => entry.targetUserId === target.targetUserId)
+    : undefined;
+  const handle = scannedTarget?.state.profile?.screen_name;
+  const handlePart = handle ? "@" + handle + " (" : "";
+  const handleClose = handle ? ")" : "";
   profileTargetElement.textContent = target
-    ? "user " + target.targetUserId + " (" + target.operation + ", " + new Date(target.capturedAt).toLocaleString() + ")"
+    ? handlePart + "user " + target.targetUserId + ", " + target.operation + ", "
+      + new Date(target.capturedAt).toLocaleString() + handleClose
     : "None captured — arm capture and open the profile on x.com";
   profileReady = !!target && !!(credentials.queryIds["UserTweetsAndReplies"] || credentials.queryIds["UserTweets"]);
   collectProfileButton.disabled = !profileReady;
-  const targets = await refreshProfileTargets(account);
   downloadProfileButton.disabled = profileSelect.options.length === 0;
   if (targets.length) {
     const selected = targets.find((entry) => entry.targetUserId === profileSelect.value) ?? targets[0];
@@ -300,6 +321,10 @@ profileSelect.addEventListener("change", () => {
   if (!profileDb) return;
   const archiveDb = profileDb;
   const selected = profileSelect.value;
+  const match = lastTargets.find((entry) => entry.targetUserId === selected);
+  profileCoverageElement.textContent = match
+    ? "Posts: " + match.state.posts + ". " + match.state.reason
+    : "Not scanned";
   void (async () => {
     profileCountElement.textContent = String(await profilePostCount(archiveDb, selected));
   })().catch(() => { /* Selection refresh is cosmetic. */ });
@@ -311,7 +336,7 @@ function runCollection(
   collectionDb: IDBDatabase | null,
   job: (options: CollectionOptions, signal: AbortSignal) => Promise<unknown>,
 ): void {
-  if (busy || !db || !userId || !collectionDb) return;
+  if (busy || !userId || !collectionDb) return;
   const account = userId;
   controller = new AbortController();
   const signal = controller.signal;
@@ -436,4 +461,5 @@ downloadProfileButton.addEventListener("click", () => {
   });
 });
 
+clearBadge();
 void refresh().catch((cause: unknown) => status("Initialization failed: " + errorMessage(cause)));

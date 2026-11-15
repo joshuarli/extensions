@@ -151,7 +151,10 @@ Notes on stability:
   never downgrade an `available` record to a tombstone.
 - A repost appears once, keyed by the repost's own `tweet_id`, with
   `repost_of` pointing at the original and `content` (text/media/author) taken
-  from the embedded original post.
+  from the embedded original post. For reposts, `created_at`, `metrics`,
+  `entities`, `lang`, `source`, `conversation_id`, `card` and `quoted_tweet`
+  all describe the *original* post; the wrapper repost's own timestamp is not
+  retained (`sort_index` still reflects X's timeline order).
 - Posts are sorted newest-first by `sort_index`, a string; compare with
   `localeCompare`, never as numbers (snowflakes overflow double precision).
 

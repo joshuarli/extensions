@@ -51,6 +51,7 @@ export function downloadPostsMedia(
   const failed: Array<{ filename: string; error: string }> = [];
   let downloaded = 0;
   let settled = false;
+  let stopStarting = false;
   let started = 0;
   let workersDone = 0;
 
@@ -87,19 +88,21 @@ export function downloadPostsMedia(
     };
     const timeout = setTimeout(() => {
       if (settled) return;
+      stopStarting = true;
       for (const filename of pending.values()) {
         failed.push({ filename, error: "Timed out waiting for the download to finish." });
       }
       pending.clear();
       settled = true;
       chrome.downloads.onChanged.removeListener(onChanged);
-      options.report("Media download timed out; some files may still land in Downloads.");
-      resolve({ total: jobs.length, downloaded, failed, stopped: signal.aborted });
+      options.report("Media download timed out; no new files will start.");
+      reportProgress();
+      resolve({ total: jobs.length, downloaded, failed, stopped: true });
     }, options.timeoutMs ?? MEDIA_TIMEOUT_MS);
     chrome.downloads.onChanged.addListener(onChanged);
 
     const worker = async (): Promise<void> => {
-      while (!signal.aborted && started < jobs.length) {
+      while (!signal.aborted && !stopStarting && started < jobs.length) {
         const job = jobs[started];
         if (!job) break;
         started += 1;
