@@ -26,6 +26,7 @@ test("composes one manifest from the feature fragments", () => {
     "cookies",
     "unlimitedStorage",
     "webRequest",
+    "contextMenus",
   ]);
   assert.deepEqual(manifest.host_permissions, [
     "https://www.youtube.com/*",

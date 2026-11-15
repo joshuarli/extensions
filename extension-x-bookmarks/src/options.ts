@@ -166,6 +166,12 @@ function setBusy(value: boolean): void {
   downloadProfileButton.disabled = value || !profileDb || profileSelect.options.length === 0;
   armButton.disabled = value || !userId;
   stopButton.disabled = !value;
+  if (value) {
+    stopButton.title = "Stops the current run; saved pages are retained";
+    for (const button of [refreshButton, collectButton, collectProfileButton, downloadButton, downloadProfileButton, armButton]) {
+      button.title = "Working — click Stop to cancel";
+    }
+  }
 }
 
 function optionLabel(target: SavedProfileTarget): string {
@@ -242,11 +248,20 @@ async function refresh(): Promise<void> {
     connectionReady = false;
     profileReady = false;
     collectButton.disabled = true;
+    collectButton.title = "Disabled: sign in to x.com in this browser first";
     downloadButton.disabled = true;
+    downloadButton.title = "Disabled: sign in to x.com in this browser first";
     collectProfileButton.disabled = true;
+    collectProfileButton.title = "Disabled: sign in to x.com in this browser first";
     downloadProfileButton.disabled = true;
+    downloadProfileButton.title = "Disabled: sign in to x.com in this browser first";
     armButton.disabled = true;
-    status("Sign in to X and open the bookmarks page.");
+    armButton.title = "Disabled: sign in to x.com in this browser first";
+    refreshButton.disabled = false;
+    refreshButton.title = "Re-check sign-in and captured requests";
+    stopButton.title = "Nothing is running";
+    accountElement.textContent = "Not signed in to X in this browser";
+    status("The exporter can only see this browser's cookies. Sign in to x.com in this browser, reload, then Refresh connection.");
     return;
   }
   const account = userId;
@@ -259,7 +274,13 @@ async function refresh(): Promise<void> {
     : "No requests captured — reload X bookmarks";
   connectionReady = !!credentials.queryIds["Bookmarks"] && !!credentials.authorization;
   collectButton.disabled = !connectionReady;
+  collectButton.title = connectionReady
+    ? "Collect every bookmarked page into the local archive (this can take a while)"
+    : "Disabled: open and reload https://x.com/i/bookmarks in this browser";
   downloadButton.disabled = false;
+  downloadButton.title = "Download the cumulative bookmark archive JSON";
+  stopButton.title = "Stops the current run; saved pages are retained";
+  refreshButton.title = "Re-check sign-in and captured requests";
   countElement.textContent = String(await bookmarkCount(db));
   const previous = await loadState(db);
   coverageElement.textContent = previous
@@ -287,7 +308,16 @@ async function refresh(): Promise<void> {
     : "None captured — arm capture and open the profile on x.com";
   profileReady = !!target && !!(credentials.queryIds["UserTweetsAndReplies"] || credentials.queryIds["UserTweets"]);
   collectProfileButton.disabled = !profileReady;
+  collectProfileButton.title = profileReady
+    ? "Collect the captured profile's posts (and replies, when the Replies tab was captured)"
+    : "Disabled: arm capture, load the profile's Posts and Replies tabs, then disarm";
+  armButton.title = armed
+    ? "Disarm — stop recording profile requests"
+    : "Arm — record the next profile you visit on x.com";
   downloadProfileButton.disabled = profileSelect.options.length === 0;
+  downloadProfileButton.title = profileSelect.options.length === 0
+    ? "Disabled: no profile archive yet — collect one first"
+    : "Download posts.json and media into one folder";
   if (targets.length) {
     const selected = targets.find((entry) => entry.targetUserId === profileSelect.value) ?? targets[0];
     if (selected) {
@@ -461,5 +491,27 @@ downloadProfileButton.addEventListener("click", () => {
   });
 });
 
+function maybeAutoCollect(kind: string | null): void {
+  if (kind === "profile") {
+    if (!collectProfileButton.disabled) {
+      collectProfileButton.click();
+      return;
+    }
+    status("Opened from the context menu, but profile collection isn't ready yet: "
+      + "arm capture, load the profile's Posts and Replies tabs on x.com, disarm, then click Collect profile posts.");
+    return;
+  }
+  if (kind === "bookmarks") {
+    if (!collectButton.disabled) {
+      collectButton.click();
+      return;
+    }
+    status("Opened from the context menu, but bookmark collection isn't ready: "
+      + "sign in to x.com in this browser, reload https://x.com/i/bookmarks, then click Collect bookmarks.");
+  }
+}
+
 clearBadge();
-void refresh().catch((cause: unknown) => status("Initialization failed: " + errorMessage(cause)));
+void refresh()
+  .then(() => maybeAutoCollect(new URLSearchParams(location.search).get("collect")))
+  .catch((cause: unknown) => status("Initialization failed: " + errorMessage(cause)));

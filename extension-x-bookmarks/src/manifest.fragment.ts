@@ -6,6 +6,8 @@ export const xBookmarksManifest = {
     "webRequest",
     "declarativeNetRequestWithHostAccess",
     "downloads",
+    "contextMenus",
+    "notifications",
   ],
   host_permissions: ["https://x.com/*"],
 } as const;

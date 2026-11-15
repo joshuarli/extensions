@@ -9,7 +9,9 @@ import {
 } from "../../extension-youtube-transcript/src/background.ts";
 import { isYouTubeTranscriptMessage } from "../../extension-youtube-transcript/src/message-contract.ts";
 import {
+  handleXBookmarksContextMenuClick,
   handleXBookmarksRequest,
+  installXBookmarksContextMenus,
   installXBookmarksHeaderRule,
   xBookmarksRequestFilter,
 } from "../../extension-x-bookmarks/src/background.ts";
@@ -146,3 +148,6 @@ chrome.webRequest.onSendHeaders.addListener(
 
 chrome.runtime.onInstalled.addListener(installXBookmarksHeaderRule);
 chrome.runtime.onStartup.addListener(installXBookmarksHeaderRule);
+chrome.runtime.onInstalled.addListener(installXBookmarksContextMenus);
+chrome.runtime.onStartup.addListener(installXBookmarksContextMenus);
+chrome.contextMenus.onClicked.addListener(handleXBookmarksContextMenuClick);

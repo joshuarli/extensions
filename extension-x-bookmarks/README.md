@@ -12,6 +12,18 @@ It does two things:
 2. **Profile posts** — a cumulative archive of *any* profile's entire post history
    (posts, reposts, and replies) as a folder of `posts.json` + media files.
 
+## Context menu
+
+Right-click anywhere on an x.com page to get:
+
+- **Open X archive exporter** — opens the exporter page in a new tab.
+- **Toggle profile capture (arm/disarm)** — arms capture (a notification confirms);
+  while armed, the extension records the GraphQL requests the profile pages make.
+  Toggle again to disarm. This is the same toggle as the button on the exporter page.
+- **Collect profile posts…** / **Collect bookmarks…** — opens the exporter and, when
+  collection is ready, starts it automatically. If it isn't ready, the page explains
+  what's missing instead of starting.
+
 ## Use: bookmarks
 
 1. From the repository root, run pnpm install and pnpm run dist.
@@ -51,6 +63,8 @@ required.
    timeline (preferring `UserTweetsAndReplies`, the superset) into IndexedDB,
    per account and per target profile. Stop any time; re-running is safe.
 6. Select the profile in **Archive to export** and click **Download archive**.
+   (Right-click → **Collect profile posts…** on any x.com page opens the exporter
+   and starts collection in one step when capture is ready.)
 
 The export creates a folder `x-profile-<handle>-<date>/` in your downloads:
 
@@ -193,6 +207,20 @@ collection to continue.
   copyright its respective authors, MIT license. This port is an independent
   reduced implementation, not a drop-in replacement for xarchive's viewer,
   reconciliation, import, and undo features.
+
+## Troubleshooting
+
+**Every button is greyed out.** The exporter can only see the cookies of the
+browser it is installed in. If you use x.com in a different browser than the one
+carrying the extension, everything below **Refresh connection** stays disabled —
+sign in to x.com in *that* browser first. Each disabled button also carries a
+tooltip explaining exactly what it needs. The suite popup is a faster path:
+page icon → **Open X archive exporter**, or right-click any x.com page → the
+context menu entries above.
+
+**"X changed its timeline response. Partial results were preserved."** X changed
+its private GraphQL shape or served something unexpected; the posts captured so
+far are kept. Reload and try again; if it persists, report the shape drift.
 
 ## Development
 
