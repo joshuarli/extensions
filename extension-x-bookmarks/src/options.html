@@ -3,47 +3,128 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>X Bookmarks</title>
+  <title>X Archive</title>
   <style>
     :root { color-scheme: light dark; font: 15px/1.55 system-ui, sans-serif; }
     body { margin: 0; padding: 2rem 1.25rem; }
     main { max-width: 42rem; margin: 0 auto; }
     h1 { font-size: 1.5rem; margin: 0 0 .5rem; }
+    h2 { font-size: 1.1rem; margin: 2rem 0 .35rem; padding-top: 1.5rem; border-top: 1px solid color-mix(in srgb, currentColor 20%, transparent); }
     .subtle { opacity: .7; }
-    dl { display: grid; grid-template-columns: 10rem 1fr; gap: .3rem 1rem; margin: 1.5rem 0; }
+    dl { display: grid; grid-template-columns: 10rem 1fr; gap: .3rem 1rem; margin: 1.25rem 0; }
     dt { opacity: .7; }
     dd { margin: 0; overflow-wrap: anywhere; }
-    .actions { display: flex; flex-wrap: wrap; gap: .65rem; }
-    button { font: inherit; padding: .5rem .9rem; cursor: pointer; }
+    .actions { display: flex; flex-wrap: wrap; gap: .65rem; align-items: center; }
+    button, select { font: inherit; padding: .5rem .9rem; cursor: pointer; }
+    select { background: Canvas; color: CanvasText; border: 1px solid color-mix(in srgb, CanvasText 30%, transparent); border-radius: .35rem; }
     button:disabled { cursor: not-allowed; opacity: .6; }
     output { display: block; margin-top: 1.5rem; padding: .75rem; border: 1px solid currentColor;
       border-radius: .35rem; white-space: pre-wrap; overflow-wrap: anywhere; min-height: 2.3rem; }
     a { color: inherit; text-underline-offset: .15em; }
+
+    .hud { position: fixed; right: 1rem; bottom: 1rem; z-index: 999; width: 17.5rem;
+      border: 1px solid color-mix(in srgb, CanvasText 25%, transparent); border-radius: .75rem;
+      background: Canvas; color: CanvasText; box-shadow: 0 .75rem 2.5rem rgb(0 0 0 / .35);
+      overflow: hidden; }
+    .hud[hidden] { display: none; }
+    .hud-head { display: flex; align-items: center; gap: .5rem; padding: .55rem .65rem;
+      border-bottom: 1px solid color-mix(in srgb, CanvasText 15%, transparent); }
+    .hud-dot { width: .6rem; height: .6rem; border-radius: 50%; background: #1a73e8; flex: none;
+      animation: hud-pulse 1.2s ease-in-out infinite; }
+    .hud.done .hud-dot { background: #188038; animation: none; }
+    .hud.error .hud-dot { background: #c5221f; animation: none; }
+    @keyframes hud-pulse { 50% { opacity: .35; } }
+    .hud-head strong { font-size: .85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .hud-head button { margin-left: auto; border: 0; background: transparent; font-size: 1rem; line-height: 1; padding: .1rem .3rem; border-radius: .3rem; }
+    .hud-body { padding: .65rem; }
+    .hud.collapsed .hud-body { display: none; }
+    .hud-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: .4rem; text-align: center; }
+    .hud-num { display: block; font-size: 1.35rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .hud-label { display: block; font-size: .65rem; text-transform: uppercase; letter-spacing: .05em; opacity: .7; }
+    .hud-bar { margin-top: .55rem; height: .45rem; border-radius: 99px; overflow: hidden;
+      background: color-mix(in srgb, CanvasText 12%, transparent); }
+    .hud-fill { height: 100%; width: 0%; background: #1a73e8; border-radius: 99px; transition: width .3s ease; }
+    .hud-fill.indeterminate { width: 40%; animation: hud-slide 1.4s ease-in-out infinite; }
+    @keyframes hud-slide { 0% { margin-left: -40%; } 100% { margin-left: 100%; } }
+    .hud-detail { margin: .45rem 0 0; font-size: .75rem; opacity: .85; min-height: 1.2em;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    @media (prefers-reduced-motion: reduce) {
+      .hud-dot, .hud-fill.indeterminate { animation: none; }
+    }
   </style>
 </head>
 <body>
   <main>
-    <h1>X Bookmarks</h1>
-    <p class="subtle">Local, incremental bookmark archive. No external service, dependencies, or analytics.</p>
+    <h1>X Archive</h1>
+    <p class="subtle">Local, incremental archive of your X bookmarks and any profile&rsquo;s posts. No external service, dependencies, or analytics.</p>
+    <div class="actions">
+      <button type="button" id="refresh">Refresh connection</button>
+      <button type="button" id="stop" disabled>Stop</button>
+    </div>
+    <dl>
+      <dt>Account ID</dt><dd id="account">Checking…</dd>
+    </dl>
+
+    <h2>Bookmarks</h2>
     <p>First <a href="https://x.com/i/bookmarks" target="_blank" rel="noopener noreferrer">open X bookmarks</a>
       in a signed-in tab and reload that page so this extension can observe its current GraphQL requests.
       Open a bookmark folder as well if you want folder assignments.</p>
     <dl>
-      <dt>Account ID</dt><dd id="account">Checking…</dd>
       <dt>API capture</dt><dd id="capture">Checking…</dd>
       <dt>Saved posts</dt><dd id="count">Checking…</dd>
       <dt>Last scan</dt><dd id="coverage">Not checked</dd>
     </dl>
     <div class="actions">
-      <button type="button" id="refresh">Refresh connection</button>
-      <button type="button" id="collect" disabled>Collect all</button>
-      <button type="button" id="stop" disabled>Stop</button>
-      <button type="button" id="download" disabled>Download JSON</button>
+      <button type="button" id="collect" disabled>Collect bookmarks</button>
+      <button type="button" id="download" disabled>Download bookmarks JSON</button>
     </div>
+
+    <h2>Profile posts</h2>
+    <p>Archive the full post history of any profile you can view on X — original posts, reposts, and replies.
+      <strong>Arm capture</strong>, then visit the profile on x.com and load both its <em>Posts</em> tab and its <em>Replies</em> tab
+      (replies require the Replies tab to be captured), then <strong>disarm</strong>. Collection paginates the timeline
+      on its own; no scrolling is required.</p>
+    <dl>
+      <dt>Capture</dt><dd id="profile-capture">Checking…</dd>
+      <dt>Target profile</dt><dd id="profile-target">None captured</dd>
+      <dt>Saved posts</dt><dd id="profile-count">—</dd>
+      <dt>Last scan</dt><dd id="profile-coverage">Not scanned</dd>
+    </dl>
+    <div class="actions">
+      <button type="button" id="arm-capture" disabled>Arm profile capture</button>
+      <button type="button" id="collect-profile" disabled>Collect profile posts</button>
+    </div>
+    <div class="actions" style="margin-top:.65rem">
+      <label class="subtle" for="profile-select" style="flex:1 1 14rem">Archive to export</label>
+      <select id="profile-select" aria-label="Which profile to export" style="flex:2 1 16rem"></select>
+      <button type="button" id="download-profile" disabled>Download archive</button>
+    </div>
+    <p class="subtle">Downloads create a folder <code>x-profile-&lt;handle&gt;-&lt;date&gt;/</code> containing
+      <code>posts.json</code> (full post records, schema documented in the README) and
+      <code>media/&lt;tweet_id&gt;_&lt;index&gt;.&lt;ext&gt;</code> (photos at original size; videos at the highest-bitrate MP4).
+      Posts.json is saved first, then media; re-running the download retries with overwrite and never duplicates files.</p>
+
     <output role="status" id="status" aria-live="polite">Ready.</output>
-    <p class="subtle">Posts are upserted after each page, including folder-only posts. Interrupted scans remain exportable.
-      Re-running retains historical posts; the exported file is cumulative, not a guarantee that every post remains bookmarked.
-      Completeness depends on what X returns. No media files are downloaded.</p>
+    <p class="subtle">Bookmarks are upserted per page; profile posts are upserted per page too, keyed per target profile.
+      Interrupted scans remain exportable. Re-running retains historical posts; the exported file is cumulative,
+      not a guarantee every post remains visible. Completeness depends on what X returns.</p>
+
+    <aside class="hud" id="hud" hidden aria-label="Collection progress">
+      <header class="hud-head">
+        <span class="hud-dot" aria-hidden="true"></span>
+        <strong id="hud-phase">Working…</strong>
+        <button type="button" id="hud-minimize" aria-label="Collapse progress panel">–</button>
+      </header>
+      <div class="hud-body" id="hud-body">
+        <div class="hud-grid">
+          <div><span class="hud-num" id="hud-posts">0</span><span class="hud-label" id="hud-label-a">posts</span></div>
+          <div><span class="hud-num" id="hud-pages">0</span><span class="hud-label" id="hud-label-b">pages</span></div>
+          <div><span class="hud-num" id="hud-elapsed">0:00</span><span class="hud-label">elapsed</span></div>
+        </div>
+        <div class="hud-bar"><div class="hud-fill indeterminate" id="hud-fill"></div></div>
+        <p class="hud-detail" id="hud-detail">Starting…</p>
+      </div>
+    </aside>
   </main>
   <script type="module" src="./options.ts"></script>
 </body>

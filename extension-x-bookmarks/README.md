@@ -1,11 +1,18 @@
-# X Bookmarks
+# X Archive
 
-A small, local Chromium MV3 bookmark exporter, rewritten in TypeScript from the
+A small, local Chromium MV3 exporter for X data, rewritten in TypeScript from the
 core approach of [sytelus/xarchive](https://github.com/sytelus/xarchive).
 No Dexie, React, bundled archive viewer, external account service, or runtime
 dependencies beyond the shared Effect 4 already used by this repository.
 
-## Use
+It does two things:
+
+1. **Bookmarks** — a cumulative archive of your X bookmarks and bookmark folders,
+   exported as one JSON file.
+2. **Profile posts** — a cumulative archive of *any* profile's entire post history
+   (posts, reposts, and replies) as a folder of `posts.json` + media files.
+
+## Use: bookmarks
 
 1. From the repository root, run pnpm install and pnpm run dist.
 2. Open chrome://extensions, enable Developer mode, and load
@@ -13,39 +20,172 @@ dependencies beyond the shared Effect 4 already used by this repository.
 3. Sign in to X and **reload** [your bookmarks](https://x.com/i/bookmarks).
    The suite service worker passively captures the current GraphQL query ID,
    request features, and X web-app authorization header.
-4. Click the suite toolbar icon and choose **Open bookmark exporter** (or use
-   **All settings**). Select **Collect all**. Each page is saved locally to
+4. Click the suite toolbar icon and choose **Open X archive exporter** (or use
+   **All settings**). Select **Collect bookmarks**. Each page is saved locally to
    IndexedDB; retries and throttling handle transient failures and HTTP 429
    responses.
 5. To include premium bookmark folders, first open a folder on X as well,
    allowing its GraphQL operation to be captured. The exporter will list
    available folders and scan each one when both operation IDs are present.
-6. Select **Download JSON**. The account-scoped cumulative archive includes
-   the text, author, links, media URLs, quoted posts, and folder memberships
-   X returned. No actual media files are downloaded.
+6. Select **Download bookmarks JSON**. The account-scoped cumulative archive
+   includes the text, author, links, media URLs, quoted posts, and folder
+   memberships X returned.
+
+## Use: a profile's entire posts
+
+The exporter can archive the full post history of any profile you can view on X —
+original posts, reposts, and replies — as `posts.json` plus the actual media
+files (photos and videos). X serves a profile timeline through the same private
+GraphQL mechanism as bookmarks, so the same capture-then-paginate strategy
+applies; the page scrolls itself, no autoscrolling of the visible tab is
+required.
+
+1. Open the X archive exporter (toolbar icon → **Open X archive exporter**).
+2. Select **Arm profile capture**.
+3. In a signed-in tab, open the profile, e.g. `https://x.com/jack`, and load:
+   - the **Posts** tab (captures `UserTweets` — original posts and reposts), and
+   - the **Replies** tab (captures `UserTweetsAndReplies` — additionally the
+     replies; X only serves it there). Loading both gives a complete archive.
+4. Select **Disarm profile capture**.
+5. Select **Collect profile posts**. The exporter paginates the captured
+   timeline (preferring `UserTweetsAndReplies`, the superset) into IndexedDB,
+   per account and per target profile. Stop any time; re-running is safe.
+6. Select the profile in **Archive to export** and click **Download archive**.
+
+The export creates a folder `x-profile-<handle>-<date>/` in your downloads:
+
+```
+x-profile-jack-2026-11-15/
+  posts.json
+  media/
+    9876543210_0.jpg        first photo of that post
+    9876543210_1.mp4        highest-bitrate MP4 variant of that post's video
+    1234567890_quoted_0.jpg photo inside a quoted post
+    …
+```
+
+- Media filenames are `<tweet_id>_<index>.<ext>`; quoted-post media uses
+  `<tweet_id>_quoted_<index>.<ext>`. Photos use the original-size rendition
+  X serves; videos and animated GIFs use the highest-bitrate `video/mp4` variant.
+- `posts.json` is downloaded first; unavailable or failing media files are
+  reported at the end, and re-running **Download archive** retries them
+  (idempotent overwrite, never duplicated).
+- Live progress is shown in the exporter page (bottom-right HUD: posts, pages,
+  elapsed, media x/y) and on the toolbar icon as a badge.
+
+## The `posts.json` format (schema_version 1)
+
+```jsonc
+{
+  "export_metadata": {
+    "tool": "x-profile-posts",           // stable tool identifier
+    "schema_version": 1,                  // bump when the shape changes
+    "kind": "cumulative",                 // reruns merge, they do not snapshot
+    "exported_at": "2026-11-15T10:00:00.000Z",
+    "user_id": "123",                     // the signed-in account that ran the export
+    "profile": {                          // the target profile at scan time
+      "user_id": "44196397",
+      "screen_name": "jack",
+      "name": "jack",
+      "profile_image_url": "…",
+      "followers_count": 1000,
+      "verified": true,
+      "description": "…"
+    },
+    "collection": {
+      "posts": "complete",                // complete | partial | not_checked
+      "reason": "complete",               // machine-readable outcome of the last run
+      "operation": "UserTweetsAndReplies" // which timeline operation was scanned
+    },
+    "stats": {
+      "total_posts": 8123,
+      "available_posts": 7990,
+      "unavailable_posts": 133,
+      "media_items": 3210,                // planned downloads at export time
+      "media_missing": 4                  // media entries without a usable URL
+    }
+  },
+  "profile": { /* same object as export_metadata.profile */ },
+  "posts": [
+    {
+      "tweet_id": "1234567890123456789",  // string, snowflake; safe for JS consumers if kept as string
+      "sort_index": "1234567890123456789",// X's timeline sort key; posts are newest-first
+      "status": "available",              // available | unavailable (tombstone)
+      "unavailable_reason": "…",          // only when status is unavailable
+      "created_at": "Wed Aug 12 16:12:32 +0000 2026",
+      "full_text": "…",                   // note-tweet (longform) text when present
+      "lang": "en",
+      "source": "<a href=…>X Web</a>",
+      "conversation_id": "…",
+      "in_reply_to_tweet_id": null,
+      "in_reply_to_user_id": null,
+      "author": {                         // for a repost, this is the ORIGINAL author
+        "user_id": "…", "screen_name": "…", "name": "…",
+        "profile_image_url": "…", "verified": true, "followers_count": 0
+      },
+      "metrics": { "likes": 0, "retweets": 0, "replies": 0, "bookmarks": 0, "views": 0 },
+      "entities": { "urls": [ … ], "hashtags": [ … ], "mentions": [ … ] },
+      "media": [                          // same shape for photos and videos
+        { "type": "photo", "url": "https://pbs.twimg.com/…?format=jpg&name=orig", "alt_text": null },
+        { "type": "video", "url": "https://video.twimg.com/…mp4", "thumbnail_url": "…",
+          "duration_ms": 12345,
+          "variants": [ { "bitrate": 2176000, "content_type": "video/mp4", "url": "…" } ] }
+      ],
+      "quoted_tweet": null,               // or { tweet_id, full_text, author, media } | { status: "unavailable" }
+      "card": null,                       // or { type, url, title, description }
+      "repost_of": "…",                   // present on reposts; tweet_id is the repost, this is the original
+      "observed_at": "2026-11-15T…Z"      // when the exporter saw this record
+    }
+  ]
+}
+```
+
+Notes on stability:
+
+- The per-post schema is the same shape the bookmark archive uses (minus
+  `folder_ids`, which is bookmark-only), so tooling written for one can read
+  the other. Fields may be added in future schema versions; readers should
+  ignore unknown keys.
+- A post with `status: "unavailable"` may carry only `tweet_id`; X hides
+  tombstoned content. Re-scans merge newer information into earlier records and
+  never downgrade an `available` record to a tombstone.
+- A repost appears once, keyed by the repost's own `tweet_id`, with
+  `repost_of` pointing at the original and `content` (text/media/author) taken
+  from the embedded original post.
+- Posts are sorted newest-first by `sort_index`, a string; compare with
+  `localeCompare`, never as numbers (snowflakes overflow double precision).
 
 Stop and restart safely: page writes are durable, and scans never clear
-earlier posts. The export marks main-timeline and folder coverage separately.
-A "complete" scan means pagination exhausted on this run, **not** that X
-returned every historical bookmark or that older preserved posts remain
-currently bookmarked. Deleted posts and unavailable posts may contain only IDs.
-The browser page must remain open for collection to continue.
+earlier posts. Scan state is tracked per target profile
+(`posts: complete | partial`). A "complete" scan means pagination exhausted on
+this run, **not** that X returned every historical post (X may withhold old
+content) or that older preserved posts remain visible. Deleted posts and
+unavailable posts may contain only IDs. The browser page must remain open for
+collection to continue.
 
 ## Implementation and security
 
 - Authenticated requests execute from the extension page using the logged-in
-  browser session. The suite service worker observes only X bookmark GraphQL
-  requests, and an extension-scoped DNR rule adds X Origin/Referer request
-  headers.
-- No cookies or authorization headers are written into archive JSON. Captured
-  header information stays in extension-local storage, scoped by the numeric
-  session user ID. The CSRF cookie is reread on every request.
+  browser session. The suite service worker only observes X GraphQL requests,
+  and only when it is looking at a URL shape it recognizes; bookmark capture is
+  passive, while **profile capture additionally requires capture to be armed**
+  from the exporter page. An extension-scoped DNR rule adds X Origin/Referer
+  request headers; a second DNR rule sets a Referer on X's media CDNs
+  (`pbs.twimg.com`, `video.twimg.com`) for the extension's own downloads.
+- No cookies or authorization headers are written into the archive JSON.
+  Captured header information stays in extension-local storage, scoped by the
+  numeric session user ID. The CSRF cookie is reread on every request.
 - The GraphQL endpoints are **private and unstable**; X can change paths,
   flags, authorization, cursors, response layouts, or rate limits at any time.
   Malformed responses and pagination loops are reported as partial.
 - A subsequent scan merges new information into existing records. Existing
   available content is preserved if a later page only contains a tombstone.
-- Data is stored in native IndexedDB, separately for each X account.
+- Data is stored in native IndexedDB, separately per X account:
+  `x-bookmarks-<account>` for bookmarks, `x-profile-<account>` for profile
+  posts (keyed by account + target profile, with a per-target scan state).
+- Media downloads go through `chrome.downloads` directly from the remote URL
+  (no host permission for the CDN is needed); `posts.json` is saved before
+  media so the manifest is never blocked by a media failure.
 - Source inspiration: [xarchive](https://github.com/sytelus/xarchive),
   copyright its respective authors, MIT license. This port is an independent
   reduced implementation, not a drop-in replacement for xarchive's viewer,
@@ -55,4 +195,5 @@ The browser page must remain open for collection to continue.
 
 pnpm run check runs strict typechecking and unit tests. pnpm run dist
 builds the unified extension. extension-x-bookmarks/test covers response
-parsing, account safety, credential capture, and merging.
+parsing, account safety, credential capture, merging, profile-timeline parsing
+(including reposts and quoted media), media planning and download tracking.
