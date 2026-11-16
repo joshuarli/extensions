@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseFolders, parseTimeline } from "../src/parser.ts";
+import { parseFolders, parseTimeline } from "../../x-archive-core/src/parser.ts";
 
 const now = "2026-10-30T00:00:00.000Z";
 const entry = (result: unknown, id = "123") => ({

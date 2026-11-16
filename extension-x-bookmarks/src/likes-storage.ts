@@ -1,7 +1,7 @@
 import { Schema } from "effect";
-import { BookmarkSchema, type Bookmark } from "./parser.ts";
+import { BookmarkSchema, type Bookmark } from "../../x-archive-core/src/parser.ts";
 import { mergeBookmark } from "./storage.ts";
-import { collectMediaJobs } from "./media.ts";
+import { collectMediaJobs } from "../../x-archive-core/src/media.ts";
 
 export type Coverage = "complete" | "partial" | "not_checked";
 

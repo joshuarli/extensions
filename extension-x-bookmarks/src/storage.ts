@@ -1,5 +1,5 @@
 import { Schema } from "effect";
-import { BookmarkSchema, type Bookmark, type Folder } from "./parser.ts";
+import { BookmarkSchema, type Bookmark, type Folder } from "../../x-archive-core/src/parser.ts";
 
 export type Coverage = "complete" | "partial" | "not_checked";
 

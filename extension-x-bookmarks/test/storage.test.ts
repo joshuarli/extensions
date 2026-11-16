@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseTimeline } from "../src/parser.ts";
+import { parseTimeline } from "../../x-archive-core/src/parser.ts";
 import { mergeBookmark } from "../src/storage.ts";
 import { buildGraphqlUrl } from "../src/api.ts";
 import { delay } from "../src/collector.ts";

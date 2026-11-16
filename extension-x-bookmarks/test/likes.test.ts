@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { collectLikes } from "../src/collector.ts";
 import { assembleLikesArchive, loadLikesState, openLikesArchive } from "../src/likes-storage.ts";
 import { likesFolderName } from "../src/profile-export.ts";
-import { parseProfileTimeline } from "../src/parser.ts";
+import { parseProfileTimeline } from "../../x-archive-core/src/parser.ts";
 
 let twid: string | null = "u=123";
 const stored: Record<string, unknown> = {};

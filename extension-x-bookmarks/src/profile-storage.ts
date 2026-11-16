@@ -1,7 +1,7 @@
 import { Schema } from "effect";
-import { BookmarkSchema, type Bookmark, type ProfileInfo } from "./parser.ts";
+import { BookmarkSchema, type Bookmark, type ProfileInfo } from "../../x-archive-core/src/parser.ts";
 import { mergeBookmark } from "./storage.ts";
-import { collectMediaJobs } from "./media.ts";
+import { collectMediaJobs } from "../../x-archive-core/src/media.ts";
 import { PROFILE_OPERATIONS, type ProfileOperation } from "./capture.ts";
 
 export const PROFILE_POSTS_STORE = "posts";

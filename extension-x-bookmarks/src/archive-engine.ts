@@ -16,7 +16,7 @@ import {
 } from "./profile-storage.ts";
 import { assembleArchive, openArchive } from "./storage.ts";
 import { assembleLikesArchive, openLikesArchive } from "./likes-storage.ts";
-import { collectMediaJobs } from "./media.ts";
+import { collectMediaJobs } from "../../x-archive-core/src/media.ts";
 import {
   bookmarksFolderName,
   likesFolderName,

@@ -27,6 +27,8 @@
     "extension-*/src/**/*.ts",
     "extension-*/test/**/*.ts",
     "lib/**/*.ts",
+    "x-archive-core/src/**/*.ts",
+    "x-archive-core/test/**/*.ts",
     "scripts/**/*.ts",
     "vite.config.ts",
     "vitest.config.ts"

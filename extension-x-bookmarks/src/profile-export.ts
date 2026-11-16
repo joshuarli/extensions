@@ -1,4 +1,4 @@
-import { type MediaJob } from "./media.ts";
+import { type MediaJob } from "../../x-archive-core/src/media.ts";
 
 export interface MediaExportProgress {
   downloaded: number;

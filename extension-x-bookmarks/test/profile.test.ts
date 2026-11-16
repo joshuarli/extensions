@@ -2,10 +2,10 @@ import "fake-indexeddb/auto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { collectProfile } from "../src/collector.ts";
 import { openProfileArchive, assembleProfileArchive, mergeProfilePost, listProfileStates, loadProfileState } from "../src/profile-storage.ts";
-import { collectMediaJobs } from "../src/media.ts";
+import { collectMediaJobs } from "../../x-archive-core/src/media.ts";
 import { downloadPostsMedia, exportFolderName, filterAlreadyDownloadedMedia } from "../src/profile-export.ts";
-import { parseProfileTimeline } from "../src/parser.ts";
-import type { Bookmark } from "../src/parser.ts";
+import { parseProfileTimeline } from "../../x-archive-core/src/parser.ts";
+import type { Bookmark } from "../../x-archive-core/src/parser.ts";
 
 const userId = "123";
 const targetUserId = "44196397";

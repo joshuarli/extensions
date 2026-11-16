@@ -8,7 +8,7 @@ import {
   type Operation,
   type ProfileOperation,
 } from "./capture.ts";
-import { parseTimeline, parseFolders, parseProfileTimeline, type Folder } from "./parser.ts";
+import { parseTimeline, parseFolders, parseProfileTimeline, type Folder } from "../../x-archive-core/src/parser.ts";
 import { loadState, savePage, saveFolders, saveState, type ScanState } from "./storage.ts";
 import { loadProfileState, saveProfilePage, saveProfileState, type ProfileScanProfile, type ProfileScanState } from "./profile-storage.ts";
 import { loadLikesState, saveLikesPage, saveLikesState, type LikesScanState } from "./likes-storage.ts";
