@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { collectLikes } from "../src/collector.ts";
 import { assembleLikesArchive, loadLikesState, openLikesArchive } from "../src/likes-storage.ts";
 import { likesFolderName } from "../src/profile-export.ts";
+import { parseProfileTimeline } from "../src/parser.ts";
 
 let twid: string | null = "u=123";
 const stored: Record<string, unknown> = {};
@@ -243,5 +244,20 @@ describe("likes collection", () => {
 describe("likes archive export folder", () => {
   it("uses a likes-<date> folder", () => {
     expect(likesFolderName(new Date("2026-11-16T12:00:00Z"))).toBe("likes-2026-11-16");
+  });
+});
+
+describe("photo URL format parameter", () => {
+  it("uses the media URL's own extension instead of forcing jpg", () => {
+    const data = page([entry({
+      rest_id: "100",
+      legacy: {
+        full_text: "png photo",
+        extended_entities: { media: [{ type: "photo", media_url_https: "https://pbs.twimg.com/media/pic.png" }] },
+      },
+    }, "100", "100")]);
+    const result = parseProfileTimeline(data, "2026-11-16T00:00:00Z");
+    expect(result.valid).toBe(true);
+    if (result.valid) expect(result.posts[0]?.media).toMatchObject([{ url: "https://pbs.twimg.com/media/pic.png?format=png&name=orig" }]);
   });
 });

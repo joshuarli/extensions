@@ -73,9 +73,11 @@ function mediaItems(raw: unknown): MediaItem[] {
   return array(raw).map((value) => {
     const type = string(get(value, "type"));
     const base = string(get(value, "media_url_https"));
+    const formatMatch = base?.match(/\.([A-Za-z0-9]{2,5})(?:$|\?)/u);
+    const format = (formatMatch?.[1]?.toLowerCase() === "jpeg" ? "jpg" : formatMatch?.[1]?.toLowerCase()) ?? "jpg";
     return {
       type,
-      url: type === "photo" && base ? base + "?format=jpg&name=orig" : base,
+      url: type === "photo" && base ? base + "?format=" + format + "&name=orig" : base,
       alt_text: string(get(value, "ext_alt_text")),
       ...(type === "video" || type === "animated_gif" ? {
         thumbnail_url: base,
