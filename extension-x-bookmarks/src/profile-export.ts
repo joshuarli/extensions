@@ -20,7 +20,15 @@ export function exportFolderName(screenName: string | null | undefined, userId: 
 }
 
 export async function downloadPostsJson(json: string, folderName: string): Promise<string> {
-  const filename = folderName + "/posts.json";
+  return downloadFolderFile(json, folderName, "posts.json");
+}
+
+export async function downloadDebugJson(json: string, folderName: string): Promise<string> {
+  return downloadFolderFile(json, folderName, "debug.json");
+}
+
+async function downloadFolderFile(json: string, folderName: string, file: string): Promise<string> {
+  const filename = folderName + "/" + file;
   const blob = new Blob([json], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   try {

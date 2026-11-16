@@ -78,12 +78,22 @@ The export creates a folder `x-profile-<handle>-<date>/` in your downloads:
 ```
 x-profile-jack-2026-11-15/
   posts.json
+  debug.json             everything needed to diagnose a failed or empty archive
   media/
     9876543210_0.jpg        first photo of that post
     9876543210_1.mp4        highest-bitrate MP4 variant of that post's video
     1234567890_quoted_0.jpg photo inside a quoted post
     …
 ```
+
+`debug.json` carries the last request the extension captured on this browser
+(with query IDs and the exact `variables` payload for timeline operations),
+the list of x.com GraphQL operations the extension saw but doesn't understand,
+the last recorded error, a timestamped log of what the page was doing, and the
+archive metadata. It deliberately includes **no** authorization headers,
+cookies, CSRF tokens, or client transaction IDs — only operation names, X's
+public client configuration (query IDs and feature flags), and local run
+state. Attach it when reporting a broken archive.
 
 - Media filenames are `<tweet_id>_<index>.<ext>`; quoted-post media uses
   `<tweet_id>_quoted_<index>.<ext>`. Photos use the original-size rendition
@@ -251,7 +261,10 @@ understand — if a timeline-looking name shows up there (e.g. a renamed
 timeline operation), report it and the capture list can be extended.
 
 **"X could not resolve @handle to a user id."** Reload the profile page once;
-if it persists, report it — X changed its lookup response shape.
+if it persists, report it — X changed its lookup response shape. The
+`debug.json` in the download folder records the exact failure and the
+`UserByScreenName` payload, which is enough to pin it down without a live
+session.
 
 **"X changed its timeline response. Partial results were preserved."** X changed
 its private GraphQL shape or served something unexpected; the posts captured so

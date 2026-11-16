@@ -17,7 +17,8 @@ import {
   type SavedProfileTarget,
 } from "./profile-storage.ts";
 import { collectMediaJobs } from "./media.ts";
-import { downloadPostsJson, downloadPostsMedia, exportFolderName } from "./profile-export.ts";
+import { downloadPostsJson, downloadPostsMedia, downloadDebugJson, exportFolderName } from "./profile-export.ts";
+import { buildDebugReport, recordLastError, type DebugStatusEntry } from "./debug.ts";
 
 const pageContext = "X Archive";
 
@@ -61,7 +62,11 @@ let profileReady = false;
 let hudStartedAt = 0;
 let hudTimer: ReturnType<typeof setInterval> | null = null;
 
+const debugStatusLog: DebugStatusEntry[] = [];
+
 function status(message: string): void {
+  debugStatusLog.push({ text: message, at: new Date().toISOString() });
+  if (debugStatusLog.length > 40) debugStatusLog.shift();
   statusElement.textContent = message;
 }
 
@@ -409,6 +414,7 @@ function runCollection(
     status("Collection finished" + (reason ? ": " + reason : "."));
   }).catch((cause: unknown) => {
     const message = errorMessage(cause);
+    void recordLastError(label, message);
     finishHud(false, "Collection stopped", message);
     status("Collection stopped: " + message + ". Saved pages are retained.");
   }).finally(() => {
@@ -484,30 +490,68 @@ downloadProfileButton.addEventListener("click", () => {
   startHud("Exporting profile archive");
   setHudDeterminate(0);
   void (async () => {
-    const archive = await assembleProfileArchive(archiveDb, account, targetUserId);
-    const folder = exportFolderName(archive.profile.screen_name, targetUserId);
-    const jobs = collectMediaJobs(archive.posts);
-    hudPhase.textContent = "Writing posts.json";
-    const jsonFilename = await downloadPostsJson(JSON.stringify(archive, null, 2), folder);
-    status("Saved " + jsonFilename + ". Downloading " + jobs.jobs.length + " media files to " + folder + "/media/…");
-    hudPhase.textContent = "Downloading media";
-    const mediaResult = await downloadPostsMedia(jobs.jobs, folder, {
-      report: status,
-      signal,
-      onProgress: updateHudExport,
-    });
-    const failedCount = mediaResult.failed.length;
-    const summary = "Exported " + archive.posts.length + " posts to " + jsonFilename +
-      " with " + mediaResult.downloaded + "/" + mediaResult.total + " media files" +
-      (failedCount ? " (" + failedCount + " failed — re-run Download archive to retry)" : "") +
-      (mediaResult.stopped ? " — stopped early" : "") + ".";
-    hudSetDetail(summary);
-    finishHud(failedCount === 0 && !mediaResult.stopped, failedCount === 0 ? "Archive exported" : "Archive exported with gaps",
-      "Folder: " + folder + "/");
-    status(summary);
+    let folder: string | null = null;
+    try {
+      const archive = await assembleProfileArchive(archiveDb, account, targetUserId);
+      folder = exportFolderName(archive.profile.screen_name, targetUserId);
+      const jobs = collectMediaJobs(archive.posts);
+      hudPhase.textContent = "Writing posts.json";
+      const jsonFilename = await downloadPostsJson(JSON.stringify(archive, null, 2), folder);
+      status("Saved " + jsonFilename + ". Downloading " + jobs.jobs.length + " media files to " + folder + "/media/…");
+      hudPhase.textContent = "Downloading media";
+      const mediaResult = await downloadPostsMedia(jobs.jobs, folder, {
+        report: status,
+        signal,
+        onProgress: updateHudExport,
+      });
+      const failedCount = mediaResult.failed.length;
+      let debugNote = "";
+      try {
+        const report = await buildDebugReport({
+          accountId: account,
+          requestedProfile: requestedProfile?.screenName,
+          exportFolder: folder,
+          extensionVersion: chrome.runtime.getManifest().version,
+          archive: archive.export_metadata,
+          media: mediaResult,
+          statusLog: debugStatusLog,
+        });
+        const debugFilename = await downloadDebugJson(JSON.stringify(report, null, 2), folder);
+        debugNote = " Debug report: " + debugFilename + ".";
+      } catch (debugError) {
+        debugNote = " Debug report failed: " + errorMessage(debugError) + ".";
+      }
+      const summary = "Exported " + archive.posts.length + " posts to " + jsonFilename +
+        " with " + mediaResult.downloaded + "/" + mediaResult.total + " media files" +
+        (failedCount ? " (" + failedCount + " failed — re-run Download archive to retry)" : "") +
+        (mediaResult.stopped ? " — stopped early" : "") + "." + debugNote;
+      hudSetDetail(summary);
+      finishHud(failedCount === 0 && !mediaResult.stopped, failedCount === 0 ? "Archive exported" : "Archive exported with gaps",
+        "Folder: " + folder + "/");
+      status(summary);
+    } catch (cause: unknown) {
+      const message = errorMessage(cause);
+      void recordLastError("profile export", message);
+      if (folder) {
+        try {
+          const report = await buildDebugReport({
+            accountId: account,
+            requestedProfile: requestedProfile?.screenName,
+            exportFolder: folder,
+            extensionVersion: chrome.runtime.getManifest().version,
+          archive: { profile: null, collection: { posts: "error", reason: message }, stats: null },
+            media: null,
+            statusLog: debugStatusLog,
+          });
+          await downloadDebugJson(JSON.stringify(report, null, 2), folder);
+        } catch { /* The export error is the one that matters. */ }
+      }
+      throw cause;
+    }
   })().catch((cause: unknown) => {
-    finishHud(false, "Export failed", errorMessage(cause));
-    status("Export failed: " + errorMessage(cause));
+    const message = errorMessage(cause);
+    finishHud(false, "Export failed", message);
+    status("Export failed: " + message);
   }).finally(() => {
     controller = null;
     setBusy(false);
