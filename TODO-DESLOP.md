@@ -7,6 +7,13 @@ Deslop campaign backlog ([plan](https://github.com/laputa-systems/stuff/blob/mai
 
 Not started.
 
+Owner stop, 2026-11-16: an unqualified DSLP-6 candidate pins Vitest and
+coverage-v8 to the matching 5.0.5 pair. The lockfile was regenerated using the
+stuff npm mirror with lifecycle scripts disabled; frozen installation passed.
+Tests, coverage and Stryker were not run. The regenerated lockfile also changes
+optional-package engine metadata; inspect that before accepting the candidate.
+No ticket is closed. Work is stopped; resume only at the owner's request.
+
 ## Tickets
 
 ### DSLP-1 · P2 · Ground: baseline, boundaries, and CI test entry point
