@@ -86,7 +86,7 @@ export interface CollectionOptions {
 interface PageSpec<Item> {
   operation: Operation;
   buildVariables(cursor: string | null): Record<string, unknown>;
-  parse(data: unknown, observedAt: string): { valid: boolean; items: Item[]; nextCursor: string | null; detail?: string };
+  parse(data: unknown, observedAt: string): { valid: boolean; items: Item[]; nextCursor: string | null; terminated?: boolean; detail?: string };
   save(items: Item[]): Promise<void>;
   label: string;
   invalidMessage: string;
@@ -120,7 +120,7 @@ async function scanPages<Item>(options: CollectionOptions, spec: PageSpec<Item>)
       posts: total + (options.progressBase?.posts ?? 0),
       pages: pages + (options.progressBase?.pages ?? 0),
     });
-    const next = result.nextCursor;
+    const next = result.terminated ? null : result.nextCursor;
     if (!next) return total;
     if (visited.has(next) || next === cursor) throw new Error("X returned a repeated cursor. Collection is partial.");
     if (empty >= MAX_EMPTY_PAGES) throw new Error("X returned three empty pages. Collection is partial.");
@@ -146,7 +146,7 @@ export async function collectTimeline(
     },
     parse: (data, observedAt) => {
       const result = parseTimeline(data, observedAt);
-      return { valid: result.valid, items: result.bookmarks, nextCursor: result.nextCursor, ...(result.detail ? { detail: result.detail } : {}) };
+      return { valid: result.valid, items: result.bookmarks, nextCursor: result.nextCursor, terminated: result.terminated === true, ...(result.detail ? { detail: result.detail } : {}) };
     },
     save: (items) => savePage(options.db, items, folderId),
     label: operation,
@@ -271,7 +271,7 @@ export async function collectProfileTimeline(
       const result = parseProfileTimeline(data, observedAt);
       if (result.valid && result.profile) profile = result.profile;
       return result.valid
-        ? { valid: true, items: result.posts, nextCursor: result.nextCursor }
+        ? { valid: true, items: result.posts, nextCursor: result.nextCursor, terminated: result.terminated }
         : { valid: false, items: [], nextCursor: null, ...(result.detail ? { detail: result.detail } : {}) };
     },
     save: (items) => saveProfilePage(options.db, items, targetUserId),
