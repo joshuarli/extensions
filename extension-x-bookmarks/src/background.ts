@@ -11,7 +11,7 @@ import {
 
 export const xBookmarksRequestFilter: chrome.webRequest.RequestFilter = {
   urls: ["https://x.com/i/api/graphql/*"],
-  types: ["xmlhttprequest"],
+  types: ["xmlhttprequest", "other"],
 };
 
 let updateQueue: Promise<void> = Promise.resolve();
@@ -93,6 +93,28 @@ export function handleXBookmarksContextMenuClick(info: chrome.contextMenus.OnCli
 }
 
 export const xProfileLastCaptureKey = "x_profile_last_capture";
+export const xProfileUnmatchedOpsKey = "x_profile_unmatched_ops";
+
+const unmatchedLogged = new Set<string>();
+
+async function recordUnmatchedOperation(operation: string): Promise<void> {
+  if (unmatchedLogged.has(operation)) return;
+  unmatchedLogged.add(operation);
+  const stored = (await chrome.storage.local.get(xProfileUnmatchedOpsKey))[xProfileUnmatchedOpsKey];
+  const list = Array.isArray(stored)
+    ? stored.filter((entry): entry is string => typeof entry === "string")
+    : [];
+  if (list.length < 100 && !list.includes(operation)) {
+    await chrome.storage.local.set({ [xProfileUnmatchedOpsKey]: [...list, operation] });
+  }
+}
+
+export async function readXProfileUnmatchedOps(): Promise<string[]> {
+  const stored = (await chrome.storage.local.get(xProfileUnmatchedOpsKey))[xProfileUnmatchedOpsKey];
+  return Array.isArray(stored)
+    ? stored.filter((entry): entry is string => typeof entry === "string")
+    : [];
+}
 
 export async function readXProfileLastCapture(): Promise<{ operation: string; targetUserId?: string; at: string } | null> {
   const stored = (await chrome.storage.local.get(xProfileLastCaptureKey))[xProfileLastCaptureKey];
@@ -113,7 +135,16 @@ export function handleXBookmarksRequest(
     const userId = await currentUserId();
     if (!userId) return;
     const capture = captureRequest(details.url, details.initiator, details.requestHeaders ?? []);
-    if (!capture) return;
+    if (!capture) {
+      try {
+        const op = /^\/i\/api\/graphql\/[A-Za-z0-9_-]+\/([A-Za-z0-9_]+)$/u
+          .exec(new URL(details.url).pathname)?.[1];
+        if (op && (details.initiator === "https://x.com" || details.initiator === "https://twitter.com")) {
+          await recordUnmatchedOperation(op);
+        }
+      } catch { /* Diagnostics must never break capture. */ }
+      return;
+    }
     const previous = await readCredentials(userId);
     await chrome.storage.local.set({
       [credentialKey(userId)]: mergeCapture(previous, capture),

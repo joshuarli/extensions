@@ -241,6 +241,15 @@ shows the last request the extension captured and when; "None yet" means no
 request has been captured at all, which is the symptom of a stale tab or a
 browser restart wiping the extension's memory — a reload fixes both.
 
+**"Collect profile posts" stays greyed out and the timeline was never captured.**
+X often serves a profile's first page inline from the streamed page and only
+fetches older pages over GraphQL when you scroll. Reload the profile tab once,
+then **scroll the timeline a little** so the timeline request fires, reopen the
+exporter and click **Refresh connection**. The **Unrecognized ops** line lists
+the GraphQL operations X made on this browser that the extension does not
+understand — if a timeline-looking name shows up there (e.g. a renamed
+timeline operation), report it and the capture list can be extended.
+
 **"X could not resolve @handle to a user id."** Reload the profile page once;
 if it persists, report it — X changed its lookup response shape.
 

@@ -7,7 +7,7 @@ import {
   PROFILE_OPERATIONS,
 } from "./capture.ts";
 import { collect, collectProfile, type CollectionOptions, type ProgressSnapshot } from "./collector.ts";
-import { readXProfileLastCapture } from "./background.ts";
+import { readXProfileLastCapture, readXProfileUnmatchedOps } from "./background.ts";
 import { assembleArchive, bookmarkCount, loadState, openArchive } from "./storage.ts";
 import {
   assembleProfileArchive,
@@ -29,6 +29,7 @@ const profileCaptureElement = requiredElement<HTMLElement>(document, "#profile-c
 const profileCountElement = requiredElement<HTMLElement>(document, "#profile-count", pageContext);
 const profileCoverageElement = requiredElement<HTMLElement>(document, "#profile-coverage", pageContext);
 const profileCaptureLogElement = requiredElement<HTMLElement>(document, "#profile-capture-log", pageContext);
+const profileUnmatchedElement = requiredElement<HTMLElement>(document, "#profile-unmatched", pageContext);
 const statusElement = requiredElement<HTMLOutputElement>(document, "#status", pageContext);
 const refreshButton = requiredElement<HTMLButtonElement>(document, "#refresh", pageContext);
 const collectButton = requiredElement<HTMLButtonElement>(document, "#collect", pageContext);
@@ -248,6 +249,7 @@ async function refresh(): Promise<void> {
     coverageElement.textContent = "—";
     profileCaptureElement.textContent = "Unavailable";
     profileCaptureLogElement.textContent = "Unavailable";
+    profileUnmatchedElement.textContent = "Unavailable";
     profileCountElement.textContent = "—";
     profileCoverageElement.textContent = "—";
     profileSelect.replaceChildren();
@@ -294,6 +296,7 @@ async function refresh(): Promise<void> {
   const profileNames = [...PROFILE_OPERATIONS];
   const profileAvailable = profileNames.filter((name) => !!credentials.queryIds[name]);
   const lastCapture = await readXProfileLastCapture();
+  const unmatchedOps = await readXProfileUnmatchedOps();
   const target = await readProfileTarget(account);
   const requested = requestedProfile?.screenName;
   const targets = await refreshProfileTargets(account);
@@ -329,6 +332,10 @@ async function refresh(): Promise<void> {
       + (lastCapture.targetUserId ? " (target user " + lastCapture.targetUserId + ")" : "")
       + " — " + new Date(lastCapture.at).toLocaleString()
     : "None yet — reload the profile tab on x.com";
+  profileUnmatchedElement.textContent = unmatchedOps.length === 0
+    ? "None — every request X made on this page is known"
+    : unmatchedOps.slice(0, 8).join(", ") + (unmatchedOps.length > 8 ? "…" : "")
+      + " (operations the extension saw but doesn't understand — report these names)";
   downloadProfileButton.disabled = profileSelect.options.length === 0;
   downloadProfileButton.title = profileSelect.options.length === 0
     ? "Disabled: no profile archive yet — collect one first"
