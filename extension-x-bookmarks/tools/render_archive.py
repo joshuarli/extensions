@@ -191,9 +191,12 @@ def media_items(post_or_quoted, tweet_id: str, quoted: bool, media_dir: Path, mo
         mtype = item.get("type") or "photo"
         url = item.get("url") or ""
         alt = item.get("alt_text") or ""
-        if mtype in ("photo", "animated_gif"):
+        if mtype == "photo":
             ext = ext_from_url(url, "jpg")
-            kind = "gif" if mtype == "animated_gif" or ext == "gif" else "photo"
+            kind = "photo"
+        elif mtype == "animated_gif":
+            ext = "mp4"
+            kind = "gif"
         else:
             variants = item.get("variants") or []
             best = max((v for v in variants if isinstance(v, dict) and (v.get("content_type") == "video/mp4")),
@@ -228,7 +231,7 @@ def render_media(items, counter):
         if kind == "photo":
             tag = f'<img loading="lazy" alt="{esc(alt)}" src="{src}">'
         elif kind == "gif":
-            tag = f'<img loading="lazy" alt="{esc(alt)}" src="{src}">'
+            tag = f'<video autoplay loop muted playsinline controls preload="metadata" src="{src}"></video>'
         else:
             tag = f'<video controls preload="none" src="{src}"></video>'
         parts.append(f'<div class="item">{tag}</div>')

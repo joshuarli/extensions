@@ -1,4 +1,4 @@
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readdirSync, statSync } from "node:fs";
 import { join, dirname, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -19,12 +19,14 @@ import {
   exportFolderName,
 } from "../../x-archive-core/src/export-paths.ts";
 import { buildDebugReport } from "../../x-archive-core/src/debug.ts";
-import { buildGraphqlUrl } from "../../x-archive-core/src/api.ts";
+import { Effect } from "effect";
+import { graphqlRequest } from "../../x-archive-core/src/api.ts";
+import { extractLookupUserId } from "../../x-archive-core/src/collector.ts";
 import { parseProfileScreenName, type Credentials } from "../../x-archive-core/src/capture.ts";
 import { FsBookmarksStore, FsLikesStore, FsProfileStore } from "./fs-store.ts";
 import {
   buildDeps,
-  cookieHeaders,
+  cookieSession,
   readCapturedCredentials,
   readHeliumSession,
   type XSession,
@@ -93,13 +95,14 @@ async function resolveTargetUserId(
   const authorization = credentials.authorization;
   if (!authorization) throw new Error("Captured credentials carry no authorization header. Open x.com in Helium once with the extension loaded.");
   status.add("Resolving @" + screenName + " to an X user id…");
-  const url = buildGraphqlUrl(queryId, "UserByScreenName", { screen_name: screenName }, credentials.features["UserByScreenName"]);
-  const response = await fetch(url, { headers: cookieHeaders(session) });
-  const body: unknown = await response.json().catch(() => null);
-  const result = (body as Record<string, unknown> | null)?.["data"] as Record<string, unknown> | undefined;
-  const user = (result?.["user"] as Record<string, unknown> | undefined)?.["result"] as Record<string, unknown> | undefined;
-  const restId = user?.["rest_id"];
-  if (typeof restId !== "string" || !/^\d+$/u.test(restId)) {
+  void queryId;
+  const body = await Effect.runPromise(
+    graphqlRequest(session.userId, credentials, "UserByScreenName", { screen_name: screenName }, AbortSignal.timeout(30_000), async () => cookieSession(session)),
+  ).catch((cause: unknown) => {
+    throw new Error("X could not resolve @" + screenName + ": " + (cause instanceof Error ? cause.message : String(cause)));
+  });
+  const restId = extractLookupUserId(body);
+  if (!restId) {
     throw new Error("X could not resolve @" + screenName + " to a user id. Check the handle and reopen the profile in Helium.");
   }
   const target = {
@@ -114,11 +117,27 @@ async function resolveTargetUserId(
   return restId;
 }
 
-async function renderArchive(folder: string): Promise<boolean> {
+function mediaFolderBytes(folder: string): number {
+  try {
+    return readdirSync(join(folder, "media")).reduce(
+      (sum, entry) => sum + statSync(join(folder, "media", entry)).size,
+      0,
+    );
+  } catch {
+    return 0;
+  }
+}
+
+const INLINE_MEDIA_BUDGET = 256 * 1024 * 1024;
+
+async function renderArchive(folder: string): Promise<{ ok: boolean; mode: string }> {
+  const bytes = mediaFolderBytes(folder);
+  const mode = bytes > INLINE_MEDIA_BUDGET ? "external-media" : "inline";
+  const args = mode === "inline" ? [RENDER_TOOL, folder] : [RENDER_TOOL, folder, "--external-media"];
   return new Promise((resolvePromise) => {
-    const child = spawn("python3", [RENDER_TOOL, folder], { stdio: ["ignore", "inherit", "inherit"] });
-    child.on("close", (code) => resolvePromise(code === 0));
-    child.on("error", () => resolvePromise(false));
+    const child = spawn("python3", args, { stdio: ["ignore", "inherit", "inherit"] });
+    child.on("close", (code) => resolvePromise({ ok: code === 0, mode }));
+    child.on("error", () => resolvePromise({ ok: false, mode }));
   });
 }
 
@@ -177,7 +196,8 @@ async function finishExport(input: FinishExportInput): Promise<RunSummary> {
   writeJsonFile(join(outDir, "debug.json"), report, 0o644);
   let archiveHtml: string | null = null;
   if (options.render) {
-    if (await renderArchive(outDir)) archiveHtml = join(outDir, "archive.html");
+    const rendered = await renderArchive(outDir);
+    if (rendered.ok) archiveHtml = join(outDir, "archive.html");
     else status.add("Rendering failed; the JSON archive is still complete.");
   }
   return {

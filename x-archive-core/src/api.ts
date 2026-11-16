@@ -77,7 +77,11 @@ export function graphqlRequest(
       if (!current.csrfToken) throw new RequestFailure("auth", "Missing X CSRF cookie. Sign in to X again.");
       const headers: Record<string, string> = {
         Authorization: authorization,
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36",
+        Origin: "https://x.com",
+        Referer: "https://x.com/",
         "X-Csrf-Token": current.csrfToken,
+        ...(current.cookieHeader ? { Cookie: current.cookieHeader } : {}),
         "X-Twitter-Active-User": "yes",
         "X-Twitter-Auth-Type": "OAuth2Session",
         "X-Twitter-Client-Language": "en",
@@ -91,9 +95,7 @@ export function graphqlRequest(
         variables,
         credentials.features[operation],
         credentials.fieldToggles?.[operation]
-          ?? (GRAPHQL_FIELD_TOGGLES as readonly string[]).includes(operation)
-            ? DEFAULT_FIELD_TOGGLES
-            : undefined,
+          ?? (((GRAPHQL_FIELD_TOGGLES as readonly string[]).includes(operation)) ? DEFAULT_FIELD_TOGGLES : undefined),
       );
       let response: Response;
       try {
@@ -108,6 +110,10 @@ export function graphqlRequest(
         throw new RequestFailure("network", "X request failed: " + String(cause));
       }
 
+      if (process.env["X_ARCHIVE_DEBUG"]) {
+        const names = Object.keys(headers).map((name) => name + "=" + String(headers[name]).length).join(",");
+        console.error("x-debug: operation=" + operation + " status=" + response.status + " header-lengths=" + names + " url=" + url);
+      }
       if (response.status === 429) throw new RequestFailure("rate_limit", "X rate limit reached (HTTP 429).");
       if (response.status === 401 || response.status === 403) {
         throw new RequestFailure("auth", "X rejected the session (HTTP " + response.status + "). Revisit X and try again.");

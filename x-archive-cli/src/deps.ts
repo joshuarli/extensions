@@ -110,9 +110,9 @@ function cookieHeader(session: XSession): string {
   return session.cookies.map((cookie) => cookie.name + "=" + cookie.value).join("; ");
 }
 
-export function cookieSession(session: XSession): { userId: string | null; csrfToken: string | null } {
+export function cookieSession(session: XSession): { userId: string | null; csrfToken: string | null; cookieHeader: string } {
   const ct0 = session.cookies.find((cookie) => cookie.name === "ct0");
-  return { userId: session.userId, csrfToken: ct0?.value ?? null };
+  return { userId: session.userId, csrfToken: ct0?.value ?? null, cookieHeader: cookieHeader(session) };
 }
 
 export function cookieHeaders(session: XSession): Record<string, string> {

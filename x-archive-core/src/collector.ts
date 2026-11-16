@@ -401,7 +401,7 @@ export async function collectProfileTimeline(
   return { total, profile };
 }
 
-function extractLookupUserId(response: unknown): string | null {
+export function extractLookupUserId(response: unknown): string | null {
   const body = response as Record<string, unknown> | null;
   const data = body?.["data"] as Record<string, unknown> | undefined;
   const user = data?.["user"] as Record<string, unknown> | undefined;

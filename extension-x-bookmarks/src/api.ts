@@ -14,7 +14,14 @@ export type { XSession, XSessionProvider } from "../../x-archive-core/src/sessio
 const chromeSession: XSessionProvider = async () => {
   const twid = await chrome.cookies.get({ url: "https://x.com/", name: "twid" });
   const ct0 = await chrome.cookies.get({ url: "https://x.com/", name: "ct0" });
-  return { userId: parseUserId(twid?.value), csrfToken: ct0?.value ?? null };
+  let cookieHeader: string | undefined;
+  try {
+    const all = await chrome.cookies.getAll({ domain: "x.com" });
+    if (all.length) cookieHeader = all.map((cookie) => cookie.name + "=" + cookie.value).join("; ");
+  } catch {
+    cookieHeader = undefined;
+  }
+  return { userId: parseUserId(twid?.value), csrfToken: ct0?.value ?? null, ...(cookieHeader ? { cookieHeader } : {}) };
 };
 
 export { chromeSession };
