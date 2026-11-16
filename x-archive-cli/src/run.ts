@@ -1,4 +1,4 @@
-import { mkdirSync, readdirSync, statSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { join, dirname, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -117,27 +117,11 @@ async function resolveTargetUserId(
   return restId;
 }
 
-function mediaFolderBytes(folder: string): number {
-  try {
-    return readdirSync(join(folder, "media")).reduce(
-      (sum, entry) => sum + statSync(join(folder, "media", entry)).size,
-      0,
-    );
-  } catch {
-    return 0;
-  }
-}
-
-const INLINE_MEDIA_BUDGET = 256 * 1024 * 1024;
-
-async function renderArchive(folder: string): Promise<{ ok: boolean; mode: string }> {
-  const bytes = mediaFolderBytes(folder);
-  const mode = bytes > INLINE_MEDIA_BUDGET ? "external-media" : "inline";
-  const args = mode === "inline" ? [RENDER_TOOL, folder] : [RENDER_TOOL, folder, "--external-media"];
+async function renderArchive(folder: string): Promise<boolean> {
   return new Promise((resolvePromise) => {
-    const child = spawn("python3", args, { stdio: ["ignore", "inherit", "inherit"] });
-    child.on("close", (code) => resolvePromise({ ok: code === 0, mode }));
-    child.on("error", () => resolvePromise({ ok: false, mode }));
+    const child = spawn("python3", [RENDER_TOOL, folder], { stdio: ["ignore", "inherit", "inherit"] });
+    child.on("close", (code) => resolvePromise(code === 0));
+    child.on("error", () => resolvePromise(false));
   });
 }
 
@@ -196,8 +180,7 @@ async function finishExport(input: FinishExportInput): Promise<RunSummary> {
   writeJsonFile(join(outDir, "debug.json"), report, 0o644);
   let archiveHtml: string | null = null;
   if (options.render) {
-    const rendered = await renderArchive(outDir);
-    if (rendered.ok) archiveHtml = join(outDir, "archive.html");
+    if (await renderArchive(outDir)) archiveHtml = join(outDir, "archive.html");
     else status.add("Rendering failed; the JSON archive is still complete.");
   }
   return {

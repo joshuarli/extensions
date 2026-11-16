@@ -24,9 +24,9 @@ pnpm x download self --out=/path     # output root (default ~/Downloads)
 Each export writes `<folder>-<date>/` with `<kind>.json` (`bookmarks.json`,
 `likes.json`, or `posts.json`), a `media/` folder with the actual files,
 `debug.json`, and `archive.html` — a static, script-free, X-styled page
-of the whole archive. Rendering is external-media for large archives
-(>256 MB of media) and fully inline otherwise, so the HTML is always
-usable offline; open it to browse the archive.
+of the whole archive. The page references `media/` relatively, so the
+folder must travel intact (a 13 GB inlined file helps nobody); open
+`archive.html` to browse the archive.
 
 `collection: complete` in `debug.json` means X's timeline was fully
 scanned. X rate-limits large timelines aggressively; if a run stops

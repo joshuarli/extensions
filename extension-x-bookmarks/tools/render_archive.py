@@ -1,34 +1,27 @@
 #!/usr/bin/env python3
-"""Render an X Archive export into a single self-contained HTML file.
+"""Render an X Archive export into a static HTML page.
 
 Reads an export folder produced by the suite's profile export (posts.json
 plus media/) and writes one static, script-free page that mimics X's dark
 web timeline: every post with its media, dates, metrics, quoted posts, and
-repost/reply context. Media are embedded inline as data URIs, so the output
-is fully self-contained; avatars are rendered as deterministic initial
-circles (no network access at view time or generation time).
+repost/reply context. Media are referenced relatively from media/, so the
+page and its files travel as a folder; avatars are rendered as deterministic
+initial circles (no network access at view time or generation time).
 
 Usage:
-  render_archive.py ARCHIVE_FOLDER [--output PATH] [--external-media] [--text-only]
+  render_archive.py ARCHIVE_FOLDER [--output PATH] [--text-only]
 
-Defaults: output is ARCHIVE_FOLDER/archive.html. --external-media links
-media/ relatively instead of embedding (not self-contained). --text-only
-omits media entirely.
+Defaults: output is ARCHIVE_FOLDER/archive.html. --text-only omits media
+entirely.
 """
 
 import argparse
-import base64
 import html
 import json
 import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-
-MIME_BY_EXT = {
-    "jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png", "gif": "image/gif",
-    "webp": "image/webp", "mp4": "video/mp4", "mov": "video/quicktime", "webm": "video/webm",
-}
 
 CSS = r"""
 :root {
@@ -167,12 +160,6 @@ def linkify(text: str, urls, mentions, hashtags) -> str:
     return out
 
 
-def data_uri(path: Path) -> str:
-    ext = path.suffix.lstrip(".").lower()
-    mime = MIME_BY_EXT.get(ext, "application/octet-stream")
-    return f"data:{mime};base64," + base64.b64encode(path.read_bytes()).decode()
-
-
 def tweet_media_filename(tweet_id: str, index: int, ext: str, quoted: bool) -> str:
     return f"{tweet_id}{'_quoted' if quoted else ''}_{index}.{ext}"
 
@@ -204,19 +191,10 @@ def media_items(post_or_quoted, tweet_id: str, quoted: bool, media_dir: Path, mo
             ext = ext_from_url(best.get("url", "") if best else url, "mp4")
             kind = "video"
         filename = tweet_media_filename(tweet_id, index, ext, quoted)
-        src_path = media_dir / filename
         if mode == "text-only":
             continue
-        if mode == "external-media":
-            src = "media/" + filename
-            srcset = None
-        else:
-            if not src_path.exists():
-                print(f"render_archive: media file missing: {src_path}", file=sys.stderr)
-                continue
-            src = data_uri(src_path)
-            srcset = None
-        items.append((kind, src, alt, src_path if mode == "inline" else None))
+        src = "media/" + filename
+        items.append((kind, src, alt))
     return items
 
 
@@ -227,7 +205,7 @@ def render_media(items, counter):
     extra = len(items) - len(shown)
     cls = f"m{len(shown)}"
     parts = [f'<div class="media {cls}">']
-    for kind, src, alt, _path in shown:
+    for kind, src, alt in shown:
         if kind == "photo":
             tag = f'<img loading="lazy" alt="{esc(alt)}" src="{src}">'
         elif kind == "gif":
@@ -328,10 +306,9 @@ def render_post(post, mode, media_dir):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Render an X Archive export folder into one self-contained HTML file.")
+    parser = argparse.ArgumentParser(description="Render an X Archive export folder into one static HTML page.")
     parser.add_argument("archive", type=Path, help="Path to the export folder (containing posts.json and media/)")
     parser.add_argument("--output", type=Path, default=None, help="Output HTML path (default: ARCHIVE/archive.html)")
-    parser.add_argument("--external-media", action="store_true", help="Link media/ relatively instead of embedding data URIs (not self-contained)")
     parser.add_argument("--text-only", action="store_true", help="Omit media entirely")
     args = parser.parse_args()
 
@@ -341,7 +318,7 @@ def main():
     if alt_path is None:
         parser.error(f"no posts.json, likes.json or bookmarks.json in {folder}")
 
-    mode = "text-only" if args.text_only else ("external-media" if args.external_media else "inline")
+    mode = "text-only" if args.text_only else "media"
     media_dir = folder / "media"
     output = args.output or (folder / "archive.html")
 
