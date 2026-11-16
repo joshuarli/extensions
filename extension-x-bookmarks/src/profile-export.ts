@@ -180,3 +180,33 @@ export function downloadPostsMedia(
     startWorkers(activeWorkers);
   });
 }
+export async function filterAlreadyDownloadedMedia(
+  jobs: readonly MediaJob[],
+  folderName: string,
+  report: (message: string) => void,
+): Promise<MediaJob[]> {
+  try {
+    const history = await chrome.downloads.search({
+      query: [folderName + "/media/"],
+      state: "complete",
+      limit: 10000,
+    });
+    if (!Array.isArray(history) || history.length === 0) return [...jobs];
+    const suffixes = new Set(history
+      .map((item) => (typeof item?.filename === "string" ? item.filename : ""))
+      .filter(Boolean));
+    const remaining = jobs.filter((job) => {
+      const suffix = folderName + "/media/" + job.filename;
+      for (const filename of suffixes) {
+        if (filename.endsWith(suffix)) return false;
+      }
+      return true;
+    });
+    if (remaining.length < jobs.length) {
+      report("Skipping " + (jobs.length - remaining.length) + " media files already downloaded; fetching " + remaining.length + " remaining.");
+    }
+    return remaining;
+  } catch {
+    return [...jobs];
+  }
+}

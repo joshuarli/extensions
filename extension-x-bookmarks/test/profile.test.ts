@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { collectProfile } from "../src/collector.ts";
 import { openProfileArchive, assembleProfileArchive, mergeProfilePost, listProfileStates, loadProfileState } from "../src/profile-storage.ts";
 import { collectMediaJobs } from "../src/media.ts";
-import { downloadPostsMedia, exportFolderName } from "../src/profile-export.ts";
+import { downloadPostsMedia, exportFolderName, filterAlreadyDownloadedMedia } from "../src/profile-export.ts";
 import { parseProfileTimeline } from "../src/parser.ts";
 import type { Bookmark } from "../src/parser.ts";
 
@@ -800,6 +800,49 @@ describe("interrupted profile scans resume from the checkpointed cursor", () => 
     } finally {
       (globalThis as Record<string, unknown>)["fetch"] = originalFetch;
       db.close();
+    }
+  });
+});
+
+describe("skipping already downloaded media", () => {
+  const jobs = [
+    { tweet_id: "1", index: 0, kind: "photo" as const, url: "https://pbs.twimg.com/1.jpg", filename: "1_0.jpg" },
+    { tweet_id: "1", index: 1, kind: "photo" as const, url: "https://pbs.twimg.com/2.jpg", filename: "1_1.jpg" },
+    { tweet_id: "2", index: 0, kind: "photo" as const, url: "https://pbs.twimg.com/3.jpg", filename: "2_0.jpg" },
+  ];
+
+  it("skips jobs whose files completed in this folder and keeps the rest", async () => {
+    (globalThis as Record<string, unknown>)["chrome"] = {
+      downloads: {
+        search: async ({ query, state }: { query: string[]; state: string }) => {
+          expect(state).toBe("complete");
+          expect(query).toEqual(["bookmarks-2026-11-16/media/"]);
+          return [
+            { filename: "/Users/josh/Downloads/bookmarks-2026-11-16/media/1_0.jpg" },
+            { filename: "/Users/josh/Downloads/bookmarks-2026-11-16/media/2_0.jpg" },
+          ];
+        },
+      },
+    };
+    try {
+      const remaining = await filterAlreadyDownloadedMedia(jobs, "bookmarks-2026-11-16", () => {});
+      expect(remaining.map((job) => job.filename)).toEqual(["1_1.jpg"]);
+    } finally {
+      delete (globalThis as Record<string, unknown>)["chrome"];
+    }
+  });
+
+  it("downloads everything when the history lookup fails or finds nothing", async () => {
+    (globalThis as Record<string, unknown>)["chrome"] = {
+      downloads: {
+        search: async () => { throw new Error("downloads unavailable"); },
+      },
+    };
+    try {
+      const remaining = await filterAlreadyDownloadedMedia(jobs, "bookmarks-2026-11-16", () => {});
+      expect(remaining.map((job) => job.filename)).toEqual(["1_0.jpg", "1_1.jpg", "2_0.jpg"]);
+    } finally {
+      delete (globalThis as Record<string, unknown>)["chrome"];
     }
   });
 });

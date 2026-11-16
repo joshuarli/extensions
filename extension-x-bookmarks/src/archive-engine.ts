@@ -23,6 +23,7 @@ import {
   downloadPostsJson,
   downloadPostsMedia,
   exportFolderName,
+  filterAlreadyDownloadedMedia,
 } from "./profile-export.ts";
 import { buildDebugReport, clearLastError, clearStatusLog, recordLastError, recordStatusEntry } from "./debug.ts";
 import { currentUserId, readProfileTarget } from "./capture.ts";
@@ -76,7 +77,8 @@ async function runProfile(
       const archive = await assembleProfileArchive(profileDb, account, targetUserId);
       const stored = await readProfileTarget(account);
       folder = exportFolderName(archive.profile.screen_name ?? stored?.screenName, targetUserId);
-      const jobs = collectMediaJobs(archive.posts);
+      const jobsAll = collectMediaJobs(archive.posts);
+      const jobs = { ...jobsAll, jobs: await filterAlreadyDownloadedMedia(jobsAll.jobs, folder, report) };
       const jsonFilename = await downloadPostsJson(JSON.stringify(archive, null, 2), folder);
       report("Saved posts.json. Downloading " + jobs.jobs.length + " media files to " + folder + "/media/…");
       await patchArchiveRun({ mediaDownloaded: 0, mediaTotal: jobs.jobs.length });
@@ -153,7 +155,8 @@ async function runBookmarks(
       await patchArchiveRun({ phase: "exporting", detail: "Preparing bookmarks.json" });
       const data = await assembleArchive(db, account);
       folder = bookmarksFolderName();
-      const jobs = collectMediaJobs(data.bookmarks);
+      const jobsAll = collectMediaJobs(data.bookmarks);
+      const jobs = { ...jobsAll, jobs: await filterAlreadyDownloadedMedia(jobsAll.jobs, folder, report) };
       const jsonFilename = await downloadFolderFile(JSON.stringify(data, null, 2), folder, "bookmarks.json");
       report("Saved bookmarks.json. Downloading " + jobs.jobs.length + " media files to " + folder + "/media/…");
       await patchArchiveRun({ mediaDownloaded: 0, mediaTotal: jobs.jobs.length });
