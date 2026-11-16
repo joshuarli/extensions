@@ -309,6 +309,15 @@ session.
 its private GraphQL shape or served something unexpected; the posts captured so
 far are kept. Reload and try again; if it persists, report the shape drift.
 
+## Viewing the archive locally
+
+`python3 extension-x-bookmarks/tools/render_archive.py <export-folder>` writes a
+single self-contained `archive.html` next to `posts.json`: a static, script-free,
+X-styled dark timeline of every post with dates, metrics, quoted posts, replies,
+and media embedded inline (~700 MB for a large account). Open it offline anywhere;
+`--text-only` drops media, `--external-media` links `media/` instead of embedding
+(small file, not self-contained).
+
 ## Development
 
 pnpm run check runs strict typechecking and unit tests. pnpm run dist
