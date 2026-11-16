@@ -1,32 +1,15 @@
 import { Schema } from "effect";
-import { BookmarkSchema, type Bookmark, type Folder } from "../../x-archive-core/src/parser.ts";
+import { type Bookmark, type Folder } from "../../x-archive-core/src/parser.ts";
+import {
+  assembleBookmarkArchive,
+  ScanStateSchema,
+  type ScanState,
+} from "../../x-archive-core/src/storage.ts";
+import { mergeBookmark } from "../../x-archive-core/src/merge.ts";
 
-export type Coverage = "complete" | "partial" | "not_checked";
-
-export interface ScanState {
-  started_at: string;
-  updated_at: string;
-  bookmarks: Coverage;
-  folders: Coverage;
-  reason: string;
-  cursors?: Record<string, string> | undefined;
-}
-
-const ScanStateSchema = Schema.Struct({
-  started_at: Schema.String,
-  updated_at: Schema.String,
-  bookmarks: Schema.Literals(["complete", "partial", "not_checked"]),
-  folders: Schema.Literals(["complete", "partial", "not_checked"]),
-  reason: Schema.String,
-  cursors: Schema.optional(Schema.Record(Schema.String, Schema.String)),
-});
-
-function request<T>(operation: IDBRequest<T>): Promise<T> {
-  return new Promise((resolve, reject) => {
-    operation.onsuccess = () => resolve(operation.result);
-    operation.onerror = () => reject(operation.error ?? new Error("IndexedDB request failed."));
-  });
-}
+export { assembleLikesArchive } from "../../x-archive-core/src/storage.ts";
+export type { Coverage, LikesScanState, ProfileScanState, ScanState } from "../../x-archive-core/src/storage.ts";
+export { mergeBookmark };
 
 export function openArchive(userId: string): Promise<IDBDatabase> {
   if (!/^\d+$/u.test(userId)) return Promise.reject(new Error("Invalid X account ID."));
@@ -44,28 +27,11 @@ export function openArchive(userId: string): Promise<IDBDatabase> {
   });
 }
 
-export function mergeBookmark(old: Bookmark | undefined, incoming: Bookmark, folderId?: string): Bookmark {
-  const ids = new Set([...(old?.folder_ids ?? []), ...incoming.folder_ids]);
-  if (folderId) ids.add(folderId);
-  const keepOld = old?.status === "available" && incoming.status === "unavailable";
-  const preserve = old?.status === "available" && incoming.status === "available" ? {
-    ...(!incoming.full_text && old.full_text ? { full_text: old.full_text } : {}),
-    ...(!incoming.media || (Array.isArray(incoming.media) && !incoming.media.length) ? { media: old.media } : {}),
-    ...(!incoming.quoted_tweet ? { quoted_tweet: old.quoted_tweet } : {}),
-    ...(!incoming.card ? { card: old.card } : {}),
-  } : {};
-  const merged: Bookmark = {
-    ...(old ?? {}),
-    ...(keepOld ? {} : incoming),
-    ...preserve,
-    tweet_id: incoming.tweet_id,
-    sort_index: incoming.sort_index ?? old?.sort_index ?? null,
-    status: keepOld ? "available" : incoming.status,
-    folder_ids: [...ids],
-    observed_at: incoming.observed_at,
-    ...(keepOld || incoming.status === "available" ? { unavailable_reason: undefined } : {}),
-  };
-  return Schema.decodeUnknownSync(BookmarkSchema)(merged);
+function request<T>(operation: IDBRequest<T>): Promise<T> {
+  return new Promise((resolve, reject) => {
+    operation.onsuccess = () => resolve(operation.result);
+    operation.onerror = () => reject(operation.error ?? new Error("IndexedDB request failed."));
+  });
 }
 
 export function savePage(db: IDBDatabase, bookmarks: Bookmark[], folderId?: string): Promise<void> {
@@ -134,36 +100,5 @@ export async function assembleArchive(db: IDBDatabase, userId: string): Promise<
     request(db.transaction("folders", "readonly").objectStore("folders").getAll()),
     loadState(db),
   ]);
-  const bookmarks = (rawBookmarks as unknown[]).map((record) =>
-    Schema.decodeUnknownSync(BookmarkSchema)(record));
-  const folders = (rawFolders as Folder[]).filter((folder) =>
-    typeof folder.id === "string" && typeof folder.name === "string");
-  const names = new Map(folders.map((folder) => [folder.id, folder.name]));
-  const withFolders = bookmarks.map((bookmark) => ({
-    ...bookmark,
-    folders: bookmark.folder_ids.map((id) => names.get(id) ?? id),
-  })).sort((a, b) => b.sort_index?.localeCompare(a.sort_index ?? "") ?? -1);
-  const available = withFolders.filter((bookmark) => bookmark.status === "available").length;
-  return {
-    export_metadata: {
-      tool: "x-bookmarks",
-      schema_version: 2,
-      kind: "cumulative",
-      exported_at: new Date().toISOString(),
-      user_id: userId,
-      collection: {
-        bookmarks: state?.bookmarks ?? "not_checked",
-        folders: state?.folders ?? "not_checked",
-        reason: state?.reason ?? "not_scanned",
-      },
-      stats: {
-        total_bookmarks: withFolders.length,
-        available_bookmarks: available,
-        unavailable_bookmarks: withFolders.length - available,
-        total_folders: folders.length,
-      },
-    },
-    folders,
-    bookmarks: withFolders,
-  };
+  return assembleBookmarkArchive(rawBookmarks as unknown[], rawFolders as unknown[], state, userId);
 }

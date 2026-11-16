@@ -1,46 +1,18 @@
 import { Schema } from "effect";
-import { BookmarkSchema, type Bookmark, type ProfileInfo } from "../../x-archive-core/src/parser.ts";
-import { mergeBookmark } from "./storage.ts";
-import { collectMediaJobs } from "../../x-archive-core/src/media.ts";
-import { PROFILE_OPERATIONS, type ProfileOperation } from "./capture.ts";
+import { type Bookmark } from "../../x-archive-core/src/parser.ts";
+import {
+  assembleProfileArchive as assemble,
+  ProfileScanStateSchema,
+  type ProfileScanProfile,
+  type ProfileScanState,
+} from "../../x-archive-core/src/storage.ts";
+import { mergeBookmark } from "../../x-archive-core/src/merge.ts";
 
 export const PROFILE_POSTS_STORE = "posts";
 export const PROFILE_STATE_STORE = "state";
 
-export type Coverage = "complete" | "partial" | "not_checked";
-
-export type ProfileScanProfile = ProfileInfo;
-
-export interface ProfileScanState {
-  started_at: string;
-  updated_at: string;
-  posts: Coverage;
-  reason: string;
-  operation?: ProfileOperation | undefined;
-  profile?: ProfileScanProfile | undefined;
-  cursors?: Record<string, string> | undefined;
-}
-
-const ProfileScanProfileSchema = Schema.Struct({
-  user_id: Schema.NullOr(Schema.String),
-  screen_name: Schema.NullOr(Schema.String),
-  name: Schema.NullOr(Schema.String),
-  profile_image_url: Schema.NullOr(Schema.String),
-  followers_count: Schema.Number,
-  verified: Schema.Boolean,
-  description: Schema.NullOr(Schema.String),
-});
-
-const ProfileScanStateSchema = Schema.Struct({
-  started_at: Schema.String,
-  updated_at: Schema.String,
-  posts: Schema.Literals(["complete", "partial", "not_checked"]),
-  reason: Schema.String,
-  operation: Schema.optional(Schema.Literals(PROFILE_OPERATIONS)),
-  profile: Schema.optional(ProfileScanProfileSchema),
-  cursors: Schema.optional(Schema.Record(Schema.String, Schema.String)),
-});
-
+export type { ProfileScanProfile };
+export type { ProfileScanState };
 export type ProfilePost = Bookmark & { target_user_id: string };
 
 export interface SavedProfileTarget {
@@ -49,11 +21,10 @@ export interface SavedProfileTarget {
   postCount: number;
 }
 
-function request<T>(operation: IDBRequest<T>): Promise<T> {
-  return new Promise((resolve, reject) => {
-    operation.onsuccess = () => resolve(operation.result);
-    operation.onerror = () => reject(operation.error ?? new Error("IndexedDB request failed."));
-  });
+export function mergeProfilePost(old: ProfilePost | undefined, incoming: Bookmark, targetUserId: string): ProfilePost {
+  if (!old) return { ...mergeBookmark(undefined, incoming), target_user_id: targetUserId };
+  const { target_user_id: _target, ...previous } = old;
+  return { ...mergeBookmark(previous, incoming), target_user_id: targetUserId };
 }
 
 export function openProfileArchive(accountUserId: string): Promise<IDBDatabase> {
@@ -72,14 +43,15 @@ export function openProfileArchive(accountUserId: string): Promise<IDBDatabase> 
   });
 }
 
-function stateKey(targetUserId: string): string {
-  return "target:" + targetUserId;
+function request<T>(operation: IDBRequest<T>): Promise<T> {
+  return new Promise((resolve, reject) => {
+    operation.onsuccess = () => resolve(operation.result);
+    operation.onerror = () => reject(operation.error ?? new Error("IndexedDB request failed."));
+  });
 }
 
-export function mergeProfilePost(old: ProfilePost | undefined, incoming: Bookmark, targetUserId: string): ProfilePost {
-  if (!old) return { ...mergeBookmark(undefined, incoming), target_user_id: targetUserId };
-  const { target_user_id: _target, ...previous } = old;
-  return { ...mergeBookmark(previous, incoming), target_user_id: targetUserId };
+function stateKey(targetUserId: string): string {
+  return "target:" + targetUserId;
 }
 
 export function saveProfilePage(db: IDBDatabase, posts: Bookmark[], targetUserId: string): Promise<void> {
@@ -144,15 +116,9 @@ export async function profilePostCount(db: IDBDatabase, targetUserId: string): P
   return request(index.count(targetUserId));
 }
 
-function stripTarget(record: unknown): unknown {
-  if (record === null || typeof record !== "object" || Array.isArray(record)) return record;
-  const { target_user_id: _target, ...rest } = record as Record<string, unknown>;
-  return rest;
-}
-
 export async function assembleProfileArchive(db: IDBDatabase, accountUserId: string, targetUserId: string): Promise<{
   export_metadata: object;
-  profile: ProfileScanProfile;
+  profile: import("../../x-archive-core/src/storage.ts").ProfileScanProfile;
   posts: Array<Omit<Bookmark, "folder_ids">>;
 }> {
   const [rawPosts, state] = await Promise.all([
@@ -160,43 +126,6 @@ export async function assembleProfileArchive(db: IDBDatabase, accountUserId: str
       .index("by-target").getAll(targetUserId)),
     loadProfileState(db, targetUserId),
   ]);
-  const posts = (rawPosts as unknown[]).map((record) =>
-    Schema.decodeUnknownSync(BookmarkSchema)(stripTarget(record)));
-  const withMedia = collectMediaJobs(posts);
-  posts.sort((a, b) => b.sort_index?.localeCompare(a.sort_index ?? "") ?? -1);
-  const available = posts.filter((post) => post.status === "available").length;
-  const profile = state?.profile ?? {
-    user_id: targetUserId,
-    screen_name: null,
-    name: null,
-    profile_image_url: null,
-    followers_count: 0,
-    verified: false,
-    description: null,
-  };
-  const exported = posts.map(({ folder_ids: _folderIds, ...post }) => post);
-  return {
-    export_metadata: {
-      tool: "x-profile-posts",
-      schema_version: 1,
-      kind: "cumulative",
-      exported_at: new Date().toISOString(),
-      user_id: accountUserId,
-      profile,
-      collection: {
-        posts: state?.posts ?? "not_checked",
-        reason: state?.reason ?? "not_scanned",
-        ...(state?.operation ? { operation: state.operation } : {}),
-      },
-      stats: {
-        total_posts: exported.length,
-        available_posts: available,
-        unavailable_posts: exported.length - available,
-        media_items: withMedia.jobs.length,
-        media_missing: withMedia.missing,
-      },
-    },
-    profile,
-    posts: exported,
-  };
+  return assemble(rawPosts as unknown[], state, accountUserId, targetUserId);
 }
+

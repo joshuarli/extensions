@@ -1,32 +1,13 @@
 import { Schema } from "effect";
-import { BookmarkSchema, type Bookmark } from "../../x-archive-core/src/parser.ts";
-import { mergeBookmark } from "./storage.ts";
-import { collectMediaJobs } from "../../x-archive-core/src/media.ts";
+import { type Bookmark } from "../../x-archive-core/src/parser.ts";
+import {
+  assembleLikesArchive as assemble,
+  LikesScanStateSchema,
+  type LikesScanState,
+} from "../../x-archive-core/src/storage.ts";
+import { mergeBookmark } from "../../x-archive-core/src/merge.ts";
 
-export type Coverage = "complete" | "partial" | "not_checked";
-
-export interface LikesScanState {
-  started_at: string;
-  updated_at: string;
-  likes: Coverage;
-  reason: string;
-  cursors?: Record<string, string> | undefined;
-}
-
-const LikesScanStateSchema = Schema.Struct({
-  started_at: Schema.String,
-  updated_at: Schema.String,
-  likes: Schema.Literals(["complete", "partial", "not_checked"]),
-  reason: Schema.String,
-  cursors: Schema.optional(Schema.Record(Schema.String, Schema.String)),
-});
-
-function request<T>(operation: IDBRequest<T>): Promise<T> {
-  return new Promise((resolve, reject) => {
-    operation.onsuccess = () => resolve(operation.result);
-    operation.onerror = () => reject(operation.error ?? new Error("IndexedDB request failed."));
-  });
-}
+export type { LikesScanState };
 
 export function openLikesArchive(accountUserId: string): Promise<IDBDatabase> {
   if (!/^\d+$/u.test(accountUserId)) return Promise.reject(new Error("Invalid X account ID."));
@@ -40,6 +21,13 @@ export function openLikesArchive(accountUserId: string): Promise<IDBDatabase> {
     opening.onsuccess = () => resolve(opening.result);
     opening.onerror = () => reject(opening.error ?? new Error("Could not open likes archive."));
     opening.onblocked = () => reject(new Error("Close other likes exporter tabs and retry."));
+  });
+}
+
+function request<T>(operation: IDBRequest<T>): Promise<T> {
+  return new Promise((resolve, reject) => {
+    operation.onsuccess = () => resolve(operation.result);
+    operation.onerror = () => reject(operation.error ?? new Error("IndexedDB request failed."));
   });
 }
 
@@ -92,30 +80,5 @@ export async function assembleLikesArchive(db: IDBDatabase, userId: string): Pro
     request(db.transaction("likes", "readonly").objectStore("likes").getAll()),
     loadLikesState(db),
   ]);
-  const likes = (rawLikes as unknown[]).map((record) =>
-    Schema.decodeUnknownSync(BookmarkSchema)(record));
-  const withMedia = collectMediaJobs(likes);
-  likes.sort((a, b) => b.sort_index?.localeCompare(a.sort_index ?? "") ?? -1);
-  const available = likes.filter((like) => like.status === "available").length;
-  return {
-    export_metadata: {
-      tool: "x-likes",
-      schema_version: 2,
-      kind: "cumulative",
-      exported_at: new Date().toISOString(),
-      user_id: userId,
-      collection: {
-        likes: state?.likes ?? "not_checked",
-        reason: state?.reason ?? "not_scanned",
-      },
-      stats: {
-        total_likes: likes.length,
-        available_likes: available,
-        unavailable_likes: likes.length - available,
-        media_items: withMedia.jobs.length,
-        media_missing: withMedia.missing,
-      },
-    },
-    likes,
-  };
+  return assemble(rawLikes as unknown[], state, userId);
 }
