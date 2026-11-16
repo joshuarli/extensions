@@ -507,7 +507,7 @@ describe("media downloads", () => {
     }
   });
 
-  it("collects interrupted downloads as failures without aborting the rest", async () => {
+  it("retries interrupted downloads before reporting them as failed", async () => {
     const downloads = stubDownloads();
     const resultPromise = downloadPostsMedia(jobs, "folder", {
       report: () => {},
@@ -518,6 +518,39 @@ describe("media downloads", () => {
     if (firstId === undefined || secondId === undefined) throw new Error("expected two downloads");
     for (const listener of downloads.listeners) listener({ id: firstId, state: { current: "interrupted" }, error: { current: "NETWORK_FAILED" } });
     for (const listener of downloads.listeners) listener({ id: secondId, state: { current: "complete" } });
+    await vi.waitFor(() => expect(downloads.started.size).toBe(3), { timeout: 5000 });
+    const [retryId] = [...downloads.started.keys()].filter((id) => id !== firstId && id !== secondId);
+    if (retryId === undefined) throw new Error("expected a retried download");
+    for (const listener of downloads.listeners) listener({ id: retryId, state: { current: "complete" } });
+    const result = await resultPromise;
+    expect(result.downloaded).toBe(2);
+    expect(result.failed).toEqual([]);
+  });
+
+  it("reports a file as failed only after every retry round is exhausted", async () => {
+    const downloads = stubDownloads();
+    const resultPromise = downloadPostsMedia(jobs, "folder", {
+      report: () => {},
+      signal: new AbortController().signal,
+    });
+    await vi.waitFor(() => expect(downloads.started.size).toBe(2));
+    const interrupt = async (id: number) => {
+      for (const listener of downloads.listeners) listener({ id, state: { current: "interrupted" }, error: { current: "NETWORK_FAILED" } });
+    };
+    const ids = [...downloads.started.keys()];
+    const firstId = ids[0];
+    const secondId = ids[1];
+    if (firstId === undefined || secondId === undefined) throw new Error("expected two downloads");
+    await interrupt(firstId);
+    for (const listener of downloads.listeners) listener({ id: secondId, state: { current: "complete" } });
+    const seen = new Set<number>([firstId, secondId]);
+    for (let round = 0; round < 2; round += 1) {
+      await vi.waitFor(() => expect(downloads.started.size).toBeGreaterThan(seen.size), { timeout: 5000 });
+      const retryId = [...downloads.started.keys()].find((id) => !seen.has(id));
+      if (retryId === undefined) throw new Error("expected another retried download");
+      seen.add(retryId);
+      await interrupt(retryId);
+    }
     const result = await resultPromise;
     expect(result.downloaded).toBe(1);
     expect(result.failed).toEqual([{ filename: "1_0.jpg", error: "NETWORK_FAILED" }]);
@@ -557,5 +590,168 @@ describe("profile timeline parse diagnostics", () => {
     if (!result.valid) expect(result.detail).toContain("UserUnavailable");
     const empty = parseProfileTimeline({}, "2026-11-15T00:00:00Z");
     if (!empty.valid) expect(empty.detail).toBe("response has no data.user.result");
+  });
+});
+
+describe("conversation modules in the replies timeline", () => {
+  const conversation = (id: string, foreignAuthor: string, ownAuthor: string) => ({
+    entryId: "profile-conversation-" + id,
+    sortIndex: "9000" + id,
+    content: {
+      __typename: "TimelineTimelineModule",
+      displayType: "VerticalConversation",
+      entryType: "TimelineTimelineModule",
+      items: [
+        { entryId: `profile-conversation-${id}-tweet-7000${id}`, item: { itemContent: {
+          __typename: "TimelineTweet",
+          tweetDisplayType: "Tweet",
+          tweet_results: { result: {
+            __typename: "Tweet",
+            rest_id: "7000" + id,
+            legacy: { full_text: "the parent tweet" },
+            core: { user_results: { result: { rest_id: foreignAuthor } } },
+          } } } } },
+        { entryId: `profile-conversation-${id}-tweet-8000${id}`, item: { itemContent: {
+          __typename: "TimelineTweet",
+          tweetDisplayType: "Tweet",
+          tweet_results: { result: {
+            __typename: "Tweet",
+            rest_id: "8000" + id,
+            legacy: { full_text: "the profile reply", extended_entities: { media: [{ type: "photo", media_url_https: "https://pbs.twimg.com/media/reply.jpg" }] } },
+            core: { user_results: { result: { rest_id: ownAuthor } } },
+          } } } } },
+      ],
+    },
+  });
+
+  it("keeps only the profile's own replies from conversation modules", () => {
+    const data = profilePage([conversation("1", "9999", targetUserId), cursor("next-cursor")]);
+    const result = parseProfileTimeline(data, "2026-11-15T00:00:00Z", targetUserId);
+    expect(result.valid).toBe(true);
+    if (!result.valid) return;
+    expect(result.posts.map((post) => post.tweet_id)).toEqual(["80001"]);
+    expect(result.posts[0]?.media).toMatchObject([{ url: "https://pbs.twimg.com/media/reply.jpg?format=jpg&name=orig" }]);
+    expect(result.nextCursor).toBe("next-cursor");
+  });
+
+  it("fails loudly when a conversation item carries a tweet with no author id", () => {
+    const broken = {
+      entryId: "profile-conversation-2",
+      sortIndex: "90002",
+      content: {
+        entryType: "TimelineTimelineModule",
+        items: [{ entryId: "profile-conversation-2-tweet-70002", item: { itemContent: {
+          tweet_results: { result: { __typename: "Tweet", rest_id: "70002", legacy: { full_text: "x" } } } } } }],
+      },
+    };
+    const result = parseProfileTimeline(profilePage([broken]), "2026-11-15T00:00:00Z", targetUserId);
+    expect(result.valid).toBe(false);
+    if (result.valid) return;
+    expect(result.detail).toContain("author id");
+  });
+
+  it("fails loudly when a conversation module is parsed without an author filter", () => {
+    const result = parseProfileTimeline(profilePage([conversation("3", "9999", targetUserId)]), "2026-11-15T00:00:00Z");
+    expect(result.valid).toBe(false);
+    if (result.valid) return;
+    expect(result.detail).toContain("author filter");
+  });
+
+  it("skips module items that are not tweets", () => {
+    const adOnly = {
+      entryId: "profile-conversation-4",
+      sortIndex: "90004",
+      content: {
+        entryType: "TimelineTimelineModule",
+        items: [{ entryId: "profile-conversation-4-ad", item: { itemContent: { __typename: "TimelinePromoFormulaItem" } } }],
+      },
+    };
+    const result = parseProfileTimeline(profilePage([adOnly]), "2026-11-15T00:00:00Z", targetUserId);
+    expect(result.valid).toBe(true);
+    if (result.valid) expect(result.posts).toEqual([]);
+  });
+});
+
+describe("conversation modules with unavailable tweets", () => {
+  const moduleWith = (result: unknown, id: string) => ({
+    entryId: "profile-conversation-" + id,
+    sortIndex: "9000" + id,
+    content: {
+      entryType: "TimelineTimelineModule",
+      items: [{ entryId: `profile-conversation-${id}-tweet-7000${id}`, item: { itemContent: {
+        tweet_results: { result },
+      } } }],
+    },
+  });
+
+  it("skips unavailable tweets instead of failing the page", () => {
+    const tombstone = moduleWith({ __typename: "TweetTombstone", rest_id: "700011" }, "11");
+    const data = profilePage([tombstone, cursor("next-cursor")]);
+    const result = parseProfileTimeline(data, "2026-11-15T00:00:00Z", targetUserId);
+    expect(result.valid).toBe(true);
+    if (result.valid) expect(result.posts).toEqual([]);
+  });
+
+  it("reads the author from legacy.user_id_str when core metadata is gone", () => {
+    const wrapped = moduleWith({
+      __typename: "Tweet",
+      rest_id: "700012",
+      legacy: { full_text: "legacy-only reply", user_id_str: targetUserId },
+    }, "12");
+    const result = parseProfileTimeline(profilePage([wrapped]), "2026-11-15T00:00:00Z", targetUserId);
+    expect(result.valid).toBe(true);
+    if (result.valid) expect(result.posts.map((post) => post.tweet_id)).toEqual(["700012"]);
+  });
+
+  it("reads visibility-wrapped replies on the profile's behalf", () => {
+    const visibilityWrapped = moduleWith({
+      __typename: "TweetWithVisibilityResults",
+      tweet: {
+        __typename: "Tweet",
+        rest_id: "700013",
+        legacy: { full_text: "wrapped reply" },
+        core: { user_results: { result: { rest_id: targetUserId } } },
+      },
+    }, "13");
+    const result = parseProfileTimeline(profilePage([visibilityWrapped]), "2026-11-15T00:00:00Z", targetUserId);
+    expect(result.valid).toBe(true);
+    if (result.valid) expect(result.posts.map((post) => post.tweet_id)).toEqual(["700013"]);
+  });
+});
+
+describe("promoted previews inside conversation modules", () => {
+  it("filters out TweetPreviewDisplay promo items by their advertiser id", () => {
+    const previewDisplay = {
+      entryId: "profile-conversation-2122369301783510976",
+      sortIndex: "900050",
+      content: {
+        entryType: "TimelineTimelineModule",
+        items: [
+          { entryId: "profile-conversation-2122369301783510976-tweet-2113170725528051867", item: { itemContent: {
+            tweet_results: {
+              result: {
+                __typename: "TweetPreviewDisplay",
+                cta: { title: { url: { url: "https://example.com", urlType: "DeepLink" } } },
+                tweet: {
+                  rest_id: "2113170725528051867",
+                  text: "promo text",
+                  core: { user_results: { result: { rest_id: "999888777" } } },
+                },
+              },
+            },
+          } } },
+          { entryId: "profile-conversation-2122369301783510976-tweet-800050", item: { itemContent: {
+            tweet_results: { result: {
+              __typename: "Tweet",
+              rest_id: "800050",
+              legacy: { full_text: "the profile reply", user_id_str: targetUserId },
+            } },
+          } } },
+        ],
+      },
+    };
+    const result = parseProfileTimeline(profilePage([previewDisplay]), "2026-11-15T00:00:00Z", targetUserId);
+    expect(result.valid).toBe(true);
+    if (result.valid) expect(result.posts.map((post) => post.tweet_id)).toEqual(["800050"]);
   });
 });

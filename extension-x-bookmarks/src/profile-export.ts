@@ -20,6 +20,10 @@ export function exportFolderName(screenName: string | null | undefined, userId: 
   return handle.length > 0 ? handle + "-" + date : "x-profile-" + userId + "-" + date;
 }
 
+export function bookmarksFolderName(now: Date = new Date()): string {
+  return "bookmarks-" + now.toISOString().slice(0, 10);
+}
+
 export async function downloadPostsJson(json: string, folderName: string): Promise<string> {
   return downloadFolderFile(json, folderName, "posts.json");
 }
@@ -38,7 +42,7 @@ function base64Url(json: string): string {
   return "data:application/json;base64," + btoa(binary);
 }
 
-async function downloadFolderFile(json: string, folderName: string, file: string): Promise<string> {
+export async function downloadFolderFile(json: string, folderName: string, file: string): Promise<string> {
   const filename = folderName + "/" + file;
   await chrome.downloads.download({ url: base64Url(json), filename, saveAs: false, conflictAction: "overwrite" });
   return filename;
@@ -47,6 +51,8 @@ async function downloadFolderFile(json: string, folderName: string, file: string
 const MEDIA_TIMEOUT_MS = 15 * 60_000;
 const MEDIA_CONCURRENCY = 3;
 const MEDIA_START_DELAY_MS = 150;
+const MEDIA_RETRY_ROUNDS = 2;
+const MEDIA_RETRY_DELAY_MS = 2_000;
 
 export function downloadPostsMedia(
   jobs: readonly MediaJob[],
@@ -60,6 +66,7 @@ export function downloadPostsMedia(
 ): Promise<MediaExportResult> {
   const { signal } = options;
   const workerCount = Math.min(MEDIA_CONCURRENCY, jobs.length);
+  const jobsByFilename = new Map(jobs.map((job) => [job.filename, job]));
   const pending = new Map<number, string>();
   const failed: Array<{ filename: string; error: string }> = [];
   let downloaded = 0;
@@ -67,13 +74,38 @@ export function downloadPostsMedia(
   let stopStarting = false;
   let started = 0;
   let workersDone = 0;
+  let activeWorkers = workerCount;
+  let attemptJobs: readonly MediaJob[] = jobs;
+  let retriesLeft = MEDIA_RETRY_ROUNDS;
 
   return new Promise<MediaExportResult>((resolve) => {
     const reportProgress = () => {
       options.onProgress?.({ downloaded, failed: failed.length, total: jobs.length });
     };
+    const startWorkers = (count: number): void => {
+      for (let i = 0; i < count; i++) void worker();
+    };
     const maybeFinish = () => {
-      if (settled || workersDone < workerCount || pending.size > 0) return;
+      if (settled || workersDone < activeWorkers || pending.size > 0) return;
+      if (!signal.aborted && retriesLeft > 0 && failed.length > 0) {
+        const retried = failed.flatMap((failure) => {
+          const job = jobsByFilename.get(failure.filename);
+          return job ? [job] : [];
+        });
+        if (retried.length > 0) {
+          retriesLeft -= 1;
+          failed.length = 0;
+          attemptJobs = retried;
+          started = 0;
+          workersDone = 0;
+          stopStarting = false;
+          activeWorkers = Math.min(MEDIA_CONCURRENCY, attemptJobs.length);
+          options.report("Retrying " + attemptJobs.length + " failed media download" + (attemptJobs.length === 1 ? "" : "s") + ".");
+          reportProgress();
+          setTimeout(() => startWorkers(activeWorkers), MEDIA_RETRY_DELAY_MS);
+          return;
+        }
+      }
       settled = true;
       clearTimeout(timeout);
       chrome.downloads.onChanged.removeListener(onChanged);
@@ -115,8 +147,8 @@ export function downloadPostsMedia(
     chrome.downloads.onChanged.addListener(onChanged);
 
     const worker = async (): Promise<void> => {
-      while (!signal.aborted && !stopStarting && started < jobs.length) {
-        const job = jobs[started];
+      while (!signal.aborted && !stopStarting && started < attemptJobs.length) {
+        const job = attemptJobs[started];
         if (!job) break;
         started += 1;
         try {
@@ -145,6 +177,6 @@ export function downloadPostsMedia(
       resolve({ total: 0, downloaded: 0, failed: [], stopped: false });
       return;
     }
-    for (let i = 0; i < workerCount; i++) void worker();
+    startWorkers(activeWorkers);
   });
 }

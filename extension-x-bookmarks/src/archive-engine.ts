@@ -17,19 +17,18 @@ import {
 import { assembleArchive, openArchive } from "./storage.ts";
 import { collectMediaJobs } from "./media.ts";
 import {
+  bookmarksFolderName,
   downloadDebugJson,
+  downloadFolderFile,
   downloadPostsJson,
   downloadPostsMedia,
   exportFolderName,
 } from "./profile-export.ts";
-import { buildDebugReport, clearLastError, recordLastError, type DebugStatusEntry } from "./debug.ts";
+import { buildDebugReport, clearLastError, clearStatusLog, recordLastError, recordStatusEntry } from "./debug.ts";
 import { currentUserId, readProfileTarget } from "./capture.ts";
 
-const statusLog: DebugStatusEntry[] = [];
-
 function log(text: string): void {
-  statusLog.push({ text, at: new Date().toISOString() });
-  if (statusLog.length > 40) statusLog.shift();
+  void recordStatusEntry(text);
 }
 
 function friendlyAbort(message: string): boolean {
@@ -100,7 +99,6 @@ async function runProfile(
           extensionVersion: chrome.runtime.getManifest().version,
           archive: archive.export_metadata,
           media: mediaResult,
-          statusLog,
         });
         const debugFilename = await downloadDebugJson(JSON.stringify(debugReport, null, 2), folder);
         debugNote = " Debug report: " + debugFilename + ".";
@@ -123,7 +121,6 @@ async function runProfile(
             extensionVersion: chrome.runtime.getManifest().version,
             archive: { profile: null, collection: { posts: "error", reason: message }, stats: null },
             media: null,
-            statusLog,
           });
           await downloadDebugJson(JSON.stringify(debugReport, null, 2), folder);
         } catch { /* The export error is the one that matters. */ }
@@ -151,23 +148,64 @@ async function runBookmarks(
         return "Bookmark collection finished. Saved bookmarks are retained.";
       }
     }
-    await patchArchiveRun({ phase: "exporting", detail: "Preparing bookmarks JSON" });
-    const data = await assembleArchive(db, account);
-    const filename = "x-bookmarks_" + account + "_" + new Date().toISOString().slice(0, 10) + ".json";
-    const jsonText = JSON.stringify(data, null, 2);
-    const bytes = new TextEncoder().encode(jsonText);
-    let binary = "";
-    const chunk = 0x8000;
-    for (let index = 0; index < bytes.length; index += chunk) {
-      binary += String.fromCharCode(...bytes.subarray(index, index + chunk));
+    let folder: string | null = null;
+    try {
+      await patchArchiveRun({ phase: "exporting", detail: "Preparing bookmarks.json" });
+      const data = await assembleArchive(db, account);
+      folder = bookmarksFolderName();
+      const jobs = collectMediaJobs(data.bookmarks);
+      const jsonFilename = await downloadFolderFile(JSON.stringify(data, null, 2), folder, "bookmarks.json");
+      report("Saved bookmarks.json. Downloading " + jobs.jobs.length + " media files to " + folder + "/media/…");
+      await patchArchiveRun({ mediaDownloaded: 0, mediaTotal: jobs.jobs.length });
+      const mediaResult = await downloadPostsMedia(jobs.jobs, folder, {
+        report,
+        signal,
+        onProgress: (progress) => void patchArchiveRun({
+          mediaDownloaded: progress.downloaded,
+          mediaTotal: progress.total,
+          detail: "Downloading media " + progress.downloaded + "/" + progress.total,
+        }),
+      });
+      const failedCount = mediaResult.failed.length;
+      let debugNote = "";
+      try {
+        const debugReport = await buildDebugReport({
+          accountId: account,
+          requestedProfile: undefined,
+          exportFolder: folder,
+          extensionVersion: chrome.runtime.getManifest().version,
+          archive: data.export_metadata,
+          media: mediaResult,
+          reportName: "x-bookmarks-debug",
+        });
+        const debugFilename = await downloadDebugJson(JSON.stringify(debugReport, null, 2), folder);
+        debugNote = " Debug report: " + debugFilename + ".";
+      } catch (debugError) {
+        debugNote = " Debug report failed: " + (debugError instanceof Error ? debugError.message : String(debugError)) + ".";
+      }
+      return "Exported " + data.bookmarks.length + " bookmarks to " + jsonFilename +
+        " with " + mediaResult.downloaded + "/" + mediaResult.total + " media files" +
+        (failedCount ? " (" + failedCount + " failed — re-run to retry)" : "") +
+        (mediaResult.stopped ? " — stopped early" : "") + "." + debugNote;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      void recordLastError("bookmarks export", message);
+      if (folder) {
+        try {
+          const debugReport = await buildDebugReport({
+            accountId: account,
+            requestedProfile: undefined,
+            exportFolder: folder,
+            extensionVersion: chrome.runtime.getManifest().version,
+            archive: { profile: null, collection: { bookmarks: "error", folders: "not_checked", reason: message }, stats: null },
+            media: null,
+            reportName: "x-bookmarks-debug",
+          });
+          await downloadDebugJson(JSON.stringify(debugReport, null, 2), folder);
+        } catch { /* The export error is the one that matters. */ }
+      }
+      throw error;
     }
-    await chrome.downloads.download({
-      url: "data:application/json;base64," + btoa(binary),
-      filename,
-      saveAs: true,
-      conflictAction: "uniquify",
-    });
-    return "JSON download requested: " + filename + ". Check browser downloads for completion.";
   } finally {
     db.close();
   }
@@ -196,6 +234,7 @@ async function run(record: ArchiveRunRecord, action: ArchiveRunAction, extras: R
       ? await runProfile(account, action, extras, controller.signal, report, onProgress)
       : await runBookmarks(account, action, controller.signal, report, onProgress);
     await clearLastError();
+    await clearStatusLog();
     await patchArchiveRun({ phase: "done", detail: summary });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -211,6 +250,13 @@ async function run(record: ArchiveRunRecord, action: ArchiveRunAction, extras: R
   }
 }
 
+export const STALE_RUN_MS = 8 * 60 * 1000;
+
+export function runHeartbeatIsStale(record: Pick<ArchiveRunRecord, "updatedAt">, now: number): boolean {
+  const updated = Date.parse(record.updatedAt);
+  return !Number.isFinite(updated) || now - updated >= STALE_RUN_MS;
+}
+
 export async function startXArchiveRun(
   action: ArchiveRunAction,
   job: ArchiveRunJob,
@@ -218,7 +264,12 @@ export async function startXArchiveRun(
 ): Promise<{ ok: boolean; runId?: string; error?: string }> {
   const running = await readArchiveRun();
   if (running && (running.phase === "collecting" || running.phase === "exporting")) {
-    return { ok: false, error: "Another archive run is already in progress." };
+    if (!runHeartbeatIsStale(running, Date.now())) {
+      return { ok: false, error: "Another archive run is already in progress." };
+    }
+    await patchArchiveRun({ phase: "error",
+      detail: "The previous run appears to have been interrupted; starting a new run.",
+      error: "The previous run was interrupted — no progress heartbeat for " + Math.floor(STALE_RUN_MS / 60000) + " minutes." });
   }
   const record: ArchiveRunRecord = {
     id: crypto.randomUUID(),

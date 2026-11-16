@@ -8,7 +8,7 @@ dependencies beyond the shared Effect 4 already used by this repository.
 It does two things:
 
 1. **Bookmarks** — a cumulative archive of your X bookmarks and bookmark folders,
-   exported as one JSON file.
+   exported as a folder (`bookmarks.json` + media files + `debug.json`).
 2. **Profile posts** — a cumulative archive of *any* profile's entire post history
    (posts, reposts, and replies) as a folder of `posts.json` + media files.
 
@@ -30,13 +30,15 @@ Right-click anywhere on an x.com page to get:
 - **Collect and download profile posts…** — collects the profile open in the
   tab you right-clicked and downloads the archive folder (posts.json +
   media) in one step; works without opening anything.
-- **Collect and download bookmarks…** — same for the bookmark archive JSON.
+- **Collect and download bookmarks…** — same one-click step for your
+  bookmarks: `bookmarks-<date>/` with `bookmarks.json`, the actual media
+  files, and a `debug.json`.
 
 The toolbar popup has the same one-click path plus the finer-grained
 controls: **Download archive** (collect the current profile + save),
 **Collect only**, **Download selected** (re-download a previously archived
-profile without collecting), **Collect bookmarks**, **Bookmarks JSON**, and
-Stop while a run is in flight.
+profile without collecting), **Collect bookmarks**, **Download bookmarks
+archive**, and Stop while a run is in flight.
 
 ## Use: bookmarks
 
@@ -52,9 +54,13 @@ Stop while a run is in flight.
 5. To include premium bookmark folders, first open a folder on X as well,
    allowing its GraphQL operation to be captured. The exporter will list
    available folders and scan each one when both operation IDs are present.
-6. Select **Bookmarks JSON**. The account-scoped cumulative archive
-   includes the text, author, links, media URLs, quoted posts, and folder
-   memberships X returned.
+6. Select **Download bookmarks archive**. The account-scoped cumulative
+   archive is written to `bookmarks-<date>/` as `bookmarks.json` plus each
+   available bookmark's media files (photos and videos, quoted-post media
+   included) and a `debug.json`. Exports are incremental: collecting only
+   re-downloads what is new, media failures are retried, and the export
+   overwrites the same-day folder in place. The JSON includes the text,
+   author, links, quoted posts, and folder memberships X returned.
 
 ## Use: a profile's entire posts
 

@@ -7,6 +7,36 @@ export interface DebugStatusEntry {
   at: string;
 }
 
+export const statusLogKey = "x_archive_status_log";
+const STATUS_LOG_LIMIT = 40;
+
+export async function recordStatusEntry(text: string): Promise<void> {
+  try {
+    const stored = (await chrome.storage.local.get(statusLogKey))[statusLogKey];
+    const list = Array.isArray(stored) ? stored : [];
+    const next = [...list, { text, at: new Date().toISOString() }].slice(-STATUS_LOG_LIMIT);
+    await chrome.storage.local.set({ [statusLogKey]: next });
+  } catch { /* Diagnostics must never break the run they observe. */ }
+}
+
+export async function readStatusLog(): Promise<DebugStatusEntry[]> {
+  const stored = (await chrome.storage.local.get(statusLogKey))[statusLogKey];
+  if (!Array.isArray(stored)) return [];
+  return stored.flatMap((entry): DebugStatusEntry[] => {
+    if (entry === null || typeof entry !== "object") return [];
+    const record = entry as Record<string, unknown>;
+    return typeof record["text"] === "string" && typeof record["at"] === "string"
+      ? [{ text: record["text"], at: record["at"] }]
+      : [];
+  }).slice(-STATUS_LOG_LIMIT);
+}
+
+export async function clearStatusLog(): Promise<void> {
+  try {
+    await chrome.storage.local.remove(statusLogKey);
+  } catch { /* Diagnostics must never break the run they observe. */ }
+}
+
 export const lastErrorKey = "x_profile_last_error";
 
 export interface LastErrorEntry {
@@ -64,11 +94,12 @@ export interface DebugReportInput {
   extensionVersion: string;
   archive: unknown;
   media: MediaExportResult | null;
-  statusLog: readonly DebugStatusEntry[];
+  reportName?: string;
+  statusLog?: readonly DebugStatusEntry[];
 }
 
 export interface DebugReport {
-  tool: "x-profile-posts-debug";
+  tool: string;
   exported_at: string;
   extension_version: string;
   account_id: string;
@@ -94,15 +125,17 @@ export interface DebugReport {
 }
 
 export async function buildDebugReport(input: DebugReportInput): Promise<DebugReport> {
-  const [credentials, storedTarget, lastCapture, unmatchedOps, lastError] = await Promise.all([
+  const [credentials, storedTarget, lastCapture, unmatchedOps, lastError, storedStatusLog] = await Promise.all([
     readCredentials(input.accountId),
     readProfileTarget(input.accountId),
     readXProfileLastCapture(),
     readXProfileUnmatchedOps(),
     readLastError(),
+    readStatusLog(),
   ]);
+  const statusLog = input.statusLog ?? storedStatusLog;
   return {
-    tool: "x-profile-posts-debug",
+    tool: input.reportName ?? "x-profile-posts-debug",
     exported_at: new Date().toISOString(),
     extension_version: input.extensionVersion,
     account_id: input.accountId,
@@ -125,7 +158,7 @@ export async function buildDebugReport(input: DebugReportInput): Promise<DebugRe
       }
       : null,
     last_error: lastError,
-    status_log: input.statusLog.slice(-40),
+    status_log: statusLog.slice(-40),
     privacy_note: "No authorization headers, cookies, or CSRF tokens are included. Query IDs and client feature flags are public X web-app configuration, included for shape-drift debugging.",
   };
 }
