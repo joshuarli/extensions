@@ -17,8 +17,8 @@ and test-cost qualification are deferred; this does not qualify the Tests lane.
 
 - **Area:** deslop · ground
 - **Where:** AGENTS.md, Makefile, .github/workflows/
-- **Problem:** Base ac4f9d4; code lines TypeScript 9.6k (fleet/loc/v1, vendored included); timings not yet measured. CI does not run make test: runs tests directly on pull requests; run make test or make test-ci instead so CI and local verification share one entry point. Open fleet lint findings: mdtool 10, audit-upgrades 9, audit-vuln 6, typescript-stack 6, gha-syntax 2, gha-lint-workflow 1, make-clean-target 1, make-lint-target 1, and 3 more. Perf gate: decide in Ground whether a user-visible hot path needs a workload.
-- **Recommendation:** Run the deslop Ground step. Accept: CI runs make test and is green, and AGENTS.md has a Verification section.
+- **Problem:** At base 36f448cc, make test and CI retain typecheck plus the Node unit suite; make lint uses the existing typechecker. The verification map and local correctness evidence are recorded in docs/deslop-ground.md. Cold and warm test costs and lint cost remain unmeasured because the performance gate is unavailable on the constrained host; CI has not yet run this change. Earlier fleet lint counts and line counts were from an older base and are not current findings.
+- **Recommendation:** On a ready host measure cold and warm make test and make lint; verify CI is green and the shared make test workflow is clean, then close Ground only when its acceptance is met.
 - **Fix with:** deslop
 - **Effort:** S
 

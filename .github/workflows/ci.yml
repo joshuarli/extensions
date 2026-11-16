@@ -35,4 +35,4 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: typecheck and unit tests
-        run: pnpm run check
+        run: make test
