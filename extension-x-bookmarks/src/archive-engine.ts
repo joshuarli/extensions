@@ -22,7 +22,7 @@ import {
   downloadPostsMedia,
   exportFolderName,
 } from "./profile-export.ts";
-import { buildDebugReport, recordLastError, type DebugStatusEntry } from "./debug.ts";
+import { buildDebugReport, clearLastError, recordLastError, type DebugStatusEntry } from "./debug.ts";
 import { currentUserId, readProfileTarget } from "./capture.ts";
 
 const statusLog: DebugStatusEntry[] = [];
@@ -195,6 +195,7 @@ async function run(record: ArchiveRunRecord, action: ArchiveRunAction, extras: R
     const summary = record.job === "profile"
       ? await runProfile(account, action, extras, controller.signal, report, onProgress)
       : await runBookmarks(account, action, controller.signal, report, onProgress);
+    await clearLastError();
     await patchArchiveRun({ phase: "done", detail: summary });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

@@ -33,6 +33,12 @@ export async function readLastError(): Promise<LastErrorEntry | null> {
   return { label: record["label"], message: record["message"], at: record["at"] };
 }
 
+export async function clearLastError(): Promise<void> {
+  try {
+    await chrome.storage.local.remove(lastErrorKey);
+  } catch { /* Diagnostics must never break the run they observe. */ }
+}
+
 export function credentialsSummary(credentials: Credentials): Record<string, {
   queryId: string;
   features: string | null;
