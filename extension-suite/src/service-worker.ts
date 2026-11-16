@@ -87,8 +87,13 @@ async function handleSuiteRequest(request: SuiteRequest): Promise<SuiteResponse>
       return { ok: true };
     }
     case "x-bookmarks/collect-profile": {
+      const screenName = request.screenName && /^[A-Za-z0-9_]{1,15}$/u.test(request.screenName)
+        ? request.screenName
+        : undefined;
       await chrome.tabs.create({
-        url: chrome.runtime.getURL(xBookmarksExporterPath) + "?collect=profile&export=1",
+        url: chrome.runtime.getURL(xBookmarksExporterPath)
+          + "?collect=profile&export=1"
+          + (screenName ? "&profile=" + encodeURIComponent(screenName) : ""),
       });
       return { ok: true };
     }

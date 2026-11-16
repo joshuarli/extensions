@@ -282,6 +282,57 @@ describe("profile archive", () => {
     }
   }, 10_000);
 
+  it("resolves a requested screen name through the captured user lookup", async () => {
+    stubChrome();
+    stored["x_bookmarks_credentials_" + userId] = {
+      authorization: "Bearer token",
+      queryIds: { UserTweetsAndReplies: "q-profile", UserByScreenName: "q-lookup" },
+      features: { UserTweetsAndReplies: "{}" },
+    };
+    const requests: string[] = [];
+    const lookupResponse = { data: { user: { result: { rest_id: targetUserId } } } };
+    const gardenPage = profilePage([entry({ rest_id: "100", legacy: { full_text: "Hi" } }, "100")]);
+    (gardenPage.data.user.result.core as { screen_name: string }).screen_name = "token___garden";
+    (globalThis as Record<string, unknown>)["fetch"] = (async (url: string) => {
+      requests.push(String(url));
+      return new Response(JSON.stringify(requests.length === 1 ? lookupResponse : gardenPage), { status: 200 });
+    }) as typeof fetch;
+    const db = await openTestProfileArchive();
+    try {
+      const state = await collectProfile({
+        userId,
+        db,
+        signal: new AbortController().signal,
+        report: () => {},
+      }, { screenName: "token___garden" });
+      expect(state.posts).toBe("complete");
+      expect(requests).toHaveLength(2);
+      expect(requests[0]).toContain("UserByScreenName");
+      expect(requests[0]).toContain(encodeURIComponent("token___garden"));
+      expect(requests[1]).toContain("UserTweetsAndReplies");
+      expect(stored["x_profile_target_" + userId]).toMatchObject({
+        targetUserId,
+        screenName: "token___garden",
+      });
+    } finally {
+      db.close();
+    }
+  }, 10_000);
+
+  it("fails loudly when the lookup for the requested profile was never captured", async () => {
+    stubChrome();
+    credentials();
+    const db = await openTestProfileArchive();
+    try {
+      await expect(
+        collectProfile({ userId, db, signal: new AbortController().signal, report: () => {} },
+          { screenName: "token___garden" }),
+      ).rejects.toMatchObject({ _tag: "RequestFailure", kind: "query" });
+    } finally {
+      db.close();
+    }
+  });
+
   it("fails loudly when no profile has been captured", async () => {
     stubChrome();
     credentials();

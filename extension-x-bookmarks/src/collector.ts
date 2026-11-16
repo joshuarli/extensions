@@ -1,6 +1,13 @@
 import { Effect } from "effect";
 import { graphqlRequest, RequestFailure } from "./api.ts";
-import { currentUserId, readCredentials, readProfileTarget, type Operation, type ProfileOperation } from "./capture.ts";
+import {
+  currentUserId,
+  readCredentials,
+  readProfileTarget,
+  writeProfileTarget,
+  type Operation,
+  type ProfileOperation,
+} from "./capture.ts";
 import { parseTimeline, parseFolders, parseProfileTimeline, type Folder } from "./parser.ts";
 import { savePage, saveFolders, saveState, type ScanState } from "./storage.ts";
 import { saveProfilePage, saveProfileState, type ProfileScanProfile, type ProfileScanState } from "./profile-storage.ts";
@@ -248,20 +255,74 @@ export async function collectProfileTimeline(
   return { total, profile };
 }
 
-export async function collectProfile(options: CollectionOptions): Promise<ProfileScanState> {
+function extractLookupUserId(response: unknown): string | null {
+  const body = response as Record<string, unknown> | null;
+  const data = body?.["data"] as Record<string, unknown> | undefined;
+  const user = data?.["user"] as Record<string, unknown> | undefined;
+  const result = (user?.["result"] ?? user) as Record<string, unknown> | undefined;
+  const restId = result?.["rest_id"]
+    ?? (result?.["legacy"] as Record<string, unknown> | undefined)?.["rest_id"];
+  if (typeof restId === "string" && /^\d+$/u.test(restId)) return restId;
+  if (typeof restId === "number" && Number.isSafeInteger(restId) && restId > 0) return String(restId);
+  return null;
+}
+
+export async function collectProfile(
+  options: CollectionOptions,
+  requested?: { screenName?: string },
+): Promise<ProfileScanState> {
   const { db, signal, userId, report } = options;
-  const target = await readProfileTarget(userId);
+  const requestedScreenName = requested?.screenName?.replace(/^@/u, "");
+  let target = await readProfileTarget(userId);
+  if (requestedScreenName) {
+    if (target?.screenName !== requestedScreenName || !target.targetUserId) {
+      if (!/^[A-Za-z0-9_]{1,15}$/u.test(requestedScreenName)) {
+        throw new RequestFailure("query", "Could not read a profile name from the profile tab's URL.");
+      }
+      const credentials = await readCredentials(userId);
+      if (!credentials.queryIds["UserByScreenName"]) {
+        throw new RequestFailure("query",
+          "The lookup for @" + requestedScreenName + " was never captured. Reload https://x.com/"
+          + requestedScreenName + " once in this browser, then try again.");
+      }
+      report("Resolving @" + requestedScreenName + " to an X user id.");
+      const lookup = await requestWithRetry(
+        userId,
+        "UserByScreenName",
+        { screen_name: requestedScreenName },
+        signal,
+        report,
+      );
+      const resolvedId = extractLookupUserId(lookup);
+      if (!resolvedId) {
+        throw new RequestFailure("response",
+          "X could not resolve @" + requestedScreenName + " to a user id. Reload the profile tab and try again.");
+      }
+      target = {
+        targetUserId: resolvedId,
+        screenName: requestedScreenName,
+        operation: credentials.queryIds["UserTweetsAndReplies"] ? "UserTweetsAndReplies" : "UserTweets",
+        capturedAt: new Date().toISOString(),
+      };
+      await writeProfileTarget(userId, target);
+    }
+  } else if (target && !target.targetUserId && target.screenName) {
+    throw new RequestFailure("query",
+      "The profile @" + target.screenName + " has not been resolved to a user id yet. Reload https://x.com/"
+      + target.screenName + " once in this browser, then try again.");
+  }
   if (!target) {
     throw new RequestFailure("query",
-      "No profile is captured. Arm profile capture in the exporter, open the profile on x.com, and reload this page.");
+      "No profile is captured. Visit a profile on x.com, or open the toolbar popup and click Download archive.");
   }
+  const targetUserId = target.targetUserId!;
   const credentials = await readCredentials(userId);
   const operation: ProfileOperation | null = credentials.queryIds["UserTweetsAndReplies"]
     ? "UserTweetsAndReplies"
     : credentials.queryIds["UserTweets"] ? "UserTweets" : null;
   const started = new Date().toISOString();
   const baseProfile: ProfileScanProfile = {
-    user_id: target.targetUserId,
+    user_id: targetUserId,
     screen_name: null,
     name: null,
     profile_image_url: null,
@@ -279,24 +340,29 @@ export async function collectProfile(options: CollectionOptions): Promise<Profil
   };
   const persist = async () => {
     state.updated_at = new Date().toISOString();
-    await saveProfileState(db, target.targetUserId, state);
+    await saveProfileState(db, targetUserId, state);
   };
   await persist();
   try {
     if (!operation) {
       throw new RequestFailure("query",
-        "No profile timeline request captured. Arm capture, open the profile on x.com (Posts and Replies tabs), then reload this page.");
+        "No profile timeline request captured. Reload the profile on x.com (Posts and Replies tabs), then try again.");
     }
     stopped(signal);
     report(operation === "UserTweetsAndReplies"
       ? "Scanning profile posts and replies. Existing saved posts are retained."
       : "Scanning profile posts. Existing saved posts are retained.");
-    const result = await collectProfileTimeline(options, operation, target.targetUserId);
+    const result = await collectProfileTimeline(options, operation, targetUserId);
     if (result.profile) state.profile = { ...baseProfile, ...result.profile };
+    const learnedScreenName = state.profile?.screen_name ?? target.screenName;
+    if (learnedScreenName && target.screenName !== learnedScreenName) {
+      target = { ...target, screenName: learnedScreenName, targetUserId };
+      await writeProfileTarget(userId, target);
+    }
     state.posts = "complete";
     state.reason = operation === "UserTweetsAndReplies" ? "complete" : "complete_without_replies";
     if (operation === "UserTweets") {
-      report("Only the Posts tab was captured. Arm capture and open the Replies tab to include replies next run.");
+      report("Only the Posts tab was captured. Open the Replies tab on x.com, then collect again to include replies.");
     }
     await persist();
     report("Profile collection complete. Use Download archive to save JSON and media.");

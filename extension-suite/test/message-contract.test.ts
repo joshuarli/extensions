@@ -29,6 +29,12 @@ test("accepts namespaced suite requests", () => {
       kind: "x-bookmarks/collect-profile",
     }),
   ).toEqual({ kind: "x-bookmarks/collect-profile" });
+  expect(
+    Schema.decodeUnknownSync(SuiteRequestSchema)({
+      kind: "x-bookmarks/collect-profile",
+      screenName: "token___garden",
+    }),
+  ).toEqual({ kind: "x-bookmarks/collect-profile", screenName: "token___garden" });
   expect(isSuiteRequest({ kind: "allow-right-click/status", tabId: 7 })).toBe(true);
   expect(isSuiteRequest({ kind: "x-bookmarks/collect-profile" })).toBe(true);
 });

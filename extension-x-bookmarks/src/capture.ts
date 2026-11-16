@@ -2,7 +2,8 @@ import { Schema } from "effect";
 
 export const BOOKMARK_OPERATIONS = ["Bookmarks", "BookmarkFoldersSlice", "BookmarkFolderTimeline"] as const;
 export const PROFILE_OPERATIONS = ["UserTweets", "UserTweetsAndReplies"] as const;
-export const OPERATIONS = [...BOOKMARK_OPERATIONS, ...PROFILE_OPERATIONS] as const;
+export const LOOKUP_OPERATIONS = ["UserByScreenName"] as const;
+export const OPERATIONS = [...BOOKMARK_OPERATIONS, ...PROFILE_OPERATIONS, ...LOOKUP_OPERATIONS] as const;
 export type Operation = (typeof OPERATIONS)[number];
 export type ProfileOperation = (typeof PROFILE_OPERATIONS)[number];
 
@@ -65,7 +66,10 @@ export function captureRequest(
   if (initiator !== "https://x.com" && initiator !== "https://twitter.com") return null;
   const requestUrl = new URL(url);
   if (requestUrl.origin !== "https://x.com") return null;
-  const match = /^\/i\/api\/graphql\/([A-Za-z0-9_-]+)\/(Bookmarks|BookmarkFoldersSlice|BookmarkFolderTimeline|UserTweets|UserTweetsAndReplies)$/u.exec(requestUrl.pathname);
+  const match = new RegExp(
+    "^/i/api/graphql/([A-Za-z0-9_-]+)/(" + OPERATIONS.join("|") + ")$",
+    "u",
+  ).exec(requestUrl.pathname);
   if (!match) return null;
   const queryId = match[1];
   const operation = match[2] as Operation;
@@ -126,32 +130,73 @@ export function mergeCapture(credentials: Credentials, capture: Capture): Creden
   };
 }
 
+const RESERVED_X_PATHS = new Set([
+  "i", "home", "explore", "search", "notifications", "messages", "bookmarks",
+  "compose", "settings", "privacy", "tos", "login", "signup", "premium", "jobs",
+  "communities", "lists", "verified-orgs", "about", "download",
+]);
+
+const PROFILE_SUBPATHS = new Set([
+  "with_replies", "media", "likes", "highlights", "followers", "following", "affiliates",
+]);
+
+export function parseProfileScreenName(url: string): string | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  if (parsed.origin !== "https://x.com") return null;
+  const segments = parsed.pathname.split("/").filter((segment) => segment.length > 0);
+  if (segments.length === 0) return null;
+  const handle = segments[0]!;
+  if (!/^[A-Za-z0-9_]{1,15}$/u.test(handle)) return null;
+  if (RESERVED_X_PATHS.has(handle.toLowerCase())) return null;
+  if (segments.length === 1) return handle;
+  if (segments.length === 2 && PROFILE_SUBPATHS.has(segments[1]!.toLowerCase())) return handle;
+  return null;
+}
+
 export function profileTargetKey(userId: string): string {
   return "x_profile_target_" + userId;
 }
 
 export interface ProfileTarget {
-  targetUserId: string;
+  targetUserId?: string | undefined;
+  screenName?: string | undefined;
   operation: ProfileOperation;
   capturedAt: string;
 }
 
 const ProfileTargetSchema = Schema.Struct({
-  targetUserId: Schema.String,
+  targetUserId: Schema.optional(Schema.String),
+  screenName: Schema.optional(Schema.String),
   operation: Schema.Literals(PROFILE_OPERATIONS),
   capturedAt: Schema.String,
 });
 
+function hasTargetIdentity(target: ProfileTarget): boolean {
+  return target.targetUserId !== undefined || target.screenName !== undefined;
+}
+
 export async function readProfileTarget(userId: string): Promise<ProfileTarget | null> {
   const key = profileTargetKey(userId);
   try {
-    return Schema.decodeUnknownSync(ProfileTargetSchema)((await chrome.storage.local.get(key))[key]);
+    const target = Schema.decodeUnknownSync(ProfileTargetSchema)((await chrome.storage.local.get(key))[key]);
+    return hasTargetIdentity(target) && (target.targetUserId === undefined || /^\d+$/u.test(target.targetUserId))
+      ? target
+      : null;
   } catch {
     return null;
   }
 }
 
 export async function writeProfileTarget(userId: string, target: ProfileTarget): Promise<void> {
+  if (!hasTargetIdentity(target)) throw new Error("Profile target requires a user id or a screen name.");
+  if (target.screenName !== undefined && !/^[A-Za-z0-9_]{1,15}$/u.test(target.screenName)) {
+    throw new Error("Profile target screen name is invalid.");
+  }
   await chrome.storage.local.set({
     [profileTargetKey(userId)]: Schema.decodeUnknownSync(ProfileTargetSchema)(target),
   });

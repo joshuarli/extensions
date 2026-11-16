@@ -4,6 +4,7 @@ import {
   currentUserId,
   isProfileOperation,
   mergeCapture,
+  parseProfileScreenName,
   readCredentials,
   writeProfileTarget,
 } from "./capture.ts";
@@ -68,6 +69,12 @@ export function installXBookmarksContextMenus(): void {
   }).catch((error: unknown) => console.warn("X archive context menus setup failed", error));
 }
 
+export function xBookmarksCollectProfileUrl(exporterUrl: string, pageUrl: string | undefined): string {
+  const screenName = pageUrl ? parseProfileScreenName(pageUrl) : null;
+  return exporterUrl + "?collect=profile&export=1"
+    + (screenName ? "&profile=" + encodeURIComponent(screenName) : "");
+}
+
 export function handleXBookmarksContextMenuClick(info: chrome.contextMenus.OnClickData): void {
   updateQueue = updateQueue.then(async () => {
     const exporterUrl = chrome.runtime.getURL("features/x-bookmarks/options.html");
@@ -76,13 +83,27 @@ export function handleXBookmarksContextMenuClick(info: chrome.contextMenus.OnCli
         await chrome.tabs.create({ url: exporterUrl });
         return;
       case X_ARCHIVE_MENU.collectProfile:
-        await chrome.tabs.create({ url: exporterUrl + "?collect=profile&export=1" });
+        await chrome.tabs.create({ url: xBookmarksCollectProfileUrl(exporterUrl, info.pageUrl) });
         return;
       case X_ARCHIVE_MENU.collectBookmarks:
         await chrome.tabs.create({ url: exporterUrl + "?collect=bookmarks&export=1" });
         return;
     }
   }).catch((error: unknown) => console.warn("X archive context menu action failed", error));
+}
+
+export const xProfileLastCaptureKey = "x_profile_last_capture";
+
+export async function readXProfileLastCapture(): Promise<{ operation: string; targetUserId?: string; at: string } | null> {
+  const stored = (await chrome.storage.local.get(xProfileLastCaptureKey))[xProfileLastCaptureKey];
+  if (stored === null || typeof stored !== "object" || Array.isArray(stored)) return null;
+  const record = stored as Record<string, unknown>;
+  if (typeof record["operation"] !== "string" || typeof record["at"] !== "string") return null;
+  return {
+    operation: record["operation"],
+    at: record["at"],
+    ...(typeof record["targetUserId"] === "string" ? { targetUserId: record["targetUserId"] } : {}),
+  };
 }
 
 export function handleXBookmarksRequest(
@@ -96,6 +117,11 @@ export function handleXBookmarksRequest(
     const previous = await readCredentials(userId);
     await chrome.storage.local.set({
       [credentialKey(userId)]: mergeCapture(previous, capture),
+      [xProfileLastCaptureKey]: {
+        operation: capture.operation,
+        ...(capture.targetUserId ? { targetUserId: capture.targetUserId } : {}),
+        at: new Date().toISOString(),
+      },
     });
     if (capture.targetUserId && isProfileOperation(capture.operation)) {
       await writeProfileTarget(userId, {

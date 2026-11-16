@@ -52,8 +52,11 @@ files (photos and videos). X serves a profile timeline through the same private
 GraphQL mechanism as bookmarks, so the same capture-then-paginate strategy
 applies; the page scrolls itself, no autoscrolling of the visible tab is
 required. Profile requests are captured passively whenever a profile issues
-them, so no manual arming is needed: whatever profile you opened most recently
-is the one being archived.
+them, and the popup, context menu, and exporter deep link all target the
+profile open in the tab you clicked from — so a profile is usable as long as
+it has been opened once in this browser. The handle is resolved to X's
+numeric user id through the captured `UserByScreenName` lookup request at
+collection time; after the first successful run the binding is stored.
 
 1. In a signed-in tab, open the profile, e.g. `https://x.com/jack`, and load:
    - the **Posts** tab (captures `UserTweets` — original posts and reposts), and
@@ -190,10 +193,14 @@ collection to continue.
   browser session. The suite service worker passively observes X GraphQL
   requests, only when the URL shape is one it recognizes; it records the
   current query IDs, feature flags, an authorization header, and the last
-  visited profile's user id — never post content. An extension-scoped DNR
-  rule adds X Origin/Referer request headers; a second DNR rule sets a
-  Referer on X's media CDNs (`pbs.twimg.com`, `video.twimg.com`) for the
-  extension's own downloads.
+  visited profile's user id — never post content. The popup, the context
+  menu (via its page URL), and the exporter deep link target the profile
+  in the tab that launched the flow; when only the handle is known, the
+  handle is converted to X's numeric user id by replaying the captured
+  `UserByScreenName` lookup request, whose response is processed in memory
+  and never stored. An extension-scoped DNR rule adds X Origin/Referer
+  request headers; a second DNR rule sets a Referer on X's media CDNs
+  (`pbs.twimg.com`, `video.twimg.com`) for the extension's own downloads.
 - No cookies or authorization headers are written into the archive JSON.
   Captured header information stays in extension-local storage, scoped by the
   numeric session user ID. The CSRF cookie is reread on every request.
@@ -222,6 +229,20 @@ sign in to x.com in *that* browser first. Each disabled button also carries a
 tooltip explaining exactly what it needs. The suite popup is a faster path:
 page icon → **Open X archive exporter**, or right-click any x.com page → the
 context menu entries above.
+
+**"Visit a profile on x.com first" even though the profile is open.** The popup
+targets the profile in the active x.com tab, so make sure that tab is the
+profile — token URLs like `https://x.com/jack`, `…/jack/with_replies`,
+`…/jack/media` all work; a whole post page (`…/jack/status/123`) does not. If
+the exporter then reports the lookup request was never captured, the extension
+has not seen any request from x.com in this browser since it was reloaded —
+reload the profile page once and try again. The exporter's **Capture log** line
+shows the last request the extension captured and when; "None yet" means no
+request has been captured at all, which is the symptom of a stale tab or a
+browser restart wiping the extension's memory — a reload fixes both.
+
+**"X could not resolve @handle to a user id."** Reload the profile page once;
+if it persists, report it — X changed its lookup response shape.
 
 **"X changed its timeline response. Partial results were preserved."** X changed
 its private GraphQL shape or served something unexpected; the posts captured so

@@ -7,6 +7,7 @@ import {
   PROFILE_OPERATIONS,
 } from "./capture.ts";
 import { collect, collectProfile, type CollectionOptions, type ProgressSnapshot } from "./collector.ts";
+import { readXProfileLastCapture } from "./background.ts";
 import { assembleArchive, bookmarkCount, loadState, openArchive } from "./storage.ts";
 import {
   assembleProfileArchive,
@@ -27,6 +28,7 @@ const coverageElement = requiredElement<HTMLElement>(document, "#coverage", page
 const profileCaptureElement = requiredElement<HTMLElement>(document, "#profile-capture", pageContext);
 const profileCountElement = requiredElement<HTMLElement>(document, "#profile-count", pageContext);
 const profileCoverageElement = requiredElement<HTMLElement>(document, "#profile-coverage", pageContext);
+const profileCaptureLogElement = requiredElement<HTMLElement>(document, "#profile-capture-log", pageContext);
 const statusElement = requiredElement<HTMLOutputElement>(document, "#status", pageContext);
 const refreshButton = requiredElement<HTMLButtonElement>(document, "#refresh", pageContext);
 const collectButton = requiredElement<HTMLButtonElement>(document, "#collect", pageContext);
@@ -192,15 +194,24 @@ async function refreshProfileTargets(account: string): Promise<SavedProfileTarge
     option.textContent = optionLabel(target);
     profileSelect.append(option);
   }
-  const armed = await readProfileTarget(account);
-  if (armed && !targets.some((target) => target.targetUserId === armed.targetUserId)) {
+  const pending = await readProfileTarget(account);
+  if (pending?.targetUserId && !targets.some((target) => target.targetUserId === pending.targetUserId)) {
     const option = document.createElement("option");
-    option.value = armed.targetUserId;
-    option.textContent = "user " + armed.targetUserId + " — captured, not scanned yet";
+    option.value = pending.targetUserId;
+    option.textContent = (pending.screenName ? "@" + pending.screenName : "user " + pending.targetUserId)
+      + " — captured, not scanned yet";
     profileSelect.append(option);
   }
+  const requestedName = requestedProfile?.screenName;
   if (previous && [...profileSelect.options].some((option) => option.value === previous)) {
     profileSelect.value = previous;
+  } else if (requestedName) {
+    const match = targets.find((entry) => entry.state.profile?.screen_name === requestedName);
+    if (match) {
+      profileSelect.value = match.targetUserId;
+    } else if (pending?.screenName === requestedName && pending.targetUserId) {
+      profileSelect.value = pending.targetUserId;
+    }
   }
   return targets;
 }
@@ -236,6 +247,7 @@ async function refresh(): Promise<void> {
     countElement.textContent = "—";
     coverageElement.textContent = "—";
     profileCaptureElement.textContent = "Unavailable";
+    profileCaptureLogElement.textContent = "Unavailable";
     profileCountElement.textContent = "—";
     profileCoverageElement.textContent = "—";
     profileSelect.replaceChildren();
@@ -281,22 +293,42 @@ async function refresh(): Promise<void> {
 
   const profileNames = [...PROFILE_OPERATIONS];
   const profileAvailable = profileNames.filter((name) => !!credentials.queryIds[name]);
+  const lastCapture = await readXProfileLastCapture();
   const target = await readProfileTarget(account);
+  const requested = requestedProfile?.screenName;
   const targets = await refreshProfileTargets(account);
   const scannedTarget = target
     ? targets.find((entry) => entry.targetUserId === target.targetUserId)
     : undefined;
-  const handle = scannedTarget?.state.profile?.screen_name;
-  profileCaptureElement.textContent = target
-    ? (handle ? "@" + handle + " " : "") + "user " + target.targetUserId
+  const handle = scannedTarget?.state.profile?.screen_name ?? target?.screenName;
+  if (requested) {
+    profileCaptureElement.textContent = "@" + requested + " — requested from the profile tab that opened this page"
+      + (target?.screenName === requested && target.targetUserId ? " (resolved to user " + target.targetUserId + ")" : "")
+      + (profileAvailable.length ? "" : " — no requests captured yet; reload the profile tab on x.com");
+  } else if (target) {
+    profileCaptureElement.textContent = (handle ? "@" + handle + " " : "") + (target.targetUserId ? "user " + target.targetUserId : "profile")
       + " (" + target.operation + ") — visited " + new Date(target.capturedAt).toLocaleString()
-      + (profileAvailable.length ? "" : " — no requests captured yet; load the profile on x.com")
-    : "None captured — visit a profile on x.com (Posts and Replies tabs)";
-  profileReady = !!target && !!(credentials.queryIds["UserTweetsAndReplies"] || credentials.queryIds["UserTweets"]);
+      + (profileAvailable.length ? "" : " — no requests captured yet; load the profile on x.com");
+  } else {
+    profileCaptureElement.textContent = "None captured — visit a profile on x.com (Posts and Replies tabs)";
+  }
+  const timelineReady = !!(credentials.queryIds["UserTweetsAndReplies"] || credentials.queryIds["UserTweets"]);
+  const requestedReady = requested !== undefined && (
+    (target?.screenName === requested && !!target.targetUserId)
+    || !!credentials.queryIds["UserByScreenName"]
+  );
+  profileReady = (requested !== undefined ? requestedReady : !!target) && timelineReady;
   collectProfileButton.disabled = !profileReady;
   collectProfileButton.title = profileReady
     ? "Collect the captured profile's posts (and replies, when the Replies tab was captured)"
-    : "Disabled: visit a profile on x.com first";
+    : requested !== undefined
+      ? "Disabled: reload https://x.com/" + requested + " once in this browser"
+      : "Disabled: visit a profile on x.com first";
+  profileCaptureLogElement.textContent = lastCapture
+    ? "Last captured: " + lastCapture.operation
+      + (lastCapture.targetUserId ? " (target user " + lastCapture.targetUserId + ")" : "")
+      + " — " + new Date(lastCapture.at).toLocaleString()
+    : "None yet — reload the profile tab on x.com";
   downloadProfileButton.disabled = profileSelect.options.length === 0;
   downloadProfileButton.title = profileSelect.options.length === 0
     ? "Disabled: no profile archive yet — collect one first"
@@ -389,7 +421,7 @@ collectButton.addEventListener("click", () => {
 });
 
 collectProfileButton.addEventListener("click", () => {
-  runCollection("profile", "x-profile-collection", profileDb, (options) => collectProfile(options));
+  runCollection("profile", "x-profile-collection", profileDb, (options) => collectProfile(options, requestedProfile));
 });
 
 stopButton.addEventListener("click", () => {
@@ -476,6 +508,10 @@ downloadProfileButton.addEventListener("click", () => {
 const autoParams = new URLSearchParams(location.search);
 const autoCollectKind = autoParams.get("collect");
 const autoExport = autoParams.get("export") === "1";
+const requestedProfileName = autoParams.get("profile");
+const requestedProfile = requestedProfileName && /^[A-Za-z0-9_]{1,15}$/u.test(requestedProfileName)
+  ? { screenName: requestedProfileName }
+  : undefined;
 
 function maybeAutoCollect(kind: string | null): void {
   if (kind === "profile" && !collectProfileButton.disabled) {
@@ -489,8 +525,11 @@ function maybeAutoCollect(kind: string | null): void {
     return;
   }
   if (kind === "profile") {
-    status("Opened from the context menu, but profile collection isn't ready yet: "
-      + "visit a profile on x.com in this browser first, then click Collect profile posts.");
+    status(requestedProfile
+      ? "Opened from the popup, but collection isn't ready yet: reload https://x.com/"
+        + requestedProfile.screenName + " once in this browser, then click Collect profile posts."
+      : "Opened from the context menu, but profile collection isn't ready yet: "
+        + "visit a profile on x.com in this browser first, then click Collect profile posts.");
     return;
   }
   if (kind === "bookmarks") {

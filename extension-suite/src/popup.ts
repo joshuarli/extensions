@@ -6,7 +6,7 @@ import {
 } from "../../lib/extension-ui.ts";
 import { mountYouTubeTranscriptPopup } from "../../extension-youtube-transcript/src/popup.ts";
 import { isYouTubeUrl } from "../../extension-youtube-transcript/src/url.ts";
-import { currentUserId, readProfileTarget } from "../../extension-x-bookmarks/src/capture.ts";
+import { currentUserId, parseProfileScreenName, readProfileTarget } from "../../extension-x-bookmarks/src/capture.ts";
 import { loadProfileState, openProfileArchive } from "../../extension-x-bookmarks/src/profile-storage.ts";
 import { SuiteResponseSchema, type SuiteResponse } from "./message-contract.ts";
 
@@ -73,13 +73,11 @@ function wireXBookmarks(): void {
   xOpen.addEventListener("click", () => {
     runSuiteAction(xOpen, { kind: "x-bookmarks/open-exporter" });
   });
-  xProfileDownload.addEventListener("click", () => {
-    runSuiteAction(xProfileDownload, { kind: "x-bookmarks/collect-profile" });
-  });
 }
 
 function wireXProfileArchive(): void {
   xProfileDownload.disabled = true;
+  const tabHandle = parseProfileScreenName(tab?.url ?? "");
   void (async () => {
     try {
       const userId = await currentUserId();
@@ -88,24 +86,35 @@ function wireXProfileArchive(): void {
         xProfileDownload.title = "Disabled: sign in to x.com in this browser first";
         return;
       }
-      const target = await readProfileTarget(userId);
-      if (!target) {
+      const stored = await readProfileTarget(userId);
+      let label = tabHandle;
+      if (!label && stored) {
+        label = stored.screenName ?? null;
+        if (!label) {
+          try {
+            const db = await openProfileArchive(userId);
+            const state = stored.targetUserId ? await loadProfileState(db, stored.targetUserId) : null;
+            db.close();
+            label = state?.profile?.screen_name ?? null;
+          } catch { /* Handle stays unknown until the first scan. */ }
+        }
+        if (!label && stored.targetUserId) label = "user " + stored.targetUserId;
+      }
+      if (!label) {
         xProfileState.textContent = "Visit a profile on x.com first";
         xProfileDownload.title = "Disabled: visit a profile on x.com first";
         return;
       }
-      let handle: string | null = null;
-      try {
-        const db = await openProfileArchive(userId);
-        const state = await loadProfileState(db, target.targetUserId);
-        db.close();
-        handle = state?.profile?.screen_name ?? null;
-      } catch { /* Handle stays unknown until the first scan. */ }
-      const label = handle ? "@" + handle : "user " + target.targetUserId;
-      xProfileState.textContent = label;
+      const screenName = label.startsWith("user ") ? undefined : label;
+      xProfileState.textContent = screenName ? "@" + screenName : label;
       xProfileDownload.disabled = false;
-      xProfileDownload.textContent = "Download " + label;
+      xProfileDownload.textContent = "Download " + xProfileState.textContent + " archive";
       xProfileDownload.title = "Collect the full archive (posts, reposts, replies) and save it to your downloads";
+      xProfileDownload.addEventListener("click", () => {
+        runSuiteAction(xProfileDownload, screenName
+          ? { kind: "x-bookmarks/collect-profile", screenName }
+          : { kind: "x-bookmarks/collect-profile" });
+      }, { once: true });
     } catch {
       xProfileState.textContent = "Unavailable";
       xProfileDownload.title = "Disabled: could not read the X session in this browser";
