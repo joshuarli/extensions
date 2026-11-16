@@ -25,7 +25,7 @@ export const BookmarkSchema = Schema.Struct({
 
 export type Bookmark = Schema.Schema.Type<typeof BookmarkSchema>;
 export type Folder = { id: string; name: string };
-export type ParsedPage = { valid: boolean; bookmarks: Bookmark[]; nextCursor: string | null; detail?: string };
+export type ParsedPage = { valid: boolean; bookmarks: Bookmark[]; nextCursor: string | null; terminated?: boolean; detail?: string };
 export type ParsedFolders = { valid: boolean; folders: Folder[]; nextCursor: string | null };
 
 type ObjectValue = Record<string, unknown>;
@@ -234,12 +234,67 @@ function instructionEntries(instruction: unknown): EntriesResult {
     : { valid: false, detail: "\"" + kind + "\" instruction has no entries array" };
 }
 
-function parseInstructions(instructions: unknown, observedAt: string): ParsedPage {
+
+
+type ModuleResult = { posts: Bookmark[] } | { detail: string };
+
+const UNWRAPPERS = new Set(["TweetWithVisibilityResults", "TweetPreviewDisplay"]);
+
+function unwrapModuleTweet(result: unknown): ObjectValue | null {
+  const resultObject = object(result);
+  if (!resultObject) return null;
+  if (UNWRAPPERS.has(string(get(resultObject, "__typename")) ?? "")) return object(get(resultObject, "tweet"));
+  return resultObject;
+}
+
+function moduleAuthorId(itemContent: ObjectValue): string | null {
+  const result = unwrapModuleTweet(get(itemContent, "tweet_results", "result"));
+  if (!result) return null;
+  return string(get(result, "core", "user_results", "result", "rest_id"))
+    ?? string(get(result, "legacy", "user_id_str"));
+}
+
+function modulePosts(entry: ObjectValue, observedAt: string, authorUserId: string | undefined): ModuleResult {
+  const items = array(get(entry, "content", "items"));
+  const sortIndex = string(entry["sortIndex"]);
+  const posts: Bookmark[] = [];
+  for (const item of items) {
+    const itemObject = object(item);
+    if (!itemObject) continue;
+    const itemId = string(itemObject["entryId"]);
+    const contentObject = object(get(itemObject, "item", "itemContent"));
+    if (!contentObject) continue;
+    const tweetResult = unwrapModuleTweet(get(contentObject, "tweet_results", "result"));
+    if (!tweetResult) continue;
+    const typename = string(tweetResult["__typename"]);
+    const authorId = moduleAuthorId(contentObject);
+    if (!authorId) {
+      if (["TweetTombstone", "TweetUnavailable"].includes(typename ?? "")) continue;
+      return { detail: "conversation item \"" + (itemId ?? "unknown") + "\" carries a tweet without an author id" };
+    }
+    if (authorUserId === undefined) return { detail: "conversation module requires an author filter" };
+    if (authorId !== authorUserId) continue;
+    const tweetId = itemId ? itemId.split("-tweet-").pop() ?? "" : "";
+    if (!tweetId) return { detail: "conversation item has no tweet id in its entryId" };
+    const bookmark = extractTweet(
+      { entryId: "tweet-" + tweetId, sortIndex, content: { itemContent: contentObject } },
+      observedAt,
+    );
+    if (!bookmark || !bookmark.tweet_id) return { detail: "conversation item \"" + itemId + "\" did not match the tweet shape" };
+    posts.push(bookmark);
+  }
+  return { posts };
+}
+
+function parseInstructions(instructions: unknown, observedAt: string, authorUserId?: string): ParsedPage {
   const invalid = (detail: string): ParsedPage => ({ valid: false, bookmarks: [], nextCursor: null, detail });
   if (!Array.isArray(instructions)) return invalid("timeline instructions are missing or not an array");
   const bookmarks: Bookmark[] = [];
   let nextCursor: string | null = null;
+  let terminated = false;
   for (const instruction of instructions) {
+    const kind = string(get(instruction, "type"));
+    if (kind === "TimelineTerminateTimeline") terminated = true;
     const parsed = instructionEntries(instruction);
     if (!parsed.valid) return invalid(parsed.detail);
     for (const entry of parsed.entries) {
@@ -251,23 +306,27 @@ function parseInstructions(instructions: unknown, observedAt: string): ParsedPag
         const bookmark = extractTweet(entryObject, observedAt);
         if (!bookmark || !bookmark.tweet_id) return invalid("entry \"" + id + "\" did not match the tweet shape");
         bookmarks.push(bookmark);
+      } else if (id.startsWith("profile-conversation-")) {
+        const module = modulePosts(entryObject, observedAt, authorUserId);
+        if ("detail" in module) return invalid(module.detail);
+        bookmarks.push(...module.posts);
       } else if (id.startsWith("cursor-bottom-")) {
         const value = string(get(entryObject, "content", "value"));
         if (!value) return invalid("cursor entry \"" + id + "\" has no content.value");
         nextCursor = value;
-      } else if (!id.startsWith("cursor-top-")) {
-        return invalid("unsupported entry \"" + id + "\"");
+      } else {
+        continue;
       }
     }
   }
-  return { valid: true, bookmarks, nextCursor };
+  return { valid: true, bookmarks, nextCursor, terminated };
 }
 
 export function parseTimeline(data: unknown, observedAt: string): ParsedPage {
   const instructions = get(data, "data", "bookmark_timeline_v2", "timeline", "instructions") ??
     get(data, "data", "bookmark_timeline", "timeline", "instructions") ??
     get(data, "data", "bookmark_collection_timeline", "timeline", "instructions");
-  return parseInstructions(instructions, observedAt);
+  return parseInstructions(instructions, observedAt, undefined);
 }
 
 export interface ProfileInfo {
@@ -281,8 +340,8 @@ export interface ProfileInfo {
 }
 
 export type ParsedProfilePage =
-  | { valid: true; posts: Bookmark[]; nextCursor: string | null; profile: ProfileInfo | null }
-  | { valid: false; posts: []; nextCursor: null; profile: null; detail?: string };
+  | { valid: true; posts: Bookmark[]; nextCursor: string | null; terminated: boolean; profile: ProfileInfo | null }
+  | { valid: false; posts: []; nextCursor: null; terminated: false; profile: null; detail?: string };
 
 export function parseProfileInfo(source: unknown): ProfileInfo | null {
   if (!object(source)) return null;
@@ -299,25 +358,25 @@ export function parseProfileInfo(source: unknown): ProfileInfo | null {
   };
 }
 
-export function parseProfileTimeline(data: unknown, observedAt: string): ParsedProfilePage {
+export function parseProfileTimeline(data: unknown, observedAt: string, authorUserId?: string): ParsedProfilePage {
   const source = get(data, "data", "user", "result");
   if (!object(source)) {
-    return { valid: false, posts: [], nextCursor: null, profile: null,
+    return { valid: false, posts: [], nextCursor: null, terminated: false, profile: null,
       detail: "response has no data.user.result" };
   }
   const typename = string(get(source, "__typename"));
   const instructions = get(source, "timeline", "timeline", "instructions") ??
     get(source, "timeline_v2", "timeline", "instructions");
   if (instructions === undefined) {
-    return { valid: false, posts: [], nextCursor: null, profile: null,
+    return { valid: false, posts: [], nextCursor: null, terminated: false, profile: null,
       detail: "no timeline instructions at timeline.timeline.instructions or timeline_v2.timeline.instructions (result __typename=" + (typename ?? "missing") + ")" };
   }
-  const base = parseInstructions(instructions, observedAt);
+  const base = parseInstructions(instructions, observedAt, authorUserId);
   if (!base.valid) {
-    return { valid: false, posts: [], nextCursor: null, profile: null,
+    return { valid: false, posts: [], nextCursor: null, terminated: false, profile: null,
       ...(base.detail ? { detail: base.detail } : {}) };
   }
-  return { valid: true, posts: base.bookmarks, nextCursor: base.nextCursor, profile: parseProfileInfo(source) };
+  return { valid: true, posts: base.bookmarks, nextCursor: base.nextCursor, terminated: base.terminated === true, profile: parseProfileInfo(source) };
 }
 
 export function parseFolders(data: unknown): ParsedFolders {

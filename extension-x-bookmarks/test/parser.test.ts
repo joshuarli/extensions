@@ -40,10 +40,10 @@ describe("bookmark timelines", () => {
     }
   });
 
-  it("accepts folder timelines but rejects changed shapes and unknown entries", () => {
+  it("accepts folder timelines, rejects changed shapes, skips unknown modules", () => {
     expect(parseTimeline(page([entry({ rest_id: "123" })], "bookmark_collection_timeline"), now).valid).toBe(true);
     expect(parseTimeline({}, now).valid).toBe(false);
-    expect(parseTimeline(page([{ entryId: "mystery" }]), now).valid).toBe(false);
+    expect(parseTimeline(page([{ entryId: "mystery" }]), now).valid).toBe(true);
     expect(parseTimeline(page([{ entryId: "cursor-bottom-0", content: { value: 1 } }]), now).valid).toBe(false);
     expect(parseTimeline(page([null]), now).valid).toBe(false);
   });
@@ -57,5 +57,33 @@ describe("bookmark timelines", () => {
     expect(parseFolders({ data: { viewer: { user_results: { result: {
       bookmark_collections_slice: { items: [null] },
     } } } } }).valid).toBe(false);
+  });
+});
+
+describe("timeline modules", () => {
+  it("skips who-to-follow and other module entries but keeps posts and cursors", () => {
+    const data = page([
+      { entryId: "who-to-follow-123", sortIndex: "1", content: { entryType: "TimelineTimelineModule", displayType: "Vertical", items: [] } },
+      entry({ rest_id: "123", legacy: { full_text: "kept" } }, "123"),
+      { entryId: "ad-2122361160534589438", sortIndex: "2", content: { entryType: "TimelineTimelineModule" } },
+      cursor,
+    ]);
+    const result = parseTimeline(data, now);
+    expect(result.valid).toBe(true);
+    expect(result.bookmarks.map((bookmark) => bookmark.tweet_id)).toEqual(["123"]);
+    expect(result.nextCursor).toBe("next");
+  });
+
+  it("still rejects a tweet entry that does not match the tweet shape", () => {
+    const data = page([{ entryId: "tweet-", sortIndex: "1", content: { itemContent: {} } }]);
+    expect(parseTimeline(data, now).valid).toBe(false);
+  });
+
+  it("surfaces the terminate instruction as the end of the timeline", () => {
+    const instructions = [{ type: "TimelineAddEntries", entries: [cursor] }, { type: "TimelineTerminateTimeline" }];
+    const data = { data: { bookmark_timeline_v2: { timeline: { instructions } } } };
+    const result = parseTimeline(data, now);
+    expect(result.valid).toBe(true);
+    expect(result.terminated).toBe(true);
   });
 });

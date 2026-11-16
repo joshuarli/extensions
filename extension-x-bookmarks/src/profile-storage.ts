@@ -18,6 +18,7 @@ export interface ProfileScanState {
   reason: string;
   operation?: ProfileOperation | undefined;
   profile?: ProfileScanProfile | undefined;
+  cursors?: Record<string, string> | undefined;
 }
 
 const ProfileScanProfileSchema = Schema.Struct({
@@ -37,6 +38,7 @@ const ProfileScanStateSchema = Schema.Struct({
   reason: Schema.String,
   operation: Schema.optional(Schema.Literals(PROFILE_OPERATIONS)),
   profile: Schema.optional(ProfileScanProfileSchema),
+  cursors: Schema.optional(Schema.Record(Schema.String, Schema.String)),
 });
 
 export type ProfilePost = Bookmark & { target_user_id: string };

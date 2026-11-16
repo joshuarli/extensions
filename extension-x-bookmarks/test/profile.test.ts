@@ -1,9 +1,9 @@
 import "fake-indexeddb/auto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { collectProfile } from "../src/collector.ts";
-import { openProfileArchive, assembleProfileArchive, mergeProfilePost, listProfileStates } from "../src/profile-storage.ts";
+import { openProfileArchive, assembleProfileArchive, mergeProfilePost, listProfileStates, loadProfileState } from "../src/profile-storage.ts";
 import { collectMediaJobs } from "../src/media.ts";
-import { downloadPostsMedia, exportFolderName } from "../src/profile-export.ts";
+import { downloadPostsMedia, exportFolderName, filterAlreadyDownloadedMedia } from "../src/profile-export.ts";
 import { parseProfileTimeline } from "../src/parser.ts";
 import type { Bookmark } from "../src/parser.ts";
 
@@ -507,7 +507,7 @@ describe("media downloads", () => {
     }
   });
 
-  it("collects interrupted downloads as failures without aborting the rest", async () => {
+  it("retries interrupted downloads before reporting them as failed", async () => {
     const downloads = stubDownloads();
     const resultPromise = downloadPostsMedia(jobs, "folder", {
       report: () => {},
@@ -518,6 +518,39 @@ describe("media downloads", () => {
     if (firstId === undefined || secondId === undefined) throw new Error("expected two downloads");
     for (const listener of downloads.listeners) listener({ id: firstId, state: { current: "interrupted" }, error: { current: "NETWORK_FAILED" } });
     for (const listener of downloads.listeners) listener({ id: secondId, state: { current: "complete" } });
+    await vi.waitFor(() => expect(downloads.started.size).toBe(3), { timeout: 5000 });
+    const [retryId] = [...downloads.started.keys()].filter((id) => id !== firstId && id !== secondId);
+    if (retryId === undefined) throw new Error("expected a retried download");
+    for (const listener of downloads.listeners) listener({ id: retryId, state: { current: "complete" } });
+    const result = await resultPromise;
+    expect(result.downloaded).toBe(2);
+    expect(result.failed).toEqual([]);
+  });
+
+  it("reports a file as failed only after every retry round is exhausted", async () => {
+    const downloads = stubDownloads();
+    const resultPromise = downloadPostsMedia(jobs, "folder", {
+      report: () => {},
+      signal: new AbortController().signal,
+    });
+    await vi.waitFor(() => expect(downloads.started.size).toBe(2));
+    const interrupt = async (id: number) => {
+      for (const listener of downloads.listeners) listener({ id, state: { current: "interrupted" }, error: { current: "NETWORK_FAILED" } });
+    };
+    const ids = [...downloads.started.keys()];
+    const firstId = ids[0];
+    const secondId = ids[1];
+    if (firstId === undefined || secondId === undefined) throw new Error("expected two downloads");
+    await interrupt(firstId);
+    for (const listener of downloads.listeners) listener({ id: secondId, state: { current: "complete" } });
+    const seen = new Set<number>([firstId, secondId]);
+    for (let round = 0; round < 2; round += 1) {
+      await vi.waitFor(() => expect(downloads.started.size).toBeGreaterThan(seen.size), { timeout: 5000 });
+      const retryId = [...downloads.started.keys()].find((id) => !seen.has(id));
+      if (retryId === undefined) throw new Error("expected another retried download");
+      seen.add(retryId);
+      await interrupt(retryId);
+    }
     const result = await resultPromise;
     expect(result.downloaded).toBe(1);
     expect(result.failed).toEqual([{ filename: "1_0.jpg", error: "NETWORK_FAILED" }]);
@@ -557,5 +590,259 @@ describe("profile timeline parse diagnostics", () => {
     if (!result.valid) expect(result.detail).toContain("UserUnavailable");
     const empty = parseProfileTimeline({}, "2026-11-15T00:00:00Z");
     if (!empty.valid) expect(empty.detail).toBe("response has no data.user.result");
+  });
+});
+
+describe("conversation modules in the replies timeline", () => {
+  const conversation = (id: string, foreignAuthor: string, ownAuthor: string) => ({
+    entryId: "profile-conversation-" + id,
+    sortIndex: "9000" + id,
+    content: {
+      __typename: "TimelineTimelineModule",
+      displayType: "VerticalConversation",
+      entryType: "TimelineTimelineModule",
+      items: [
+        { entryId: `profile-conversation-${id}-tweet-7000${id}`, item: { itemContent: {
+          __typename: "TimelineTweet",
+          tweetDisplayType: "Tweet",
+          tweet_results: { result: {
+            __typename: "Tweet",
+            rest_id: "7000" + id,
+            legacy: { full_text: "the parent tweet" },
+            core: { user_results: { result: { rest_id: foreignAuthor } } },
+          } } } } },
+        { entryId: `profile-conversation-${id}-tweet-8000${id}`, item: { itemContent: {
+          __typename: "TimelineTweet",
+          tweetDisplayType: "Tweet",
+          tweet_results: { result: {
+            __typename: "Tweet",
+            rest_id: "8000" + id,
+            legacy: { full_text: "the profile reply", extended_entities: { media: [{ type: "photo", media_url_https: "https://pbs.twimg.com/media/reply.jpg" }] } },
+            core: { user_results: { result: { rest_id: ownAuthor } } },
+          } } } } },
+      ],
+    },
+  });
+
+  it("keeps only the profile's own replies from conversation modules", () => {
+    const data = profilePage([conversation("1", "9999", targetUserId), cursor("next-cursor")]);
+    const result = parseProfileTimeline(data, "2026-11-15T00:00:00Z", targetUserId);
+    expect(result.valid).toBe(true);
+    if (!result.valid) return;
+    expect(result.posts.map((post) => post.tweet_id)).toEqual(["80001"]);
+    expect(result.posts[0]?.media).toMatchObject([{ url: "https://pbs.twimg.com/media/reply.jpg?format=jpg&name=orig" }]);
+    expect(result.nextCursor).toBe("next-cursor");
+  });
+
+  it("fails loudly when a conversation item carries a tweet with no author id", () => {
+    const broken = {
+      entryId: "profile-conversation-2",
+      sortIndex: "90002",
+      content: {
+        entryType: "TimelineTimelineModule",
+        items: [{ entryId: "profile-conversation-2-tweet-70002", item: { itemContent: {
+          tweet_results: { result: { __typename: "Tweet", rest_id: "70002", legacy: { full_text: "x" } } } } } }],
+      },
+    };
+    const result = parseProfileTimeline(profilePage([broken]), "2026-11-15T00:00:00Z", targetUserId);
+    expect(result.valid).toBe(false);
+    if (result.valid) return;
+    expect(result.detail).toContain("author id");
+  });
+
+  it("fails loudly when a conversation module is parsed without an author filter", () => {
+    const result = parseProfileTimeline(profilePage([conversation("3", "9999", targetUserId)]), "2026-11-15T00:00:00Z");
+    expect(result.valid).toBe(false);
+    if (result.valid) return;
+    expect(result.detail).toContain("author filter");
+  });
+
+  it("skips module items that are not tweets", () => {
+    const adOnly = {
+      entryId: "profile-conversation-4",
+      sortIndex: "90004",
+      content: {
+        entryType: "TimelineTimelineModule",
+        items: [{ entryId: "profile-conversation-4-ad", item: { itemContent: { __typename: "TimelinePromoFormulaItem" } } }],
+      },
+    };
+    const result = parseProfileTimeline(profilePage([adOnly]), "2026-11-15T00:00:00Z", targetUserId);
+    expect(result.valid).toBe(true);
+    if (result.valid) expect(result.posts).toEqual([]);
+  });
+});
+
+describe("conversation modules with unavailable tweets", () => {
+  const moduleWith = (result: unknown, id: string) => ({
+    entryId: "profile-conversation-" + id,
+    sortIndex: "9000" + id,
+    content: {
+      entryType: "TimelineTimelineModule",
+      items: [{ entryId: `profile-conversation-${id}-tweet-7000${id}`, item: { itemContent: {
+        tweet_results: { result },
+      } } }],
+    },
+  });
+
+  it("skips unavailable tweets instead of failing the page", () => {
+    const tombstone = moduleWith({ __typename: "TweetTombstone", rest_id: "700011" }, "11");
+    const data = profilePage([tombstone, cursor("next-cursor")]);
+    const result = parseProfileTimeline(data, "2026-11-15T00:00:00Z", targetUserId);
+    expect(result.valid).toBe(true);
+    if (result.valid) expect(result.posts).toEqual([]);
+  });
+
+  it("reads the author from legacy.user_id_str when core metadata is gone", () => {
+    const wrapped = moduleWith({
+      __typename: "Tweet",
+      rest_id: "700012",
+      legacy: { full_text: "legacy-only reply", user_id_str: targetUserId },
+    }, "12");
+    const result = parseProfileTimeline(profilePage([wrapped]), "2026-11-15T00:00:00Z", targetUserId);
+    expect(result.valid).toBe(true);
+    if (result.valid) expect(result.posts.map((post) => post.tweet_id)).toEqual(["700012"]);
+  });
+
+  it("reads visibility-wrapped replies on the profile's behalf", () => {
+    const visibilityWrapped = moduleWith({
+      __typename: "TweetWithVisibilityResults",
+      tweet: {
+        __typename: "Tweet",
+        rest_id: "700013",
+        legacy: { full_text: "wrapped reply" },
+        core: { user_results: { result: { rest_id: targetUserId } } },
+      },
+    }, "13");
+    const result = parseProfileTimeline(profilePage([visibilityWrapped]), "2026-11-15T00:00:00Z", targetUserId);
+    expect(result.valid).toBe(true);
+    if (result.valid) expect(result.posts.map((post) => post.tweet_id)).toEqual(["700013"]);
+  });
+});
+
+describe("promoted previews inside conversation modules", () => {
+  it("filters out TweetPreviewDisplay promo items by their advertiser id", () => {
+    const previewDisplay = {
+      entryId: "profile-conversation-2122369301783510976",
+      sortIndex: "900050",
+      content: {
+        entryType: "TimelineTimelineModule",
+        items: [
+          { entryId: "profile-conversation-2122369301783510976-tweet-2113170725528051867", item: { itemContent: {
+            tweet_results: {
+              result: {
+                __typename: "TweetPreviewDisplay",
+                cta: { title: { url: { url: "https://example.com", urlType: "DeepLink" } } },
+                tweet: {
+                  rest_id: "2113170725528051867",
+                  text: "promo text",
+                  core: { user_results: { result: { rest_id: "999888777" } } },
+                },
+              },
+            },
+          } } },
+          { entryId: "profile-conversation-2122369301783510976-tweet-800050", item: { itemContent: {
+            tweet_results: { result: {
+              __typename: "Tweet",
+              rest_id: "800050",
+              legacy: { full_text: "the profile reply", user_id_str: targetUserId },
+            } },
+          } } },
+        ],
+      },
+    };
+    const result = parseProfileTimeline(profilePage([previewDisplay]), "2026-11-15T00:00:00Z", targetUserId);
+    expect(result.valid).toBe(true);
+    if (result.valid) expect(result.posts.map((post) => post.tweet_id)).toEqual(["800050"]);
+  });
+});
+
+describe("interrupted profile scans resume from the checkpointed cursor", () => {
+  it("persists the page cursor and resumes an unfinished operation", { timeout: 30_000 }, async () => {
+    stubChrome();
+    stored["x_bookmarks_credentials_123"] = {
+      authorization: "Bearer token",
+      queryIds: { UserOriginalsTimeline: "q-originals" },
+      features: { UserOriginalsTimeline: "{}" },
+    };
+    stored["x_profile_target_123"] = { targetUserId, operation: "UserOriginalsTimeline", capturedAt: "2026-11-15T00:00:00Z" };
+    const db = await openTestProfileArchive();
+    const originalFetch = globalThis.fetch;
+    const pageA = profilePage([entry({ rest_id: "100", legacy: { full_text: "A" } }, "100"), cursor("c1")]);
+    const pageB = profilePage([entry({ rest_id: "200", legacy: { full_text: "B" } }, "200"), cursor("c2")]);
+    const pageC = profilePage([entry({ rest_id: "300", legacy: { full_text: "C" } }, "300")]);
+    const served = (variables: Record<string, unknown>): unknown => {
+      if (variables["cursor"] === "c1") return pageB;
+      if (variables["cursor"] === "c2") return pageB;
+      return pageA;
+    };
+    (globalThis as Record<string, unknown>)["fetch"] = (async (url: unknown) => {
+      const variables = JSON.parse(new URL(String(url)).searchParams.get("variables") ?? "{}") as Record<string, unknown>;
+      return new Response(JSON.stringify(served(variables)), { status: 200 });
+    }) as typeof fetch;
+    try {
+      await expect(collectProfile({ userId, db, signal: new AbortController().signal, report: () => {} }))
+        .rejects.toThrow(/repeated cursor/u);
+      const checkpointed = await loadProfileState(db, targetUserId);
+      expect(checkpointed?.cursors).toEqual({ UserOriginalsTimeline: "c2" });
+      let resumedCursor: string | null | undefined;
+      (globalThis as Record<string, unknown>)["fetch"] = (async (url: unknown) => {
+        const variables = JSON.parse(new URL(String(url)).searchParams.get("variables") ?? "{}") as Record<string, unknown>;
+        if (resumedCursor === undefined) resumedCursor = (variables["cursor"] as string | null | undefined) ?? null;
+        return new Response(JSON.stringify(pageC), { status: 200 });
+      }) as typeof fetch;
+      const state = await collectProfile({ userId, db, signal: new AbortController().signal, report: () => {} });
+      expect(resumedCursor).toBe("c2");
+      expect(state.reason).toBe("complete_without_replies");
+      const after = await loadProfileState(db, targetUserId);
+      expect(after?.cursors?.["UserOriginalsTimeline"]).toBeUndefined();
+      const archive = await assembleProfileArchive(db, userId, targetUserId);
+      expect(archive.posts.map((post) => post.tweet_id).sort()).toEqual(["100", "200", "300"]);
+    } finally {
+      (globalThis as Record<string, unknown>)["fetch"] = originalFetch;
+      db.close();
+    }
+  });
+});
+
+describe("skipping already downloaded media", () => {
+  const jobs = [
+    { tweet_id: "1", index: 0, kind: "photo" as const, url: "https://pbs.twimg.com/1.jpg", filename: "1_0.jpg" },
+    { tweet_id: "1", index: 1, kind: "photo" as const, url: "https://pbs.twimg.com/2.jpg", filename: "1_1.jpg" },
+    { tweet_id: "2", index: 0, kind: "photo" as const, url: "https://pbs.twimg.com/3.jpg", filename: "2_0.jpg" },
+  ];
+
+  it("skips jobs whose files completed in this folder and keeps the rest", async () => {
+    (globalThis as Record<string, unknown>)["chrome"] = {
+      downloads: {
+        search: async ({ query, state }: { query: string[]; state: string }) => {
+          expect(state).toBe("complete");
+          expect(query).toEqual(["bookmarks-2026-11-16/media/"]);
+          return [
+            { filename: "/Users/josh/Downloads/bookmarks-2026-11-16/media/1_0.jpg" },
+            { filename: "/Users/josh/Downloads/bookmarks-2026-11-16/media/2_0.jpg" },
+          ];
+        },
+      },
+    };
+    try {
+      const remaining = await filterAlreadyDownloadedMedia(jobs, "bookmarks-2026-11-16", () => {});
+      expect(remaining.map((job) => job.filename)).toEqual(["1_1.jpg"]);
+    } finally {
+      delete (globalThis as Record<string, unknown>)["chrome"];
+    }
+  });
+
+  it("downloads everything when the history lookup fails or finds nothing", async () => {
+    (globalThis as Record<string, unknown>)["chrome"] = {
+      downloads: {
+        search: async () => { throw new Error("downloads unavailable"); },
+      },
+    };
+    try {
+      const remaining = await filterAlreadyDownloadedMedia(jobs, "bookmarks-2026-11-16", () => {});
+      expect(remaining.map((job) => job.filename)).toEqual(["1_0.jpg", "1_1.jpg", "2_0.jpg"]);
+    } finally {
+      delete (globalThis as Record<string, unknown>)["chrome"];
+    }
   });
 });

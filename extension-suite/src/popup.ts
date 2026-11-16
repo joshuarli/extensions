@@ -27,6 +27,8 @@ const [tab] = await chrome.tabs.query({ active: true, currentWindow: true }),
   xDownloadExisting = requiredElement<HTMLButtonElement>(document, "[data-x-download-existing]", popupContext),
   xCollectBookmarks = requiredElement<HTMLButtonElement>(document, "[data-x-collect-bookmarks]", popupContext),
   xDownloadBookmarks = requiredElement<HTMLButtonElement>(document, "[data-x-download-bookmarks]", popupContext),
+  xCollectLikes = requiredElement<HTMLButtonElement>(document, "[data-x-collect-likes]", popupContext),
+  xDownloadLikes = requiredElement<HTMLButtonElement>(document, "[data-x-download-likes]", popupContext),
   xRunPanel = requiredElement<HTMLElement>(document, "[data-x-run]", popupContext),
   xPhase = requiredElement<HTMLElement>(document, "[data-x-phase]", popupContext),
   xCounts = requiredElement<HTMLElement>(document, "[data-x-counts]", popupContext),
@@ -79,7 +81,7 @@ function wireOnefile(tabId: number): void {
   });
 }
 
-const xActionButtons = [xProfileDownload, xCollectOnly, xDownloadExisting, xCollectBookmarks, xDownloadBookmarks];
+const xActionButtons = [xProfileDownload, xCollectOnly, xDownloadExisting, xCollectBookmarks, xDownloadBookmarks, xCollectLikes, xDownloadLikes];
 
 function setXButtonLocked(button: HTMLButtonElement, locked: boolean, title: string): void {
   button.dataset["locked"] = locked ? "true" : "false";
@@ -111,6 +113,7 @@ async function refreshXArchive(tabHandle: string | null): Promise<void> {
     xProfileState.textContent = "Not signed in to X";
     for (const button of xActionButtons) setXButtonLocked(button, true, "Disabled: sign in to x.com in this browser first");
     setXButtonLocked(xDownloadBookmarks, false, "Rebuild the bookmarks archive JSON from your saved pages");
+    setXButtonLocked(xDownloadLikes, false, "Rebuild the likes archive JSON from your saved pages");
     syncXButtons(false);
     return;
   }
@@ -129,11 +132,18 @@ async function refreshXArchive(tabHandle: string | null): Promise<void> {
     const bookmarksReady = !!credentials.queryIds["Bookmarks"] && !!credentials.authorization;
     setXButtonLocked(xCollectBookmarks, !bookmarksReady, bookmarksReady
       ? "Scan every bookmarked page (posts and folders) and download the archive JSON"
-      : "Disabled: reload https://x.com/i/bookmarks in this browser");
+      : "Disabled: reload https://x.com/i/history in this browser");
     setXButtonLocked(xDownloadBookmarks, false, "Rebuild the bookmarks archive JSON from your saved pages");
+    const likesReady = !!credentials.queryIds["Likes"] && !!credentials.authorization;
+    setXButtonLocked(xCollectLikes, !likesReady, likesReady
+      ? "Scan every liked page and download the archive JSON"
+      : "Disabled: reload https://x.com/i/history/likes in this browser");
+    setXButtonLocked(xDownloadLikes, false, "Rebuild the likes archive JSON from your saved pages");
   } catch {
     setXButtonLocked(xCollectBookmarks, false,
       "Scan every bookmarked page (posts and folders) and download the archive JSON");
+    setXButtonLocked(xCollectLikes, false,
+      "Scan every liked page and download the archive JSON");
   }
 
   try {
@@ -174,7 +184,7 @@ function renderXRun(run: ArchiveRunRecord | null): void {
   syncXButtons(active);
   if (active && run) {
     xPhase.textContent = run.phase === "collecting"
-      ? run.job === "bookmarks" ? "Collecting bookmarks" : "Scanning timeline"
+      ? run.job === "bookmarks" ? "Collecting bookmarks" : run.job === "likes" ? "Collecting likes" : "Scanning timeline"
       : "Downloading";
     xCounts.textContent = run.phase === "collecting"
       ? String(run.posts) + " posts · " + String(run.pages) + " pages"
@@ -259,6 +269,12 @@ function wireXProfileArchive(): void {
   });
   xDownloadBookmarks.addEventListener("click", () => {
     sendXArchiveRun({ job: "bookmarks", action: "export" });
+  });
+  xCollectLikes.addEventListener("click", () => {
+    sendXArchiveRun({ job: "likes", action: "download" });
+  });
+  xDownloadLikes.addEventListener("click", () => {
+    sendXArchiveRun({ job: "likes", action: "export" });
   });
   xStop.addEventListener("click", () => {
     xStop.disabled = true;

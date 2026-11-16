@@ -1,7 +1,7 @@
 export const archiveRunKey = "x_archive_run";
 export const archiveStopKey = "x_archive_stop";
 
-export type ArchiveRunJob = "profile" | "bookmarks";
+export type ArchiveRunJob = "profile" | "bookmarks" | "likes";
 export type ArchiveRunAction = "collect" | "export" | "download";
 export type ArchiveRunPhase = "collecting" | "exporting" | "done" | "error";
 
@@ -32,7 +32,7 @@ export function decodeArchiveRun(value: unknown): ArchiveRunRecord | null {
   const record = asRecord(value);
   if (!record) return null;
   if (typeof record["id"] !== "string" || typeof record["job"] !== "string") return null;
-  if (record["job"] !== "profile" && record["job"] !== "bookmarks") return null;
+  if (record["job"] !== "profile" && record["job"] !== "bookmarks" && record["job"] !== "likes") return null;
   const phase = record["phase"];
   if (typeof phase !== "string" || !phaseNames.has(phase)) return null;
   if (typeof record["detail"] !== "string"

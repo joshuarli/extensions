@@ -60,6 +60,7 @@ export function installXBookmarksHeaderRule(): void {
 const X_ARCHIVE_MENU = {
   collectProfile: "x-archive-collect-profile",
   collectBookmarks: "x-archive-collect-bookmarks",
+  collectLikes: "x-archive-collect-likes",
 } as const;
 
 const X_ARCHIVE_MENU_PATTERNS = ["*://x.com/*", "*://twitter.com/*"];
@@ -69,6 +70,7 @@ export function installXBookmarksContextMenus(): void {
     const page: chrome.contextMenus.CreateProperties = { contexts: ["page"], documentUrlPatterns: [...X_ARCHIVE_MENU_PATTERNS] };
     chrome.contextMenus.create({ ...page, id: X_ARCHIVE_MENU.collectProfile, title: "Collect and download profile posts…" });
     chrome.contextMenus.create({ ...page, id: X_ARCHIVE_MENU.collectBookmarks, title: "Collect and download bookmarks…" });
+    chrome.contextMenus.create({ ...page, id: X_ARCHIVE_MENU.collectLikes, title: "Collect and download likes…" });
   }).catch((error: unknown) => console.warn("X archive context menus setup failed", error));
 }
 
@@ -112,6 +114,11 @@ export function handleXBookmarksContextMenuClick(info: chrome.contextMenus.OnCli
       case X_ARCHIVE_MENU.collectBookmarks: {
         const result = await startXArchiveRun("download", "bookmarks");
         if (!result.ok) console.warn("X archive bookmarks run did not start:", result.error);
+        return;
+      }
+      case X_ARCHIVE_MENU.collectLikes: {
+        const result = await startXArchiveRun("download", "likes");
+        if (!result.ok) console.warn("X archive likes run did not start:", result.error);
         return;
       }
     }

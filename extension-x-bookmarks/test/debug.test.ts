@@ -10,6 +10,7 @@ function stubChrome(): void {
       local: {
         get: async (key: string) => ({ [key]: stored[key] }),
         set: async (items: Record<string, unknown>) => Object.assign(stored, items),
+        remove: async (key: string) => { delete stored[key]; },
       },
     },
   };
@@ -69,5 +70,39 @@ describe("debug report", () => {
     const summary = credentialsSummary(credentials);
     expect(summary["Bookmarks"]?.authorization_present).toBe(true);
     expect(JSON.stringify(summary)).not.toContain("super-secret-token");
+  });
+});
+
+describe("status ring buffer", () => {
+  it("persists entries, caps the ring, and survives junk values", async () => {
+    const { recordStatusEntry, readStatusLog, clearStatusLog } = await import("../src/debug.ts");
+    stubChrome();
+    stored["x_archive_status_log"] = "garbage";
+    await recordStatusEntry("first");
+    expect(await readStatusLog()).toEqual([{ text: "first", at: expect.any(String) }]);
+    for (let index = 0; index < 50; index += 1) await recordStatusEntry("entry-" + index);
+    const entries = await readStatusLog();
+    expect(entries).toHaveLength(40);
+    expect(entries[entries.length - 1]?.text).toBe("entry-49");
+    expect(entries[0]?.text).toBe("entry-10");
+    await clearStatusLog();
+    expect(await readStatusLog()).toEqual([]);
+  });
+
+  it("falls back to the stored ring when the caller passes no status log", async () => {
+    const { recordStatusEntry, buildDebugReport } = await import("../src/debug.ts");
+    stubChrome();
+    await recordStatusEntry("stored note");
+    const report = await buildDebugReport({
+      accountId: "123",
+      requestedProfile: undefined,
+      exportFolder: "bookmarks-2026-11-16",
+      extensionVersion: "0.1.0",
+      archive: null,
+      media: null,
+      reportName: "x-bookmarks-debug",
+    });
+    expect(report.tool).toBe("x-bookmarks-debug");
+    expect(report.status_log.map((entry) => entry.text)).toContain("stored note");
   });
 });
