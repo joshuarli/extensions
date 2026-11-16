@@ -29,6 +29,8 @@
     "lib/**/*.ts",
     "x-archive-core/src/**/*.ts",
     "x-archive-core/test/**/*.ts",
+    "x-archive-cli/src/**/*.ts",
+    "x-archive-cli/test/**/*.ts",
     "scripts/**/*.ts",
     "vite.config.ts",
     "vitest.config.ts"

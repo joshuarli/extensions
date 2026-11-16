@@ -334,21 +334,34 @@ def main():
 
     folder = args.archive
     posts_path = folder / "posts.json"
-    if not posts_path.is_file():
-        parser.error(f"no posts.json in {folder}")
+    alt_path = posts_path if posts_path.is_file() else next((folder / name for name in ("likes.json", "bookmarks.json") if (folder / name).is_file()), None)
+    if alt_path is None:
+        parser.error(f"no posts.json, likes.json or bookmarks.json in {folder}")
 
     mode = "text-only" if args.text_only else ("external-media" if args.external_media else "inline")
     media_dir = folder / "media"
     output = args.output or (folder / "archive.html")
 
-    with posts_path.open() as handle:
+    with alt_path.open() as handle:
         data = json.load(handle)
-    posts = data.get("posts") or []
+    if "posts" in data:
+        archive_kind = "posts"
+        posts = data.get("posts") or []
+        profile = data.get("profile") or {}
+        if not any(profile.get(key) for key in ("screen_name", "name")):
+            first_author = next((p.get("author") for p in posts if isinstance(p.get("author"), dict)), {})
+            profile = {**profile, **{k: first_author.get(k) for k in ("user_id", "screen_name", "name", "profile_image_url", "verified", "followers_count")}}
+    elif "likes" in data:
+        archive_kind = "likes"
+        posts = data.get("likes") or []
+        profile = {}
+    elif "bookmarks" in data:
+        archive_kind = "bookmarks"
+        posts = data.get("bookmarks") or []
+        profile = {}
+    else:
+        parser.error(f"{alt_path} carries no posts, likes or bookmarks array")
     meta = data.get("export_metadata") or {}
-    profile = data.get("profile") or {}
-    if not any(profile.get(key) for key in ("screen_name", "name")):
-        first_author = next((p.get("author") for p in posts if isinstance(p.get("author"), dict)), {})
-        profile = {**profile, **{k: first_author.get(k) for k in ("user_id", "screen_name", "name", "profile_image_url", "verified", "followers_count")}}
 
     def sort_key(post):
         parsed = parse_created_at(post.get("created_at"))
@@ -356,7 +369,8 @@ def main():
 
     posts = sorted(posts, key=sort_key, reverse=True)
 
-    visible_name = profile.get("name") or profile.get("screen_name") or "Archive"
+    kind_label = {"posts": "archive", "likes": "likes archive", "bookmarks": "bookmarks archive"}[archive_kind]
+    visible_name = (profile.get("name") or profile.get("screen_name") or "X " + kind_label).strip()
     handle = profile.get("screen_name") or ""
     stats = (meta.get("stats") or {})
     total_posts = stats.get("total_posts") or len(posts)
@@ -367,16 +381,19 @@ def main():
     parts = [f"<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>{esc(visible_name)} — archive</title>\n<style>{CSS}</style>\n</head>\n<body>\n"]
     parts.append(
         f'<header class="topbar"><div class="topbar-inner"><div class="logo" style="background:#16181c">{X_LOGO}</div>'
-        f'<div><h1>{esc(visible_name)}</h1><p>archive · {total_posts} posts · exported {esc(exported_at)}</p></div></div></header>\n'
-        f'<div class="banner"></div>\n'
-        f'<section class="profile"><div class="avatar-lg" style="background:{initials_color(handle or visible_name)}">{esc(initials(visible_name))}</div>'
-        f'<div class="name">{esc(visible_name)} {VERIFIED if profile.get("verified") else ""}</div>'
-        f'<div class="handle">@{esc(handle)}</div>'
-        + (f'<div class="bio">{esc(profile.get("description"))}</div>' if profile.get("description") else "")
-        + (f'<div class="meta"><span><b>{int(profile.get("followers_count") or 0):,}</b> followers</span>' if int(profile.get("followers_count") or 0) > 0 else '<div class="meta">')
-        + f'<span><b>{total_posts}</b> posts archived</span><span class="note">cumulative archive</span></div></section>\n'
-        f'<main class="feed">\n'
+        f'<div><h1>{esc(visible_name)}</h1><p>{esc(kind_label)} · {total_posts} posts · exported {esc(exported_at)}</p></div></div></header>\n'
     )
+    if archive_kind == "posts":
+        parts.append(
+            f'<div class="banner"></div>\n'
+            f'<section class="profile"><div class="avatar-lg" style="background:{initials_color(handle or visible_name)}">{esc(initials(visible_name))}</div>'
+            f'<div class="name">{esc(visible_name)} {VERIFIED if profile.get("verified") else ""}</div>'
+            f'<div class="handle">@{esc(handle)}</div>'
+            + (f'<div class="bio">{esc(profile.get("description"))}</div>' if profile.get("description") else "")
+            + (f'<div class="meta"><span><b>{int(profile.get("followers_count") or 0):,}</b> followers</span>' if int(profile.get("followers_count") or 0) > 0 else '<div class="meta">')
+            + f'<span><b>{total_posts}</b> posts archived</span><span class="note">cumulative archive</span></div></section>\n'
+        )
+    parts.append(f'<main class="feed">\n')
 
     for post in posts:
         parts.append(render_post(post, mode, media_dir))

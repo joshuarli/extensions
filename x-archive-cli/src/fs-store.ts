@@ -1,0 +1,183 @@
+import { join } from "node:path";
+import { Schema } from "effect";
+import { BookmarkSchema, type Bookmark } from "../../x-archive-core/src/parser.ts";
+import { mergeBookmark } from "../../x-archive-core/src/merge.ts";
+import {
+  ScanStateSchema,
+  LikesScanStateSchema,
+  ProfileScanStateSchema,
+  type ScanState,
+  type LikesScanState,
+  type ProfileScanState,
+} from "../../x-archive-core/src/storage.ts";
+import type {
+  BookmarksStore,
+  LikesStore,
+  ProfileStore,
+} from "../../x-archive-core/src/collector.ts";
+import { storeDir, stateDir, profileStoreDir, profileStateDir, readJsonFile, writeJsonFile } from "./state.ts";
+
+function readRecords(path: string): unknown[] {
+  const value = readJsonFile(path);
+  return Array.isArray(value) ? value : [];
+}
+
+function writeRecords(path: string, records: unknown[]): void {
+  writeJsonFile(path, records);
+}
+
+function readState<T>(path: string, decode: (value: unknown) => T | null): T | null {
+  return decode(readJsonFile(path));
+}
+
+export class FsBookmarksStore implements BookmarksStore {
+  private readonly itemsPath: string;
+  private readonly statePath: string;
+  private readonly foldersPath: string;
+
+  constructor(userId: string) {
+    this.itemsPath = join(storeDir(userId), "bookmarks.json");
+    this.statePath = join(stateDir(userId), "bookmarks-state.json");
+    this.foldersPath = join(storeDir(userId), "folders.json");
+  }
+
+  async savePage(items: Bookmark[], folderId?: string): Promise<void> {
+    if (items.length === 0) return;
+    const records = readRecords(this.itemsPath);
+    const byId = new Map<string, Bookmark>();
+    for (const record of records) {
+      const parsed = Schema.decodeUnknownSync(BookmarkSchema)(record);
+      byId.set(parsed.tweet_id, parsed);
+    }
+    for (const item of items) {
+      byId.set(item.tweet_id, mergeBookmark(byId.get(item.tweet_id), item, folderId));
+    }
+    writeRecords(this.itemsPath, [...byId.values()]);
+  }
+
+  async saveFolders(folders: ReadonlyArray<{ id: string; name: string }>): Promise<void> {
+    const existing = new Map<string, { id: string; name: string }>();
+    for (const record of readRecords(this.foldersPath)) {
+      if (typeof (record as { id?: unknown }).id === "string") existing.set((record as { id: string }).id, record as { id: string; name: string });
+    }
+    for (const folder of folders) existing.set(folder.id, folder);
+    writeJsonFile(this.foldersPath, [...existing.values()]);
+  }
+
+  async loadState(): Promise<ScanState | null> {
+    return readState(this.statePath, (value) => {
+      try {
+        return Schema.decodeUnknownSync(ScanStateSchema)(value);
+      } catch {
+        return null;
+      }
+    });
+  }
+
+  async saveState(state: ScanState): Promise<void> {
+    writeJsonFile(this.statePath, Schema.decodeUnknownSync(ScanStateSchema)(state));
+  }
+
+  async allRecords(): Promise<unknown[]> {
+    return readRecords(this.itemsPath);
+  }
+
+  async allFolders(): Promise<unknown[]> {
+    return readRecords(this.foldersPath);
+  }
+}
+
+export class FsLikesStore implements LikesStore {
+  private readonly itemsPath: string;
+  private readonly statePath: string;
+
+  constructor(userId: string) {
+    this.itemsPath = join(storeDir(userId), "likes.json");
+    this.statePath = join(stateDir(userId), "likes-state.json");
+  }
+
+  async savePage(items: Bookmark[]): Promise<void> {
+    if (items.length === 0) return;
+    const records = readRecords(this.itemsPath);
+    const byId = new Map<string, Bookmark>();
+    for (const record of records) {
+      const parsed = Schema.decodeUnknownSync(BookmarkSchema)(record);
+      byId.set(parsed.tweet_id, parsed);
+    }
+    for (const item of items) {
+      byId.set(item.tweet_id, mergeBookmark(byId.get(item.tweet_id), item));
+    }
+    writeRecords(this.itemsPath, [...byId.values()]);
+  }
+
+  async loadState(): Promise<LikesScanState | null> {
+    return readState(this.statePath, (value) => {
+      try {
+        return Schema.decodeUnknownSync(LikesScanStateSchema)(value);
+      } catch {
+        return null;
+      }
+    });
+  }
+
+  async saveState(state: LikesScanState): Promise<void> {
+    writeJsonFile(this.statePath, Schema.decodeUnknownSync(LikesScanStateSchema)(state));
+  }
+
+  async allRecords(): Promise<unknown[]> {
+    return readRecords(this.itemsPath);
+  }
+}
+
+export class FsProfileStore implements ProfileStore {
+  private readonly accountUserId: string;
+  private readonly targetUserId: string;
+
+  constructor(accountUserId: string, targetUserId: string) {
+    this.accountUserId = accountUserId;
+    this.targetUserId = targetUserId;
+  }
+
+  private itemsPath(): string {
+    return join(profileStoreDir(this.accountUserId, this.targetUserId), "posts.json");
+  }
+
+  private statePath(): string {
+    return join(profileStateDir(this.accountUserId, this.targetUserId), "state.json");
+  }
+
+  async savePage(items: Bookmark[], targetUserId: string): Promise<void> {
+    if (items.length === 0) return;
+    if (targetUserId !== this.targetUserId) throw new Error("Profile store scope mismatch.");
+    const records = readRecords(this.itemsPath());
+    const byId = new Map<string, Bookmark>();
+    for (const record of records) {
+      const parsed = Schema.decodeUnknownSync(BookmarkSchema)(record);
+      byId.set(parsed.tweet_id, parsed);
+    }
+    for (const item of items) {
+      byId.set(item.tweet_id, mergeBookmark(byId.get(item.tweet_id), item));
+    }
+    writeRecords(this.itemsPath(), [...byId.values()]);
+  }
+
+  async loadState(targetUserId: string): Promise<ProfileScanState | null> {
+    if (targetUserId !== this.targetUserId) return null;
+    return readState(this.statePath(), (value) => {
+      try {
+        return Schema.decodeUnknownSync(ProfileScanStateSchema)(value);
+      } catch {
+        return null;
+      }
+    });
+  }
+
+  async saveState(targetUserId: string, state: ProfileScanState): Promise<void> {
+    if (targetUserId !== this.targetUserId) throw new Error("Profile store scope mismatch.");
+    writeJsonFile(this.statePath(), Schema.decodeUnknownSync(ProfileScanStateSchema)(state));
+  }
+
+  async allRecords(): Promise<unknown[]> {
+    return readRecords(this.itemsPath());
+  }
+}

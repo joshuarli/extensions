@@ -1,5 +1,5 @@
 import { Schema } from "effect";
-import { Folder, BookmarkSchema, type Bookmark, type ProfileInfo } from "./parser.ts";
+import { BookmarkSchema, type Bookmark, type Folder, type ProfileInfo } from "./parser.ts";
 import { collectMediaJobs } from "./media.ts";
 import { PROFILE_OPERATIONS, type ProfileOperation } from "./capture.ts";
 
