@@ -236,7 +236,57 @@ function instructionEntries(instruction: unknown): EntriesResult {
 
 
 
-function parseInstructions(instructions: unknown, observedAt: string): ParsedPage {
+type ModuleResult = { posts: Bookmark[] } | { detail: string };
+
+const UNWRAPPERS = new Set(["TweetWithVisibilityResults", "TweetPreviewDisplay"]);
+
+function unwrapModuleTweet(result: unknown): ObjectValue | null {
+  const resultObject = object(result);
+  if (!resultObject) return null;
+  if (UNWRAPPERS.has(string(get(resultObject, "__typename")) ?? "")) return object(get(resultObject, "tweet"));
+  return resultObject;
+}
+
+function moduleAuthorId(itemContent: ObjectValue): string | null {
+  const result = unwrapModuleTweet(get(itemContent, "tweet_results", "result"));
+  if (!result) return null;
+  return string(get(result, "core", "user_results", "result", "rest_id"))
+    ?? string(get(result, "legacy", "user_id_str"));
+}
+
+function modulePosts(entry: ObjectValue, observedAt: string, authorUserId: string | undefined): ModuleResult {
+  const items = array(get(entry, "content", "items"));
+  const sortIndex = string(entry["sortIndex"]);
+  const posts: Bookmark[] = [];
+  for (const item of items) {
+    const itemObject = object(item);
+    if (!itemObject) continue;
+    const itemId = string(itemObject["entryId"]);
+    const contentObject = object(get(itemObject, "item", "itemContent"));
+    if (!contentObject) continue;
+    const tweetResult = unwrapModuleTweet(get(contentObject, "tweet_results", "result"));
+    if (!tweetResult) continue;
+    const typename = string(tweetResult["__typename"]);
+    const authorId = moduleAuthorId(contentObject);
+    if (!authorId) {
+      if (["TweetTombstone", "TweetUnavailable"].includes(typename ?? "")) continue;
+      return { detail: "conversation item \"" + (itemId ?? "unknown") + "\" carries a tweet without an author id" };
+    }
+    if (authorUserId === undefined) return { detail: "conversation module requires an author filter" };
+    if (authorId !== authorUserId) continue;
+    const tweetId = itemId ? itemId.split("-tweet-").pop() ?? "" : "";
+    if (!tweetId) return { detail: "conversation item has no tweet id in its entryId" };
+    const bookmark = extractTweet(
+      { entryId: "tweet-" + tweetId, sortIndex, content: { itemContent: contentObject } },
+      observedAt,
+    );
+    if (!bookmark || !bookmark.tweet_id) return { detail: "conversation item \"" + itemId + "\" did not match the tweet shape" };
+    posts.push(bookmark);
+  }
+  return { posts };
+}
+
+function parseInstructions(instructions: unknown, observedAt: string, authorUserId?: string): ParsedPage {
   const invalid = (detail: string): ParsedPage => ({ valid: false, bookmarks: [], nextCursor: null, detail });
   if (!Array.isArray(instructions)) return invalid("timeline instructions are missing or not an array");
   const bookmarks: Bookmark[] = [];
@@ -256,6 +306,10 @@ function parseInstructions(instructions: unknown, observedAt: string): ParsedPag
         const bookmark = extractTweet(entryObject, observedAt);
         if (!bookmark || !bookmark.tweet_id) return invalid("entry \"" + id + "\" did not match the tweet shape");
         bookmarks.push(bookmark);
+      } else if (id.startsWith("profile-conversation-")) {
+        const module = modulePosts(entryObject, observedAt, authorUserId);
+        if ("detail" in module) return invalid(module.detail);
+        bookmarks.push(...module.posts);
       } else if (id.startsWith("cursor-bottom-")) {
         const value = string(get(entryObject, "content", "value"));
         if (!value) return invalid("cursor entry \"" + id + "\" has no content.value");
@@ -272,7 +326,7 @@ export function parseTimeline(data: unknown, observedAt: string): ParsedPage {
   const instructions = get(data, "data", "bookmark_timeline_v2", "timeline", "instructions") ??
     get(data, "data", "bookmark_timeline", "timeline", "instructions") ??
     get(data, "data", "bookmark_collection_timeline", "timeline", "instructions");
-  return parseInstructions(instructions, observedAt);
+  return parseInstructions(instructions, observedAt, undefined);
 }
 
 export interface ProfileInfo {
@@ -304,7 +358,7 @@ export function parseProfileInfo(source: unknown): ProfileInfo | null {
   };
 }
 
-export function parseProfileTimeline(data: unknown, observedAt: string): ParsedProfilePage {
+export function parseProfileTimeline(data: unknown, observedAt: string, authorUserId?: string): ParsedProfilePage {
   const source = get(data, "data", "user", "result");
   if (!object(source)) {
     return { valid: false, posts: [], nextCursor: null, terminated: false, profile: null,
@@ -317,7 +371,7 @@ export function parseProfileTimeline(data: unknown, observedAt: string): ParsedP
     return { valid: false, posts: [], nextCursor: null, terminated: false, profile: null,
       detail: "no timeline instructions at timeline.timeline.instructions or timeline_v2.timeline.instructions (result __typename=" + (typename ?? "missing") + ")" };
   }
-  const base = parseInstructions(instructions, observedAt);
+  const base = parseInstructions(instructions, observedAt, authorUserId);
   if (!base.valid) {
     return { valid: false, posts: [], nextCursor: null, terminated: false, profile: null,
       ...(base.detail ? { detail: base.detail } : {}) };

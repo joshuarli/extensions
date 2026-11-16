@@ -268,7 +268,7 @@ export async function collectProfileTimeline(
     operation,
     buildVariables: (cursor) => profileTimelineVariables(operation, targetUserId, cursor),
     parse: (data, observedAt) => {
-      const result = parseProfileTimeline(data, observedAt);
+      const result = parseProfileTimeline(data, observedAt, targetUserId);
       if (result.valid && result.profile) profile = result.profile;
       return result.valid
         ? { valid: true, items: result.posts, nextCursor: result.nextCursor, terminated: result.terminated }
