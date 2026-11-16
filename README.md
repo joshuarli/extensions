@@ -28,5 +28,5 @@ Click the toolbar icon to open the feature hub:
 - **Allow Right-Click** enables or disables right-click restoration for the active tab.
 - **Onefile** saves the active tab as a `.u.zip.html` file.
 - **YouTube Transcript** appears on YouTube pages and copies the transcript or SRT subtitles.
-- **X Archive** opens the X archive exporter.
-- **All settings** opens the preferred transcript language and the X Bookmarks exporter link.
+- **X Archive** archives any profile's full post history or your bookmarks — download, progress, and stop all live in the popup.
+- **All settings** opens the preferred transcript language options.

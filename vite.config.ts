@@ -59,14 +59,6 @@ export const suiteBundles: SuiteBundle[] = [
     target: "chrome120",
   },
   {
-    root: sourcePath("extension-x-bookmarks"),
-    input: sourcePath("extension-x-bookmarks", "options.html"),
-    outputDirectory: resolvePath(suiteOutputDirectory, "features", "x-bookmarks"),
-    entryFileName: "options.js",
-    format: "es",
-    target: "chrome120",
-  },
-  {
     root: sourcePath("extension-onefile"),
     input: sourcePath("extension-onefile", "offscreen.html"),
     outputDirectory: resolvePath(suiteOutputDirectory, "features", "onefile"),

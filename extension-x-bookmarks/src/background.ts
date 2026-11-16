@@ -8,6 +8,11 @@ import {
   readCredentials,
   writeProfileTarget,
 } from "./capture.ts";
+import {
+  archiveRunKey,
+  decodeArchiveRun,
+} from "./archive-run.ts";
+import { startXArchiveRun } from "./archive-engine.ts";
 
 export const xBookmarksRequestFilter: chrome.webRequest.RequestFilter = {
   urls: ["https://x.com/i/api/graphql/*"],
@@ -53,7 +58,6 @@ export function installXBookmarksHeaderRule(): void {
 }
 
 const X_ARCHIVE_MENU = {
-  openExporter: "x-archive-open-exporter",
   collectProfile: "x-archive-collect-profile",
   collectBookmarks: "x-archive-collect-bookmarks",
 } as const;
@@ -63,31 +67,53 @@ const X_ARCHIVE_MENU_PATTERNS = ["*://x.com/*", "*://twitter.com/*"];
 export function installXBookmarksContextMenus(): void {
   void chrome.contextMenus.removeAll().then(() => {
     const page: chrome.contextMenus.CreateProperties = { contexts: ["page"], documentUrlPatterns: [...X_ARCHIVE_MENU_PATTERNS] };
-    chrome.contextMenus.create({ ...page, id: X_ARCHIVE_MENU.openExporter, title: "Open X archive exporter" });
     chrome.contextMenus.create({ ...page, id: X_ARCHIVE_MENU.collectProfile, title: "Collect and download profile posts…" });
     chrome.contextMenus.create({ ...page, id: X_ARCHIVE_MENU.collectBookmarks, title: "Collect and download bookmarks…" });
   }).catch((error: unknown) => console.warn("X archive context menus setup failed", error));
 }
 
-export function xBookmarksCollectProfileUrl(exporterUrl: string, pageUrl: string | undefined): string {
-  const screenName = pageUrl ? parseProfileScreenName(pageUrl) : null;
-  return exporterUrl + "?collect=profile&export=1"
-    + (screenName ? "&profile=" + encodeURIComponent(screenName) : "");
+export function installArchiveRunBadge(): void {
+  chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName !== "local") return;
+    const change = changes[archiveRunKey] as chrome.storage.StorageChange | undefined;
+    const run = change ? decodeArchiveRun(change.newValue) : undefined;
+    if (!run || !change) {
+      if (change && !change.newValue) void chrome.action.setBadgeText({ text: "" });
+      return;
+    }
+    if (run.phase === "collecting" || run.phase === "exporting") {
+      void chrome.action.setBadgeText({ text: "…" });
+      void chrome.action.setBadgeBackgroundColor({ color: "#1a73e8" });
+      return;
+    }
+    if (run.phase === "done") {
+      void chrome.action.setBadgeText({ text: "✓" });
+      void chrome.action.setBadgeBackgroundColor({ color: "#188038" });
+      return;
+    }
+    void chrome.action.setBadgeText({ text: "!" });
+    void chrome.action.setBadgeBackgroundColor({ color: "#c5221f" });
+  });
+}
+
+export function clearArchiveBadge(): void {
+  void chrome.action.setBadgeText({ text: "" });
 }
 
 export function handleXBookmarksContextMenuClick(info: chrome.contextMenus.OnClickData): void {
   updateQueue = updateQueue.then(async () => {
-    const exporterUrl = chrome.runtime.getURL("features/x-bookmarks/options.html");
     switch (info.menuItemId) {
-      case X_ARCHIVE_MENU.openExporter:
-        await chrome.tabs.create({ url: exporterUrl });
+      case X_ARCHIVE_MENU.collectProfile: {
+        const screenName = info.pageUrl ? parseProfileScreenName(info.pageUrl) : null;
+        const result = await startXArchiveRun("download", "profile", screenName ? { screenName } : {});
+        if (!result.ok) console.warn("X archive profile run did not start:", result.error);
         return;
-      case X_ARCHIVE_MENU.collectProfile:
-        await chrome.tabs.create({ url: xBookmarksCollectProfileUrl(exporterUrl, info.pageUrl) });
+      }
+      case X_ARCHIVE_MENU.collectBookmarks: {
+        const result = await startXArchiveRun("download", "bookmarks");
+        if (!result.ok) console.warn("X archive bookmarks run did not start:", result.error);
         return;
-      case X_ARCHIVE_MENU.collectBookmarks:
-        await chrome.tabs.create({ url: exporterUrl + "?collect=bookmarks&export=1" });
-        return;
+      }
     }
   }).catch((error: unknown) => console.warn("X archive context menu action failed", error));
 }

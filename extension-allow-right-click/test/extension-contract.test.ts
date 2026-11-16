@@ -79,11 +79,6 @@ test("builds one worker, one UI bundle, and namespaced classic injections", () =
     ],
   );
 
-  const xOptions = suiteBundles.find(
-    (bundle) => bundle.entryFileName === "options.js",
-  );
-  assert.ok(xOptions);
-  assert.match(xOptions.outputDirectory, /features\/x-bookmarks$/u);
 
   const onefileOffscreen = suiteBundles.find(
     (bundle) => bundle.entryFileName === "offscreen.js",

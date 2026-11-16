@@ -9,14 +9,16 @@ import {
 } from "../../extension-youtube-transcript/src/background.ts";
 import { isYouTubeTranscriptMessage } from "../../extension-youtube-transcript/src/message-contract.ts";
 import {
+  clearArchiveBadge,
   handleXBookmarksContextMenuClick,
   handleXBookmarksRequest,
+  installArchiveRunBadge,
   installXBookmarksContextMenus,
   installXBookmarksHeaderRule,
   xBookmarksRequestFilter,
 } from "../../extension-x-bookmarks/src/background.ts";
+import { startXArchiveRun, stopXArchiveRun } from "../../extension-x-bookmarks/src/archive-engine.ts";
 import { createActionStatus } from "./action-status.ts";
-import { xBookmarksExporterPath } from "./feature-paths.ts";
 import { suiteActionTitle } from "./identity.ts";
 import {
   isSuiteRequest,
@@ -80,22 +82,26 @@ async function handleSuiteRequest(request: SuiteRequest): Promise<SuiteResponse>
       void onefile.save(tab);
       return { ok: true };
     }
-    case "x-bookmarks/open-exporter": {
-      await chrome.tabs.create({
-        url: chrome.runtime.getURL(xBookmarksExporterPath),
-      });
-      return { ok: true };
-    }
-    case "x-bookmarks/collect-profile": {
+    case "x-bookmarks/run": {
+      if (request.action === "stop") {
+        return stopXArchiveRun();
+      }
+      if (request.action === "dismiss") {
+        clearArchiveBadge();
+        return { ok: true };
+      }
       const screenName = request.screenName && /^[A-Za-z0-9_]{1,15}$/u.test(request.screenName)
         ? request.screenName
         : undefined;
-      await chrome.tabs.create({
-        url: chrome.runtime.getURL(xBookmarksExporterPath)
-          + "?collect=profile&export=1"
-          + (screenName ? "&profile=" + encodeURIComponent(screenName) : ""),
-      });
-      return { ok: true };
+      const targetUserId = request.targetUserId && /^\d+$/u.test(request.targetUserId)
+        ? request.targetUserId
+        : undefined;
+      const result = await startXArchiveRun(
+        request.action,
+        request.job,
+        { ...(screenName ? { screenName } : {}), ...(targetUserId ? { targetUserId } : {}) },
+      );
+      return result.ok ? { ok: true } : { ok: false, error: result.error ?? "Archive run did not start." };
     }
   }
 }
@@ -130,6 +136,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   return false;
 });
+
+installArchiveRunBadge();
 
 chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) =>
   handleExternalMessage(message, sender, sendResponse),

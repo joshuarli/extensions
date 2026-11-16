@@ -21,28 +21,29 @@ test("accepts namespaced suite requests", () => {
   ).toEqual({ kind: "onefile/save", tabId: 7 });
   expect(
     Schema.decodeUnknownSync(SuiteRequestSchema)({
-      kind: "x-bookmarks/open-exporter",
-    }),
-  ).toEqual({ kind: "x-bookmarks/open-exporter" });
-  expect(
-    Schema.decodeUnknownSync(SuiteRequestSchema)({
-      kind: "x-bookmarks/collect-profile",
-    }),
-  ).toEqual({ kind: "x-bookmarks/collect-profile" });
-  expect(
-    Schema.decodeUnknownSync(SuiteRequestSchema)({
-      kind: "x-bookmarks/collect-profile",
+      kind: "x-bookmarks/run",
+      job: "profile",
+      action: "download",
       screenName: "token___garden",
     }),
-  ).toEqual({ kind: "x-bookmarks/collect-profile", screenName: "token___garden" });
+  ).toEqual({ kind: "x-bookmarks/run", job: "profile", action: "download", screenName: "token___garden" });
+  expect(
+    Schema.decodeUnknownSync(SuiteRequestSchema)({
+      kind: "x-bookmarks/run",
+      job: "bookmarks",
+      action: "export",
+    }),
+  ).toEqual({ kind: "x-bookmarks/run", job: "bookmarks", action: "export" });
   expect(isSuiteRequest({ kind: "allow-right-click/status", tabId: 7 })).toBe(true);
-  expect(isSuiteRequest({ kind: "x-bookmarks/collect-profile" })).toBe(true);
+  expect(isSuiteRequest({ kind: "x-bookmarks/run", job: "profile", action: "download" })).toBe(true);
+  expect(isSuiteRequest({ kind: "x-bookmarks/run", job: "profile", action: "destroy" })).toBe(false);
+  expect(isSuiteRequest({ kind: "x-bookmarks/run", job: "other", action: "collect" })).toBe(false);
 });
 
 test("rejects unknown or malformed suite requests", () => {
   expect(isSuiteRequest({ kind: "youtube-transcript/copy", tabId: 7 })).toBe(false);
   expect(isSuiteRequest({ kind: "onefile/save", tabId: "7" })).toBe(false);
-  expect(isSuiteRequest({ kind: "x-bookmarks/open-exporter", tabId: 7 })).toBe(false);
+  expect(isSuiteRequest({ kind: "x-bookmarks/run", job: "profile", action: "download", tabId: 7 })).toBe(false);
   expect(() =>
     Schema.decodeUnknownSync(SuiteRequestSchema)({ kind: "allow-right-click/toggle" }),
   ).toThrow();

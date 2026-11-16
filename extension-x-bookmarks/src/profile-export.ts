@@ -6,6 +6,7 @@ export interface MediaExportProgress {
   total: number;
 }
 
+
 export interface MediaExportResult {
   total: number;
   downloaded: number;
@@ -27,16 +28,20 @@ export async function downloadDebugJson(json: string, folderName: string): Promi
   return downloadFolderFile(json, folderName, "debug.json");
 }
 
+function base64Url(json: string): string {
+  const bytes = new TextEncoder().encode(json);
+  let binary = "";
+  const chunk = 0x8000;
+  for (let index = 0; index < bytes.length; index += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + chunk));
+  }
+  return "data:application/json;base64," + btoa(binary);
+}
+
 async function downloadFolderFile(json: string, folderName: string, file: string): Promise<string> {
   const filename = folderName + "/" + file;
-  const blob = new Blob([json], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  try {
-    await chrome.downloads.download({ url, filename, saveAs: false, conflictAction: "overwrite" });
-    return filename;
-  } finally {
-    setTimeout(() => URL.revokeObjectURL(url), 5 * 60_000);
-  }
+  await chrome.downloads.download({ url: base64Url(json), filename, saveAs: false, conflictAction: "overwrite" });
+  return filename;
 }
 
 const MEDIA_TIMEOUT_MS = 15 * 60_000;

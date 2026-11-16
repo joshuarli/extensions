@@ -51,11 +51,24 @@
           <h2>X Archive</h2>
           <span class="state" data-x-profile>Checking…</span>
         </div>
-        <p class="subtle">Visit any profile on x.com, then click Download — the archive
-          (posts.json + media) is collected fresh and saved to your downloads.</p>
+        <p class="subtle">Posts, reposts, replies, and media from any profile, plus your bookmarks — saved to your downloads.</p>
+        <div class="xrun" data-x-run hidden>
+          <div class="xrun-line"><span data-x-phase>Working…</span><span class="xrun-counts" data-x-counts></span></div>
+          <div class="xprogress" data-x-progress><div class="xprogress-fill" data-x-fill></div></div>
+          <button type="button" data-x-stop class="link-button">Stop (saved pages are retained)</button>
+        </div>
+        <p class="note" data-x-note hidden></p>
+        <label class="xfield" data-x-select-wrap hidden>Previously archived profiles
+          <select data-x-select aria-label="Profile archive to download"></select>
+        </label>
         <div class="buttons">
           <button type="button" data-x-profile-download>Download archive</button>
-          <button type="button" data-x-open class="link-button">Open X archive exporter</button>
+          <div class="xlink-row">
+            <button type="button" data-x-collect-profile class="link-button">Collect only</button>
+            <button type="button" data-x-download-existing class="link-button" hidden>Download selected</button>
+            <button type="button" data-x-collect-bookmarks class="link-button">Collect bookmarks</button>
+            <button type="button" data-x-download-bookmarks class="link-button">Bookmarks JSON</button>
+          </div>
         </div>
       </section>
 

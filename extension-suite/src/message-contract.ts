@@ -4,10 +4,12 @@ export const SuiteRequestSchema = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("allow-right-click/toggle"), tabId: Schema.Number }),
   Schema.Struct({ kind: Schema.Literal("allow-right-click/status"), tabId: Schema.Number }),
   Schema.Struct({ kind: Schema.Literal("onefile/save"), tabId: Schema.Number }),
-  Schema.Struct({ kind: Schema.Literal("x-bookmarks/open-exporter") }),
   Schema.Struct({
-    kind: Schema.Literal("x-bookmarks/collect-profile"),
+    kind: Schema.Literal("x-bookmarks/run"),
+    job: Schema.Literals(["profile", "bookmarks"]),
+    action: Schema.Literals(["collect", "export", "download", "stop", "dismiss"]),
     screenName: Schema.optional(Schema.String),
+    targetUserId: Schema.optional(Schema.String),
   }),
 ]);
 
