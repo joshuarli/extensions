@@ -98,3 +98,50 @@ describe("profile URL targeting", () => {
     expect(captured).toMatchObject({ operation: "UserByScreenName", queryId: "AbC_123" });
   });
 });
+
+describe("fieldToggles capture", () => {
+  const headers = [{ name: "Authorization", value: "Bearer actual" }];
+
+  it("captures fieldToggles alongside features", () => {
+    const url = "https://x.com/i/api/graphql/ZFKu1DFS63hgrkLzR3Hsdw/UserOriginalsTimeline"
+      + "?variables=%7B%22userId%22%3A%2244196397%22%7D"
+      + "&features=%7B%22a%22%3Atrue%7D"
+      + "&fieldToggles=%7B%22withPayments%22%3Afalse%2C%22withArticlePlainText%22%3Afalse%7D";
+    const captured = captureRequest(url, "https://x.com", headers);
+    expect(captured).toMatchObject({ operation: "UserOriginalsTimeline" });
+    expect(captured?.fieldToggles).toBe('{"withPayments":false,"withArticlePlainText":false}');
+  });
+
+  it("rejects malformed fieldToggles but keeps the rest of the capture", () => {
+    const url = "https://x.com/i/api/graphql/ZFKu1DFS63hgrkLzR3Hsdw/UserOriginalsTimeline"
+      + "?variables=%7B%22userId%22%3A%2244196397%22%7D"
+      + "&features=%7B%22a%22%3Atrue%7D"
+      + "&fieldToggles=%7B%22withPayments%22%3A%22yes%22%7D";
+    const captured = captureRequest(url, "https://x.com", headers);
+    expect(captured?.fieldToggles).toBeUndefined();
+    expect(captured?.features).toBe('{"a":true}');
+  });
+
+  it("merges fieldToggles per operation", () => {
+    const url = "https://x.com/i/api/graphql/ZFKu1DFS63hgrkLzR3Hsdw/UserOriginalsTimeline"
+      + "?variables=%7B%22userId%22%3A%2244196397%22%7D"
+      + "&fieldToggles=%7B%22withPayments%22%3Afalse%7D";
+    const captured = captureRequest(url, "https://x.com", headers);
+    const merged = mergeCapture({ queryIds: {}, features: {} }, captured!);
+    expect(merged.fieldToggles).toEqual({ UserOriginalsTimeline: '{"withPayments":false}' });
+  });
+});
+
+describe("renamed profile timeline variables", () => {
+  it("sends withVoice/withCommunity and fieldToggles defaults for the renamed operations", async () => {
+    const { profileTimelineVariables } = await import("../src/collector.ts");
+    expect(profileTimelineVariables("UserOriginalsTimeline", "44196397", null))
+      .toMatchObject({ userId: "44196397", withVoice: true, withQuickPromoteEligibilityTweetFields: true });
+    expect(profileTimelineVariables("UserRepliesTimeline", "44196397", null))
+      .toMatchObject({ userId: "44196397", withVoice: true, withCommunity: true });
+    expect(profileTimelineVariables("UserRepliesTimeline", "44196397", "cursor-x"))
+      .toMatchObject({ cursor: "cursor-x" });
+    expect(profileTimelineVariables("UserTweets", "44196397", null))
+      .toEqual({ userId: "44196397", count: 20, includePromotedContent: false });
+  });
+});

@@ -232,6 +232,32 @@ export async function collect(options: CollectionOptions): Promise<ScanState> {
   }
 }
 
+export function profileTimelineVariables(operation: ProfileOperation, targetUserId: string, cursor: string | null): Record<string, unknown> {
+  const paged = cursor ? { cursor } : {};
+  switch (operation) {
+    case "UserOriginalsTimeline":
+      return {
+        userId: targetUserId,
+        count: 20,
+        includePromotedContent: false,
+        withQuickPromoteEligibilityTweetFields: true,
+        withVoice: true,
+        ...paged,
+      };
+    case "UserRepliesTimeline":
+      return {
+        userId: targetUserId,
+        count: 20,
+        includePromotedContent: false,
+        withCommunity: true,
+        withVoice: true,
+        ...paged,
+      };
+    default:
+      return { userId: targetUserId, count: 20, includePromotedContent: false, ...paged };
+  }
+}
+
 export async function collectProfileTimeline(
   options: CollectionOptions,
   operation: ProfileOperation,
@@ -240,11 +266,7 @@ export async function collectProfileTimeline(
   let profile: ProfileScanProfile | null = null;
   const total = await scanPages(options, {
     operation,
-    buildVariables: (cursor) => {
-      const variables: Record<string, unknown> = { userId: targetUserId, count: 20, includePromotedContent: false };
-      if (cursor) variables["cursor"] = cursor;
-      return variables;
-    },
+    buildVariables: (cursor) => profileTimelineVariables(operation, targetUserId, cursor),
     parse: (data, observedAt) => {
       const result = parseProfileTimeline(data, observedAt);
       if (result.valid && result.profile) profile = result.profile;

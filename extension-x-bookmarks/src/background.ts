@@ -165,7 +165,7 @@ export async function readXProfileUnmatchedOps(): Promise<UnmatchedOperation[]> 
   return parseUnmatchedOps((await chrome.storage.local.get(xProfileUnmatchedOpsKey))[xProfileUnmatchedOpsKey]);
 }
 
-export async function readXProfileLastCapture(): Promise<{ operation: string; targetUserId?: string; at: string } | null> {
+export async function readXProfileLastCapture(): Promise<{ operation: string; targetUserId?: string; variables?: string; at: string } | null> {
   const stored = (await chrome.storage.local.get(xProfileLastCaptureKey))[xProfileLastCaptureKey];
   if (stored === null || typeof stored !== "object" || Array.isArray(stored)) return null;
   const record = stored as Record<string, unknown>;
@@ -174,6 +174,7 @@ export async function readXProfileLastCapture(): Promise<{ operation: string; ta
     operation: record["operation"],
     at: record["at"],
     ...(typeof record["targetUserId"] === "string" ? { targetUserId: record["targetUserId"] } : {}),
+    ...(typeof record["variables"] === "string" ? { variables: record["variables"] } : {}),
   };
 }
 
@@ -201,6 +202,7 @@ export function handleXBookmarksRequest(
         operation: capture.operation,
         ...(capture.targetUserId ? { targetUserId: capture.targetUserId } : {}),
         at: new Date().toISOString(),
+        ...(capture.variables ? { variables: capture.variables } : {}),
       },
     });
     if (capture.targetUserId && isProfileOperation(capture.operation)) {

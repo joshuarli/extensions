@@ -1,7 +1,30 @@
 import { Effect, Schema } from "effect";
 import { currentUserId, type Credentials, type Operation } from "./capture.ts";
 
+function graphqlErrorMessage(errors: unknown[]): string | null {
+  const messages = errors.flatMap((error) => {
+    if (error === null || typeof error !== "object") return [];
+    const message = (error as Record<string, unknown>)["message"];
+    return typeof message === "string" ? [message] : [];
+  });
+  return messages.length > 0 ? messages.join("; ").slice(0, 500) : null;
+}
+
+async function readGraphqlError(response: Response): Promise<string | null> {
+  try {
+    const body: unknown = await response.json();
+    if (body === null || typeof body !== "object") return null;
+    const errors = (body as Record<string, unknown>)["errors"];
+    return Array.isArray(errors) ? graphqlErrorMessage(errors) : null;
+  } catch {
+    return null;
+  }
+}
+
 const FailureKindSchema = Schema.Literals(["auth", "rate_limit", "query", "network", "response", "stopped"]);
+
+export const DEFAULT_FIELD_TOGGLES = '{"withPayments":false,"withArticlePlainText":false}';
+const GRAPHQL_FIELD_TOGGLES = ["UserOriginalsTimeline", "UserRepliesTimeline", "UserByScreenName", "UserByRestId"] as const;
 
 export type FailureKind = Schema.Schema.Type<typeof FailureKindSchema>;
 
@@ -19,12 +42,14 @@ export function buildGraphqlUrl(
   operation: Operation,
   variables: Record<string, unknown>,
   capturedFeatures: string | undefined,
+  capturedFieldToggles?: string,
 ): string {
   if (!/^[A-Za-z0-9_-]+$/u.test(queryId)) throw new RequestFailure("query", "Invalid captured X query ID.");
   const params = new URLSearchParams({
     variables: JSON.stringify(variables),
     features: capturedFeatures ?? "{}",
   });
+  if (capturedFieldToggles) params.set("fieldToggles", capturedFieldToggles);
   return "https://x.com/i/api/graphql/" + queryId + "/" + operation + "?" + params.toString();
 }
 
@@ -59,7 +84,16 @@ export function graphqlRequest(
       if (credentials.clientUuid) headers["X-Client-Uuid"] = credentials.clientUuid;
       if (credentials.transactionId) headers["X-Client-Transaction-Id"] = credentials.transactionId;
 
-      const url = buildGraphqlUrl(queryId, operation, variables, credentials.features[operation]);
+      const url = buildGraphqlUrl(
+        queryId,
+        operation,
+        variables,
+        credentials.features[operation],
+        credentials.fieldToggles?.[operation]
+          ?? (GRAPHQL_FIELD_TOGGLES as readonly string[]).includes(operation)
+            ? DEFAULT_FIELD_TOGGLES
+            : undefined,
+      );
       let response: Response;
       try {
         response = await fetch(url, {
@@ -78,7 +112,10 @@ export function graphqlRequest(
         throw new RequestFailure("auth", "X rejected the session (HTTP " + response.status + "). Revisit X and try again.");
       }
       if ([400, 404, 422].includes(response.status)) {
-        throw new RequestFailure("query", "X rejected the captured query (HTTP " + response.status + "). Revisit X and try again.");
+        const graphqlMessage = await readGraphqlError(response);
+        throw new RequestFailure("query",
+          "X rejected the captured query (HTTP " + response.status + ")"
+          + (graphqlMessage ? ": " + graphqlMessage : "") + ".");
       }
       if (!response.ok) throw new RequestFailure("network", "X returned HTTP " + response.status + ".");
       let data: unknown;
@@ -94,8 +131,11 @@ export function graphqlRequest(
       if (Array.isArray(body["errors"]) && body["errors"].length > 0) {
         const rateLimited = body["errors"].some((error: unknown) =>
           error !== null && typeof error === "object" && (error as Record<string, unknown>)["code"] === 88);
+        const message = graphqlErrorMessage(body["errors"]);
         throw new RequestFailure(rateLimited ? "rate_limit" : "query",
-          rateLimited ? "X GraphQL rate limit reached." : "X GraphQL returned an error; the private API may have changed.");
+          rateLimited
+            ? "X GraphQL rate limit reached."
+            : "X GraphQL returned an error" + (message ? ": " + message : "; the private API may have changed."));
       }
       if (await currentUserId() !== userId) {
         throw new RequestFailure("auth", "X account switched during the request. The response was discarded.");

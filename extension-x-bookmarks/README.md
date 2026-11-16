@@ -87,7 +87,12 @@ that part and reports which side is missing (`complete`,
 `complete_without_replies`, or `complete_without_posts`). Stop any
 time; re-running is safe. The popup and context menu paths collect first, then
 export the freshly updated archive automatically. Legacy `UserTweets` /
-`UserTweetsAndReplies` captures are still honoured as a fallback.
+`UserTweetsAndReplies` captures are still honoured as a fallback. The replay
+sends X's renamed-operation contract — the `fieldToggles` query parameter and
+each operation's required variables (`withVoice`/`withCommunity`/
+`withQuickPromoteEligibilityTweetFields` as applicable) — and includes X's
+own GraphQL error message in any failure, so a rejection is diagnosable from
+`debug.json` without a live session.
 
 The export creates a folder `<handle>-<date>/` in your downloads (falling
 back to `x-profile-<userId>-<date>/` when the handle isn't known yet — e.g.
@@ -281,6 +286,12 @@ the popup. The `debug.json` from the last run lists the GraphQL operations X
 made on this browser that the extension does not understand — if a
 timeline-looking name shows up there (e.g. a renamed timeline operation),
 report it.
+
+**"X rejected the captured query (HTTP 422/404)."** The failure note carries X's
+GraphQL error message verbatim. Reload the profile tab once and scroll the
+timeline a little, then try again. If it persists, attach `debug.json` — it
+now records the captured `fieldToggles`, the exact variables the extension
+replays, and the error X returned, which is enough to pin the contract drift.
 
 **"X could not resolve @handle to a user id."** Reload the profile page once;
 if it persists, report it — X changed its lookup response shape. The

@@ -36,6 +36,7 @@ export async function readLastError(): Promise<LastErrorEntry | null> {
 export function credentialsSummary(credentials: Credentials): Record<string, {
   queryId: string;
   features: string | null;
+  field_toggles_present: boolean;
   authorization_present: boolean;
   client_uuid_present: boolean;
   transaction_id_present: boolean;
@@ -43,6 +44,7 @@ export function credentialsSummary(credentials: Credentials): Record<string, {
   return Object.fromEntries(Object.entries(credentials.queryIds).sort(([a], [b]) => a.localeCompare(b)).map(([operation, queryId]) => [operation, {
     queryId,
     features: credentials.features[operation] ?? null,
+    field_toggles_present: !!credentials.fieldToggles?.[operation],
     authorization_present: !!credentials.authorization,
     client_uuid_present: !!credentials.clientUuid,
     transaction_id_present: !!credentials.transactionId,

@@ -124,3 +124,37 @@ describe("graphql request edge", () => {
     expect(() => buildGraphqlUrl("../../exploit", "Bookmarks", {}, undefined)).toThrow();
   });
 });
+
+describe("fieldToggles and graphql error bodies", () => {
+  it("appends fieldToggles only when captured or on renamed timeline operations", async () => {
+    const { buildGraphqlUrl } = await import("../src/api.ts");
+    const withToggles = buildGraphqlUrl("q", "UserOriginalsTimeline", { userId: "1" }, undefined, '{"withPayments":false,"withArticlePlainText":false}');
+    expect(withToggles).toContain("fieldToggles=%7B%22withPayments%22%3Afalse%2C%22withArticlePlainText%22%3Afalse%7D");
+    const withoutToggles = buildGraphqlUrl("q", "Bookmarks", { count: 100 }, undefined, undefined);
+    expect(withoutToggles).not.toContain("fieldToggles=");
+    const decoded = new URL(withToggles).searchParams.get("fieldToggles");
+    expect(decoded).toBe('{"withPayments":false,"withArticlePlainText":false}');
+  });
+
+  it("includes the graphql error message in 422 failures", async () => {
+    stubChromeCookies("u=123", "csrf-value");
+    const originalFetch = globalThis.fetch;
+    (globalThis as Record<string, unknown>)["fetch"] = (async () => new Response(
+      JSON.stringify({ errors: [{ message: "Variable $withQuickPromoteEligibilityTweetFields of required type Boolean! was not provided." }] }),
+      { status: 422, headers: { "content-type": "application/json" } },
+    )) as typeof fetch;
+    try {
+      const outcome = await Effect.runPromise(
+        graphqlRequest("123", credentials, "Bookmarks", { count: 100 }, new AbortController().signal).pipe(
+          Effect.map(() => "ok" as const),
+          Effect.catch((error: unknown) => Effect.succeed(error)),
+        ),
+      );
+      expect(outcome).toBeInstanceOf(RequestFailure);
+      expect((outcome as RequestFailure).message).toContain("Variable $withQuickPromoteEligibilityTweetFields");
+      expect((outcome as RequestFailure).message).toContain("HTTP 422");
+    } finally {
+      (globalThis as Record<string, unknown>)["fetch"] = originalFetch;
+    }
+  });
+});

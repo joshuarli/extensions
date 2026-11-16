@@ -17,6 +17,7 @@ const CredentialsSchema = Schema.Struct({
   transactionId: Schema.optional(Schema.String),
   queryIds: Schema.Record(Schema.String, Schema.String),
   features: Schema.Record(Schema.String, Schema.String),
+  fieldToggles: Schema.optional(Schema.Record(Schema.String, Schema.String)),
 });
 
 export type Credentials = Schema.Schema.Type<typeof CredentialsSchema>;
@@ -55,7 +56,9 @@ export interface Capture {
   clientUuid?: string;
   transactionId?: string;
   features?: string;
+  fieldToggles?: string;
   targetUserId?: string;
+  variables?: string;
 }
 
 export function captureRequest(
@@ -75,20 +78,12 @@ export function captureRequest(
   const operation = match[2] as Operation;
   if (!queryId) return null;
   const values = new Map(headers.map((header) => [header.name.toLowerCase(), header.value]));
-  const features = requestUrl.searchParams.get("features") ?? undefined;
-  let validatedFeatures: string | undefined;
-  if (features) {
-    try {
-      const parsed: unknown = JSON.parse(features);
-      if (parsed && typeof parsed === "object" && !Array.isArray(parsed) &&
-          Object.values(parsed).every((value) => typeof value === "boolean")) {
-        validatedFeatures = features;
-      }
-    } catch { /* Ignore invalid feature flags. */ }
-  }
+  const validatedFeatures = booleanFeatureRecord(requestUrl.searchParams.get("features"));
   const authorization = values.get("authorization");
   const clientUuid = values.get("x-client-uuid");
   const transactionId = values.get("x-client-transaction-id");
+  const fieldToggles = booleanFeatureRecord(requestUrl.searchParams.get("fieldToggles"));
+  const variables = requestUrl.searchParams.get("variables");
   const targetUserId = isProfileOperation(operation) ? profileTargetFromVariables(requestUrl) : undefined;
   return {
     operation,
@@ -97,8 +92,24 @@ export function captureRequest(
     ...(clientUuid ? { clientUuid } : {}),
     ...(transactionId ? { transactionId } : {}),
     ...(validatedFeatures ? { features: validatedFeatures } : {}),
+    ...(fieldToggles ? { fieldToggles } : {}),
     ...(targetUserId ? { targetUserId } : {}),
+    ...(variables ? { variables: variables.length > 1200 ? variables.slice(0, 1200) + "…" : variables } : {}),
   };
+}
+
+function booleanFeatureRecord(raw: string | null): string | undefined {
+  if (!raw) return undefined;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed) &&
+        Object.values(parsed).every((value) => typeof value === "boolean")) {
+      return raw;
+    }
+    return undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function profileTargetFromVariables(requestUrl: URL): string | undefined {
@@ -126,6 +137,10 @@ export function mergeCapture(credentials: Credentials, capture: Capture): Creden
     features: {
       ...credentials.features,
       ...(capture.features ? { [capture.operation]: capture.features } : {}),
+    },
+    fieldToggles: {
+      ...credentials.fieldToggles,
+      ...(capture.fieldToggles ? { [capture.operation]: capture.fieldToggles } : {}),
     },
   };
 }
