@@ -2,6 +2,7 @@ import { Schema } from "effect";
 import { BookmarkSchema, type Bookmark, type ProfileInfo } from "./parser.ts";
 import { mergeBookmark } from "./storage.ts";
 import { collectMediaJobs } from "./media.ts";
+import { PROFILE_OPERATIONS, type ProfileOperation } from "./capture.ts";
 
 export const PROFILE_POSTS_STORE = "posts";
 export const PROFILE_STATE_STORE = "state";
@@ -15,7 +16,7 @@ export interface ProfileScanState {
   updated_at: string;
   posts: Coverage;
   reason: string;
-  operation?: "UserTweets" | "UserTweetsAndReplies" | undefined;
+  operation?: ProfileOperation | undefined;
   profile?: ProfileScanProfile | undefined;
 }
 
@@ -34,7 +35,7 @@ const ProfileScanStateSchema = Schema.Struct({
   updated_at: Schema.String,
   posts: Schema.Literals(["complete", "partial", "not_checked"]),
   reason: Schema.String,
-  operation: Schema.optional(Schema.Literals(["UserTweets", "UserTweetsAndReplies"])),
+  operation: Schema.optional(Schema.Literals(PROFILE_OPERATIONS)),
   profile: Schema.optional(ProfileScanProfileSchema),
 });
 

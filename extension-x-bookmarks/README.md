@@ -59,24 +59,32 @@ numeric user id through the captured `UserByScreenName` lookup request at
 collection time; after the first successful run the binding is stored.
 
 1. In a signed-in tab, open the profile, e.g. `https://x.com/jack`, and load:
-   - the **Posts** tab (captures `UserTweets` — original posts and reposts), and
-   - the **Replies** tab (captures `UserTweetsAndReplies` — additionally the
-     replies; X only serves it there). Loading both gives a complete archive.
+   - the **Posts** tab (captures `UserOriginalsTimeline` — original posts and
+     reposts; X's renamed successor to `UserTweets`), and
+   - the **Replies** tab (captures `UserRepliesTimeline` — the replies; X only
+     serves it there; renamed successor to `UserTweetsAndReplies`).
+     Loading both gives a complete archive.
 2. Then either:
    - open the toolbar popup and click **Download @handle archive**, or
    - right-click the page and choose **Collect and download profile posts…**, or
    - open the X archive exporter (toolbar icon → **Open X archive exporter**),
      select **Collect profile posts**, then **Download archive**.
 
-Collection paginates the captured timeline (preferring `UserTweetsAndReplies`,
-the superset) into IndexedDB, per account and per target profile. Stop any
+Collection paginates the captured timeline into IndexedDB, per account and
+per target profile. With both tabs captured it scans originals first and
+replies second into the same archive; with only one tab captured it archives
+that part and reports which side is missing (`complete`,
+`complete_without_replies`, or `complete_without_posts`). Stop any
 time; re-running is safe. The popup and context menu paths collect first, then
-export the freshly updated archive automatically.
+export the freshly updated archive automatically. Legacy `UserTweets` /
+`UserTweetsAndReplies` captures are still honoured as a fallback.
 
-The export creates a folder `x-profile-<handle>-<date>/` in your downloads:
+The export creates a folder `<handle>-<date>/` in your downloads (falling
+back to `x-profile-<userId>-<date>/` when the handle isn't known yet — e.g.
+an empty archive whose scan failed before saving anything):
 
 ```
-x-profile-jack-2026-11-15/
+jack-2026-11-15/
   posts.json
   debug.json             everything needed to diagnose a failed or empty archive
   media/
@@ -126,7 +134,7 @@ state. Attach it when reporting a broken archive.
     "collection": {
       "posts": "complete",                // complete | partial | not_checked
       "reason": "complete",               // machine-readable outcome of the last run
-      "operation": "UserTweetsAndReplies" // which timeline operation was scanned
+      "operation": "UserOriginalsTimeline" // which timeline operation was scanned
     },
     "stats": {
       "total_posts": 8123,

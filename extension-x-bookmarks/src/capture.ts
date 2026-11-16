@@ -1,7 +1,7 @@
 import { Schema } from "effect";
 
 export const BOOKMARK_OPERATIONS = ["Bookmarks", "BookmarkFoldersSlice", "BookmarkFolderTimeline"] as const;
-export const PROFILE_OPERATIONS = ["UserTweets", "UserTweetsAndReplies", "UserOriginalsTimeline"] as const;
+export const PROFILE_OPERATIONS = ["UserTweets", "UserTweetsAndReplies", "UserOriginalsTimeline", "UserRepliesTimeline"] as const;
 export const LOOKUP_OPERATIONS = ["UserByScreenName"] as const;
 export const OPERATIONS = [...BOOKMARK_OPERATIONS, ...PROFILE_OPERATIONS, ...LOOKUP_OPERATIONS] as const;
 export type Operation = (typeof OPERATIONS)[number];

@@ -80,6 +80,7 @@ export interface CollectionOptions {
   signal: AbortSignal;
   report: (message: string) => void;
   onProgress?: (snapshot: ProgressSnapshot) => void;
+  progressBase?: { posts: number; pages: number };
 }
 
 interface PageSpec<Item> {
@@ -115,7 +116,10 @@ async function scanPages<Item>(options: CollectionOptions, spec: PageSpec<Item>)
       empty++;
     }
     report(spec.label + ": " + total + " posts across " + pages + " pages saved.");
-    options.onProgress?.({ posts: total, pages });
+    options.onProgress?.({
+      posts: total + (options.progressBase?.posts ?? 0),
+      pages: pages + (options.progressBase?.pages ?? 0),
+    });
     const next = result.nextCursor;
     if (!next) return total;
     if (visited.has(next) || next === cursor) throw new Error("X returned a repeated cursor. Collection is partial.");
@@ -301,7 +305,9 @@ export async function collectProfile(
       target = {
         targetUserId: resolvedId,
         screenName: requestedScreenName,
-        operation: credentials.queryIds["UserTweetsAndReplies"] ? "UserTweetsAndReplies" : "UserTweets",
+        operation: credentials.queryIds["UserOriginalsTimeline"] ? "UserOriginalsTimeline"
+          : credentials.queryIds["UserRepliesTimeline"] ? "UserRepliesTimeline"
+          : credentials.queryIds["UserTweetsAndReplies"] ? "UserTweetsAndReplies" : "UserTweets",
         capturedAt: new Date().toISOString(),
       };
       await writeProfileTarget(userId, target);
@@ -317,9 +323,14 @@ export async function collectProfile(
   }
   const targetUserId = target.targetUserId!;
   const credentials = await readCredentials(userId);
-  const operation: ProfileOperation | null = credentials.queryIds["UserTweetsAndReplies"]
-    ? "UserTweetsAndReplies"
-    : credentials.queryIds["UserTweets"] ? "UserTweets" : null;
+  const originals = credentials.queryIds["UserOriginalsTimeline"] ? "UserOriginalsTimeline" as const : null;
+  const replies = credentials.queryIds["UserRepliesTimeline"] ? "UserRepliesTimeline" as const : null;
+  const renamed = [originals, replies].filter((operation): operation is "UserOriginalsTimeline" | "UserRepliesTimeline" => operation !== null);
+  const operations: ProfileOperation[] = renamed.length
+    ? renamed
+    : credentials.queryIds["UserTweetsAndReplies"]
+      ? ["UserTweetsAndReplies"]
+      : credentials.queryIds["UserTweets"] ? ["UserTweets"] : [];
   const started = new Date().toISOString();
   const baseProfile: ProfileScanProfile = {
     user_id: targetUserId,
@@ -335,7 +346,7 @@ export async function collectProfile(
     updated_at: started,
     posts: "partial",
     reason: "in_progress",
-    ...(operation ? { operation } : {}),
+    ...(operations.length ? { operation: operations[0] } : {}),
     profile: baseProfile,
   };
   const persist = async () => {
@@ -344,25 +355,59 @@ export async function collectProfile(
   };
   await persist();
   try {
-    if (!operation) {
+    if (!operations.length) {
       throw new RequestFailure("query",
         "No profile timeline request captured. Reload the profile on x.com (Posts and Replies tabs), then try again.");
     }
     stopped(signal);
-    report(operation === "UserTweetsAndReplies"
+    const two = operations.length === 2;
+    report(two
       ? "Scanning profile posts and replies. Existing saved posts are retained."
-      : "Scanning profile posts. Existing saved posts are retained.");
-    const result = await collectProfileTimeline(options, operation, targetUserId);
-    if (result.profile) state.profile = { ...baseProfile, ...result.profile };
+      : "Scanning profile timeline. Existing saved posts are retained.");
+    let cumulativePosts = 0;
+    let cumulativePages = 0;
+    let mergedProfile: ProfileScanProfile | null = null;
+    for (const operation of operations) {
+      stopped(signal);
+      let opPages = 0;
+      const base = { posts: cumulativePosts, pages: cumulativePages };
+      const opOptions: CollectionOptions = {
+        ...options,
+        progressBase: base,
+        onProgress: (snapshot) => {
+          opPages = snapshot.pages - base.pages;
+          options.onProgress?.(snapshot);
+        },
+      };
+      let result: { total: number; profile: ProfileScanProfile | null };
+      try {
+        result = await collectProfileTimeline(opOptions, operation, targetUserId);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        throw new Error("Scan of " + operation + " failed: " + message);
+      }
+      cumulativePosts += result.total;
+      cumulativePages += opPages;
+      if (result.profile) mergedProfile = mergedProfile ?? result.profile;
+    }
+    if (mergedProfile) state.profile = { ...baseProfile, ...mergedProfile };
     const learnedScreenName = state.profile?.screen_name ?? target.screenName;
     if (learnedScreenName && target.screenName !== learnedScreenName) {
       target = { ...target, screenName: learnedScreenName, targetUserId };
       await writeProfileTarget(userId, target);
     }
     state.posts = "complete";
-    state.reason = operation === "UserTweetsAndReplies" ? "complete" : "complete_without_replies";
-    if (operation === "UserTweets") {
+    state.reason = operations.length === 2 ? "complete"
+      : operations[0] === "UserOriginalsTimeline" ? "complete_without_replies"
+      : operations[0] === "UserRepliesTimeline" ? "complete_without_posts"
+      : operations[0] === "UserTweetsAndReplies" ? "complete"
+      : "complete_without_replies";
+    if (!operations.includes("UserRepliesTimeline") && !operations.includes("UserTweetsAndReplies")) {
       report("Only the Posts tab was captured. Open the Replies tab on x.com, then collect again to include replies.");
+    }
+    if (!operations.includes("UserOriginalsTimeline") && !operations.includes("UserTweetsAndReplies")
+        && !operations.includes("UserTweets")) {
+      report("Only the Replies tab was captured. Open the Posts tab on x.com, then collect again to include posts.");
     }
     await persist();
     report("Profile collection complete. Use Download archive to save JSON and media.");

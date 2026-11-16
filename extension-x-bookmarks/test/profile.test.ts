@@ -204,9 +204,11 @@ describe("profile media planning", () => {
     expect(plan.missing).toBe(1);
   });
 
-  it("builds a filesystem-safe export folder name", () => {
+  it("names the export folder after the handle when known", () => {
     expect(exportFolderName("Some One!", "44196397", new Date("2026-11-15T00:00:00Z")))
-      .toBe("x-profile-SomeOne-2026-11-15");
+      .toBe("SomeOne-2026-11-15");
+    expect(exportFolderName("token___garden", "44196397", new Date("2026-11-15T00:00:00Z")))
+      .toBe("token___garden-2026-11-15");
     expect(exportFolderName(null, "44196397", new Date("2026-11-15T00:00:00Z")))
       .toBe("x-profile-44196397-2026-11-15");
   });
@@ -332,6 +334,76 @@ describe("profile archive", () => {
       db.close();
     }
   });
+
+  it("scans both renamed operations when originals and replies are captured", async () => {
+    stubChrome();
+    seedProfileTarget();
+    stored["x_bookmarks_credentials_" + userId] = {
+      authorization: "Bearer token",
+      queryIds: { UserOriginalsTimeline: "q-originals", UserRepliesTimeline: "q-replies" },
+      features: { UserOriginalsTimeline: "{}", UserRepliesTimeline: "{}" },
+    };
+    const db = await openTestProfileArchive(),
+      originalFetch = globalThis.fetch,
+      fetchImpl = timelineFetch([
+        profilePage([entry({ rest_id: "100", legacy: { full_text: "Original post" } }, "100")]),
+        profilePage([entry({ rest_id: "900", legacy: { full_text: "Reply post" } }, "900")]),
+      ]),
+      requested: string[] = [];
+    (globalThis as Record<string, unknown>)["fetch"] = (async (url: string) => {
+      requested.push(String(url));
+      return fetchImpl(url);
+    }) as typeof fetch;
+    try {
+      const state = await collectProfile({
+        userId,
+        db,
+        signal: new AbortController().signal,
+        report: () => {},
+      });
+      expect(state.posts).toBe("complete");
+      expect(state.reason).toBe("complete");
+      expect(state.operation).toBe("UserOriginalsTimeline");
+      expect(requested.map((url) => url).join("\n")).toContain("UserOriginalsTimeline");
+      expect(requested.map((url) => url).join("\n")).toContain("UserRepliesTimeline");
+      const archive = await assembleProfileArchive(db, userId, targetUserId);
+      expect(archive.posts.map((post) => post.full_text).sort())
+        .toEqual(["Original post", "Reply post"]);
+    } finally {
+      (globalThis as Record<string, unknown>)["fetch"] = originalFetch;
+      db.close();
+    }
+  }, 10_000);
+
+  it("keeps originals when the replies scan fails, and names the failing operation", async () => {
+    stubChrome();
+    seedProfileTarget();
+    stored["x_bookmarks_credentials_" + userId] = {
+      authorization: "Bearer token",
+      queryIds: { UserOriginalsTimeline: "q-originals", UserRepliesTimeline: "q-replies" },
+      features: { UserOriginalsTimeline: "{}", UserRepliesTimeline: "{}" },
+    };
+    const db = await openTestProfileArchive(),
+      originalFetch = globalThis.fetch;
+    (globalThis as Record<string, unknown>)["fetch"] = (async (url: URL) => {
+      const target = String(url);
+      if (target.includes("UserOriginalsTimeline")) {
+        return new Response(JSON.stringify(profilePage([entry({ rest_id: "100", legacy: { full_text: "Kept post" } }, "100")])), { status: 200 });
+      }
+      return new Response("gone", { status: 404 });
+    }) as typeof fetch;
+    try {
+      await expect(
+        collectProfile({ userId, db, signal: new AbortController().signal, report: () => {} }),
+      ).rejects.toThrow(/Scan of UserRepliesTimeline failed/u);
+      const archive = await assembleProfileArchive(db, userId, targetUserId);
+      expect(archive.posts.map((post) => post.full_text)).toEqual(["Kept post"]);
+      expect((archive.export_metadata as { collection: unknown }).collection).toMatchObject({ posts: "partial" });
+    } finally {
+      (globalThis as Record<string, unknown>)["fetch"] = originalFetch;
+      db.close();
+    }
+  }, 10_000);
 
   it("fails loudly when no profile has been captured", async () => {
     stubChrome();

@@ -493,7 +493,8 @@ downloadProfileButton.addEventListener("click", () => {
     let folder: string | null = null;
     try {
       const archive = await assembleProfileArchive(archiveDb, account, targetUserId);
-      folder = exportFolderName(archive.profile.screen_name, targetUserId);
+      const storedTarget = await readProfileTarget(account);
+      folder = exportFolderName(archive.profile.screen_name ?? storedTarget?.screenName, targetUserId);
       const jobs = collectMediaJobs(archive.posts);
       hudPhase.textContent = "Writing posts.json";
       const jsonFilename = await downloadPostsJson(JSON.stringify(archive, null, 2), folder);
