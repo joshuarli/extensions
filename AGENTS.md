@@ -17,7 +17,7 @@ This repository builds one Chromium Manifest V3 extension from four feature pack
 - Shared extension-page helpers and delayed action-state guards live in `lib/`; domain logic stays in its feature package.
 - Keep extension UI in native TypeScript, DOM, and CSS.
 - Use Effect 4 for extension I/O and typed failures; use Schema at network, storage, and message boundaries.
-- Never push changes or run pre-commit hooks.
+- Do not run pre-commit hooks.
 
 ## Topics
 
