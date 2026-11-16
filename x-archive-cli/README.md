@@ -40,9 +40,13 @@ retained either way.
   via CDP — the same endpoint your `helium` launcher enables. It reads
   your x.com cookies (including HttpOnly ones) and, from the X Archive
   extension's storage, the query IDs/features X's web app uses for the
-  GraphQL API. If Helium is not running, or the extension is not
-  loaded, cached credentials (when present) are used or a precise error
-  tells you what to open once in Helium.
+  GraphQL API. If Helium is not reachable, the CLI falls back to
+  `~/usr/dotfiles/darwin/.local/bin/export-cookies.py`
+  to decrypt the x.com cookies from Helium's cookie store
+  (`X_ARCHIVE_COOKIES_HELPER` overrides the path). That fallback needs
+  one interactive Keychain approval on this machine before it can run
+  unattended; until then it fails with a clear message. Cached
+  credentials are used as a last resort.
 - **Store**: a cumulative filesystem store under
   `~/.local/state/x-archive/` (`X_ARCHIVE_STATE` overrides) holds every
   observed post, merged by tweet id on every page saved — the mirror
@@ -68,14 +72,15 @@ designed against this seam but not built yet — see `EXT-1` in `TODO.md`.
 
 ## Notes
 
-- The CLI duplicates the X Archive extension's behavior by design: the
+- The CLI mirrors the X Archive extension's behavior by design: the
   extension stays the one-click path for normal use; the CLI is for
   scripted and unattended use. They share the archive format and the
   update semantics (`render_archive.py`, export folders, `debug.json`).
 - `X_ARCHIVE_DEBUG=1` prints the URL (no secrets) and HTTP status of
   each GraphQL call for API-drift debugging.
-- The state dir contains only public X web-app configuration and the
-  public web bearer token; no cookies or credentials are ever written
-  to disk (cookies live in the running browser; the credential cache
-  holds query IDs/features only). If you copied this directory
-  elsewhere, nothing sensitive travels with it.
+- The state dir holds public X web-app configuration plus the public
+  web bearer token that X ships to every web client (in the credential
+  cache), and it never holds your cookies — those stay in the running
+  browser or, when the export-cookies.py fallback runs, are passed
+  through memory only. Your session lives in X, not in this directory;
+  copying it elsewhere leaks nothing private.
