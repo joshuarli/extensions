@@ -11,6 +11,7 @@ import {
 import { parseTimeline, parseFolders, parseProfileTimeline, type Folder } from "./parser.ts";
 import { loadState, savePage, saveFolders, saveState, type ScanState } from "./storage.ts";
 import { loadProfileState, saveProfilePage, saveProfileState, type ProfileScanProfile, type ProfileScanState } from "./profile-storage.ts";
+import { loadLikesState, saveLikesPage, saveLikesState, type LikesScanState } from "./likes-storage.ts";
 
 const PAGE_DELAY_MS = 2500;
 const MAX_EMPTY_PAGES = 3;
@@ -127,7 +128,10 @@ async function scanPages<Item>(options: CollectionOptions, spec: PageSpec<Item>)
     const next = result.terminated ? null : result.nextCursor;
     await options.checkpoint?.(resumeKey, next);
     if (!next) return total;
-    if (visited.has(next) || next === cursor) throw new Error("X returned a repeated cursor. Collection is partial.");
+    if (visited.has(next) || next === cursor) {
+      if (result.items.length === 0) return total;
+      throw new Error("X returned a repeated cursor. Collection is partial.");
+    }
     if (empty >= MAX_EMPTY_PAGES) throw new Error("X returned three empty pages. Collection is partial.");
     visited.add(next);
     cursor = next;
@@ -242,6 +246,72 @@ export async function collect(options: CollectionOptions): Promise<ScanState> {
     state.reason = "complete";
     await persist();
     report("Collection complete. Export the accumulated archive to JSON.");
+    return state;
+  } catch (error) {
+    state.reason = error instanceof Error ? error.message : String(error);
+    await persist();
+    throw error;
+  }
+}
+
+export async function collectLikes(options: CollectionOptions): Promise<LikesScanState> {
+  const { db, userId, report } = options;
+  const started = new Date().toISOString();
+  const saved = await loadLikesState(db);
+  const state: LikesScanState = {
+    started_at: started,
+    updated_at: started,
+    likes: "partial",
+    reason: "in_progress",
+    cursors: saved?.cursors,
+  };
+  state.cursors = state.cursors ?? {};
+  const withCursor: CollectionOptions = {
+    ...options,
+    resumeCursors: state.cursors,
+    checkpoint: async (key, cursor) => {
+      const cursors = state.cursors!;
+      if (cursor === null) delete cursors[key]; else cursors[key] = cursor;
+      await persist();
+    },
+  };
+  const persist = async () => {
+    state.updated_at = new Date().toISOString();
+    await saveLikesState(db, state);
+  };
+  await persist();
+  try {
+    const credentials = await readCredentials(userId);
+    if (!credentials.queryIds["Likes"]) {
+      throw new RequestFailure("query",
+        "The likes request was never captured. Open https://x.com/i/history/likes once in this browser, then try again.");
+    }
+    report("Scanning all likes. Existing saved posts are retained.");
+    await scanPages(withCursor, {
+      operation: "Likes",
+      buildVariables: (cursor) => ({
+        userId,
+        count: 100,
+        includePromotedContent: false,
+        withClientEventToken: false,
+        withBirdwatchNotes: false,
+        withVoice: true,
+        ...(cursor ? { cursor } : {}),
+      }),
+      parse: (data, observedAt) => {
+        const result = parseProfileTimeline(data, observedAt);
+        return result.valid
+          ? { valid: true, items: result.posts, nextCursor: result.nextCursor, terminated: result.terminated }
+          : { valid: false, items: [], nextCursor: null, ...(result.detail ? { detail: result.detail } : {}) };
+      },
+      save: (items) => saveLikesPage(options.db, items),
+      label: "Likes",
+      invalidMessage: "X changed its likes timeline response. Partial results were preserved.",
+    });
+    state.likes = "complete";
+    state.reason = "complete";
+    await persist();
+    report("Likes collection complete. Use Download likes archive to save JSON and media.");
     return state;
   } catch (error) {
     state.reason = error instanceof Error ? error.message : String(error);

@@ -5,11 +5,13 @@ core approach of [sytelus/xarchive](https://github.com/sytelus/xarchive).
 No Dexie, React, bundled archive viewer, external account service, or runtime
 dependencies beyond the shared Effect 4 already used by this repository.
 
-It does two things:
+It does three things:
 
 1. **Bookmarks** — a cumulative archive of your X bookmarks and bookmark folders,
    exported as a folder (`bookmarks.json` + media files + `debug.json`).
-2. **Profile posts** — a cumulative archive of *any* profile's entire post history
+2. **Likes** — a cumulative archive of every post you've liked, exported as a
+   folder (`likes.json` + media files + `debug.json`).
+3. **Profile posts** — a cumulative archive of *any* profile's entire post history
    (posts, reposts, and replies) as a folder of `posts.json` + media files.
 
 ## One place: the toolbar popup
@@ -33,19 +35,25 @@ Right-click anywhere on an x.com page to get:
 - **Collect and download bookmarks…** — same one-click step for your
   bookmarks: `bookmarks-<date>/` with `bookmarks.json`, the actual media
   files, and a `debug.json`.
+- **Collect and download likes…** — same one-click step for your likes:
+  `likes-<date>/` with `likes.json`, the actual media files, and a
+  `debug.json`.
 
 The toolbar popup has the same one-click path plus the finer-grained
 controls: **Download archive** (collect the current profile + save),
 **Collect only**, **Download selected** (re-download a previously archived
 profile without collecting), **Collect bookmarks**, **Download bookmarks
-archive**, and Stop while a run is in flight.
+archive**, **Collect likes**, **Download likes archive**, and Stop while a
+run is in flight.
 
 ## Use: bookmarks
 
 1. From the repository root, run pnpm install and pnpm run dist.
 2. Open chrome://extensions, enable Developer mode, and load
    dist/extension-suite as an unpacked extension.
-3. Sign in to X and **reload** [your bookmarks](https://x.com/i/bookmarks).
+3. Sign in to X and **reload** [your bookmarks](https://x.com/i/history) (X
+   redirects `/i/bookmarks` to the history page; the bookmarks GraphQL request
+   is still captured there).
    The suite service worker passively captures the current GraphQL query ID,
    request features, and X web-app authorization header.
 4. Click the suite toolbar icon and choose **Collect bookmarks**. Each page
@@ -61,6 +69,36 @@ archive**, and Stop while a run is in flight.
    re-downloads what is new, media failures are retried, and the export
    overwrites the same-day folder in place. The JSON includes the text,
    author, links, quoted posts, and folder memberships X returned.
+
+## Use: likes
+
+The popup and context menu can archive every post you've ever liked:
+
+1. Sign in to X and **reload** [your likes](https://x.com/i/history/likes).
+   The service worker passively captures the `Likes` GraphQL request the same
+   way it captures the bookmarks request.
+2. Then either:
+   - open the toolbar popup and click **Download likes archive** (or **Collect
+     likes** first if you want the scan to finish before the export starts), or
+   - right-click any x.com page and choose **Collect and download likes…**.
+
+Collection paginates the captured `Likes` timeline (100 posts per page) into a
+separate IndexedDB archive, per account. Stop any time; re-running is safe and
+saved posts are retained, resuming from the checkpointed page cursor. The
+export writes `likes-<date>/`:
+
+```
+likes-2026-11-16/
+  likes.json             the cumulative archive of liked posts
+  debug.json             everything needed to diagnose a failed or empty archive
+  media/
+    …
+```
+
+`likes.json` carries the same per-post shape as the bookmark export (author,
+links, quoted posts, metrics) and an `export_metadata.collection` block with
+`likes: complete|partial`. Media from other users' posts that you liked is
+downloaded like any other liked-post media.
 
 ## Use: a profile's entire posts
 

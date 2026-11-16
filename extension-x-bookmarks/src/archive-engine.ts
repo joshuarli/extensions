@@ -1,4 +1,4 @@
-import { collect, collectProfile } from "./collector.ts";
+import { collect, collectLikes, collectProfile } from "./collector.ts";
 import {
   clearArchiveStop,
   patchArchiveRun,
@@ -15,9 +15,11 @@ import {
   openProfileArchive,
 } from "./profile-storage.ts";
 import { assembleArchive, openArchive } from "./storage.ts";
+import { assembleLikesArchive, openLikesArchive } from "./likes-storage.ts";
 import { collectMediaJobs } from "./media.ts";
 import {
   bookmarksFolderName,
+  likesFolderName,
   downloadDebugJson,
   downloadFolderFile,
   downloadPostsJson,
@@ -214,6 +216,86 @@ async function runBookmarks(
   }
 }
 
+async function runLikes(
+  account: string,
+  action: ArchiveRunAction,
+  signal: AbortSignal,
+  report: (message: string) => void,
+  onProgress: (snapshot: { posts: number; pages: number }) => void,
+): Promise<string> {
+  const db = await openLikesArchive(account);
+  try {
+    if (action !== "export") {
+      report("Scanning all likes. Existing saved posts are retained.");
+      await collectLikes({ userId: account, db, signal, report, onProgress });
+      if (action === "collect") {
+        return "Likes collection finished. Saved posts are retained.";
+      }
+    }
+    let folder: string | null = null;
+    try {
+      await patchArchiveRun({ phase: "exporting", detail: "Preparing likes.json" });
+      const data = await assembleLikesArchive(db, account);
+      folder = likesFolderName();
+      const jobsAll = collectMediaJobs(data.likes);
+      const jobs = { ...jobsAll, jobs: await filterAlreadyDownloadedMedia(jobsAll.jobs, folder, report) };
+      const jsonFilename = await downloadFolderFile(JSON.stringify(data, null, 2), folder, "likes.json");
+      report("Saved likes.json. Downloading " + jobs.jobs.length + " media files to " + folder + "/media/…");
+      await patchArchiveRun({ mediaDownloaded: 0, mediaTotal: jobs.jobs.length });
+      const mediaResult = await downloadPostsMedia(jobs.jobs, folder, {
+        report,
+        signal,
+        onProgress: (progress) => void patchArchiveRun({
+          mediaDownloaded: progress.downloaded,
+          mediaTotal: progress.total,
+          detail: "Downloading media " + progress.downloaded + "/" + progress.total,
+        }),
+      });
+      const failedCount = mediaResult.failed.length;
+      let debugNote = "";
+      try {
+        const debugReport = await buildDebugReport({
+          accountId: account,
+          requestedProfile: undefined,
+          exportFolder: folder,
+          extensionVersion: chrome.runtime.getManifest().version,
+          archive: data.export_metadata,
+          media: mediaResult,
+          reportName: "x-likes-debug",
+        });
+        const debugFilename = await downloadDebugJson(JSON.stringify(debugReport, null, 2), folder);
+        debugNote = " Debug report: " + debugFilename + ".";
+      } catch (debugError) {
+        debugNote = " Debug report failed: " + (debugError instanceof Error ? debugError.message : String(debugError)) + ".";
+      }
+      return "Exported " + data.likes.length + " likes to " + jsonFilename +
+        " with " + mediaResult.downloaded + "/" + mediaResult.total + " media files" +
+        (failedCount ? " (" + failedCount + " failed — re-run to retry)" : "") +
+        (mediaResult.stopped ? " — stopped early" : "") + "." + debugNote;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      void recordLastError("likes export", message);
+      if (folder) {
+        try {
+          const debugReport = await buildDebugReport({
+            accountId: account,
+            requestedProfile: undefined,
+            exportFolder: folder,
+            extensionVersion: chrome.runtime.getManifest().version,
+            archive: { profile: null, collection: { likes: "error", reason: message }, stats: null },
+            media: null,
+            reportName: "x-likes-debug",
+          });
+          await downloadDebugJson(JSON.stringify(debugReport, null, 2), folder);
+        } catch { /* The export error is the one that matters. */ }
+      }
+      throw error;
+    }
+  } finally {
+    db.close();
+  }
+}
+
 async function run(record: ArchiveRunRecord, action: ArchiveRunAction, extras: RunExtras): Promise<void> {
   const controller = new AbortController();
   const stopTimer = setInterval(() => {
@@ -235,7 +317,9 @@ async function run(record: ArchiveRunRecord, action: ArchiveRunAction, extras: R
     }
     const summary = record.job === "profile"
       ? await runProfile(account, action, extras, controller.signal, report, onProgress)
-      : await runBookmarks(account, action, controller.signal, report, onProgress);
+      : record.job === "bookmarks"
+        ? await runBookmarks(account, action, controller.signal, report, onProgress)
+        : await runLikes(account, action, controller.signal, report, onProgress);
     await clearLastError();
     await clearStatusLog();
     await patchArchiveRun({ phase: "done", detail: summary });

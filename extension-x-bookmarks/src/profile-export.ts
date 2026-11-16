@@ -24,6 +24,10 @@ export function bookmarksFolderName(now: Date = new Date()): string {
   return "bookmarks-" + now.toISOString().slice(0, 10);
 }
 
+export function likesFolderName(now: Date = new Date()): string {
+  return "likes-" + now.toISOString().slice(0, 10);
+}
+
 export async function downloadPostsJson(json: string, folderName: string): Promise<string> {
   return downloadFolderFile(json, folderName, "posts.json");
 }
