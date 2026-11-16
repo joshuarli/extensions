@@ -6,7 +6,7 @@ import {
   printSummary,
   type RunOptions,
 } from "./run.ts";
-import { defaultCdpUrl } from "./deps.ts";
+import { resolveBackend } from "./backend.ts";
 
 const USAGE = `x — archive X data to your machine
 
@@ -22,16 +22,33 @@ Options:
   --collect-only  collect only; do not export
   --out DIR       output directory (default: ~/Downloads)
   --no-render     skip rendering archive.html
-  --cdp-url URL   Helium CDP endpoint (default: http://127.0.0.1:9222,
-                  or X_ARCHIVE_CDP_URL, or X_ARCHIVE_CDP_URL env var)
+  --backend NAME  helium (default) or bctl — see "bctl" below
+  --session NAME  bctl session to launch or attach to (default: xarchive,
+                  or X_ARCHIVE_SESSION)
+  --cdp-url URL   attach to an existing CDP endpoint instead of launching
+                  helium (http://127.0.0.1:9222) or a bctl session
+                  (X_ARCHIVE_CDP_URL)
   --help, -h      show this help
   --version, -v   print the version
 
-Exports read the X session from the Helium browser on the CDP endpoint:
+Exports read the X session from the browser backend over CDP:
 cookies for authentication, and the query IDs/features that the X Archive
 browser extension captured from your normal x.com usage. If collection
 fails part-way through, re-running is safe — saved pages are retained and
 collection resumes from the last checkpoint.
+
+bctl appliance backend:
+  x download self --backend bctl
+  Uses the dedicated bctl session (default "xarchive") instead of everyday
+  Helium: one manual sign-in (\`bctl profile login xarchive\`), then the run
+  launches or reuses the appliance session and reads the X session cookies
+  from the guest over CDP. The guest never reaches x.com during a run;
+  GraphQL and media stay host-HTTPS. The appliance has no extension, so
+  seeding from Helium's IndexedDB is unavailable and credentials come from
+  the credential cache (seeded by any normal Helium run). Requires \`bctl\`
+  on PATH and a working Nanos runtime (\`bctl doctor\`).
+  X_ARCHIVE_BACKEND, X_ARCHIVE_SESSION and X_ARCHIVE_BCTL (binary path)
+  override the defaults; X_ARCHIVE_CDP_URL attaches instead of launching.
 `;
 
 class UsageError extends Error {}
@@ -39,7 +56,14 @@ class UsageError extends Error {}
 interface ParsedArgs {
   command: string;
   target: string;
-  options: RunOptions & { outRoot: string };
+  options: {
+    action: RunOptions["action"];
+    outRoot: string;
+    render: boolean;
+    backend: string | undefined;
+    session: string | undefined;
+    cdpUrl: string | undefined;
+  };
 }
 
 function parseArgs(argv: string[]): ParsedArgs {
@@ -55,7 +79,9 @@ function parseArgs(argv: string[]): ParsedArgs {
   let action: RunOptions["action"] = "download";
   let outRoot = join(homedir(), "Downloads");
   let render = true;
-  let cdpUrl = defaultCdpUrl();
+  let backend: string | undefined;
+  let session: string | undefined;
+  let cdpUrl: string | undefined;
   for (const arg of rest) {
     switch (true) {
       case arg === "--export-only":
@@ -72,6 +98,16 @@ function parseArgs(argv: string[]): ParsedArgs {
         break;
       case arg === "--out":
         throw new UsageError("--out requires =DIR syntax: --out=DIR");
+      case arg === "--backend":
+        throw new UsageError("--backend requires =NAME syntax: --backend=helium|bctl");
+      case arg.startsWith("--backend="):
+        backend = arg.slice("--backend=".length);
+        break;
+      case arg === "--session":
+        throw new UsageError("--session requires =NAME syntax: --session=NAME");
+      case arg.startsWith("--session="):
+        session = arg.slice("--session=".length);
+        break;
       case arg.startsWith("--cdp-url="):
         cdpUrl = arg.slice("--cdp-url=".length);
         break;
@@ -86,7 +122,7 @@ function parseArgs(argv: string[]): ParsedArgs {
   }
   if (target === undefined) throw new UsageError("download needs a target: self, @handle, or a profile URL.\n\n" + USAGE);
   const definedTarget: string = target;
-  return { command, target: definedTarget, options: { action, outRoot, render, cdpUrl } };
+  return { command, target: definedTarget, options: { action, outRoot, render, backend, session, cdpUrl } };
 }
 
 async function main(argv: string[]): Promise<number> {
@@ -102,12 +138,20 @@ async function main(argv: string[]): Promise<number> {
   }
   const { target, options } = parsed;
   try {
+    const resolved = resolveBackend({ backend: options.backend, session: options.session, cdpUrl: options.cdpUrl });
+    const runOptions: RunOptions = {
+      action: options.action,
+      outRoot: options.outRoot,
+      render: options.render,
+      backend: resolved.backend,
+      cdpUrl: resolved.cdpUrl,
+    };
     if (target === "self") {
-      const summaries = await downloadSelf(options);
+      const summaries = await downloadSelf(runOptions);
       for (const summary of summaries) printSummary("self", summary);
       return 0;
     }
-    const summary = await downloadProfile(target, options);
+    const summary = await downloadProfile(target, runOptions);
     printSummary(target, summary);
     return 0;
   } catch (error) {

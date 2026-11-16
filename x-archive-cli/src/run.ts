@@ -24,11 +24,12 @@ import { graphqlRequest } from "../../x-archive-core/src/api.ts";
 import { extractLookupUserId } from "../../x-archive-core/src/collector.ts";
 import { parseProfileScreenName, type Credentials } from "../../x-archive-core/src/capture.ts";
 import { FsBookmarksStore, FsLikesStore, FsProfileStore } from "./fs-store.ts";
+import type { Backend } from "./backend.ts";
 import {
   buildDeps,
   cookieSession,
   readCapturedCredentials,
-  readHeliumSession,
+  readBrowserSession,
   type XSession,
 } from "./deps.ts";
 import { downloadPostsMedia, filterCompletedMedia } from "./media.ts";
@@ -44,6 +45,7 @@ export interface RunOptions {
   action: "download" | "collect" | "export";
   outRoot: string;
   render: boolean;
+  backend: Backend;
   cdpUrl: string;
 }
 
@@ -285,16 +287,20 @@ export async function downloadProfile(handle: string, options: RunOptions): Prom
   if (!screenName) {
     throw new Error("Could not read a profile handle from \"" + handle + "\". Pass @handle, a bare handle, or an x.com profile URL.");
   }
-  const session = await readHeliumSession(options.cdpUrl);
-  const credentials = await readCapturedCredentials(session, options.cdpUrl);
+  const session = await readBrowserSession(options.cdpUrl, options.backend);
+  const credentials = await readCapturedCredentials(session, options.cdpUrl, options.backend);
   const status = new StatusLog();
   const targetUserId = await resolveTargetUserId(session, credentials, screenName, status);
-  try {
-    const seed = await seedFromHelium(session, options.cdpUrl, { onlyProfileTarget: targetUserId });
-    const profile = seed.profiles[0];
-    if (profile) status.add("Seeded from Helium: " + profile.records + " saved posts" + (profile.already ? " (already up to date)" : " (merged)") + ".");
-  } catch (error) {
-    status.add("Helium seeding unavailable: " + (error instanceof Error ? error.message : String(error)) + ". Continuing with the local store.");
+  if (options.backend.kind === "bctl") {
+    status.add("Seeding needs the Helium extension, which the bctl appliance does not have; continuing with the local store.");
+  } else {
+    try {
+      const seed = await seedFromHelium(session, options.cdpUrl, { onlyProfileTarget: targetUserId });
+      const profile = seed.profiles[0];
+      if (profile) status.add("Seeded from Helium: " + profile.records + " saved posts" + (profile.already ? " (already up to date)" : " (merged)") + ".");
+    } catch (error) {
+      status.add("Helium seeding unavailable: " + (error instanceof Error ? error.message : String(error)) + ". Continuing with the local store.");
+    }
   }
   const store = new FsProfileStore(session.userId, targetUserId);
   const deps = buildDeps(session, credentials);
@@ -337,18 +343,22 @@ export async function downloadProfile(handle: string, options: RunOptions): Prom
 }
 
 export async function downloadSelf(options: RunOptions): Promise<RunSummary[]> {
-  const session = await readHeliumSession(options.cdpUrl);
-  const credentials = await readCapturedCredentials(session, options.cdpUrl);
+  const session = await readBrowserSession(options.cdpUrl, options.backend);
+  const credentials = await readCapturedCredentials(session, options.cdpUrl, options.backend);
   const status = new StatusLog();
-  try {
-    const seed = await seedFromHelium(session, options.cdpUrl);
-    status.add("Seeded from Helium: bookmarks " + seed.bookmarks.records + " posts"
-      + (seed.bookmarks.already ? " (already up to date)" : " (merged)")
-      + ", likes " + seed.likes.records + " posts"
-      + (seed.likes.already ? " (already up to date)" : " (merged)")
-      + (seed.profiles.length ? ", " + seed.profiles.length + " profile archive(s)" : "") + ".");
-  } catch (error) {
-    status.add("Helium seeding unavailable: " + (error instanceof Error ? error.message : String(error)) + ". Continuing with the local store.");
+  if (options.backend.kind === "bctl") {
+    status.add("Seeding needs the Helium extension, which the bctl appliance does not have; continuing with the local store.");
+  } else {
+    try {
+      const seed = await seedFromHelium(session, options.cdpUrl);
+      status.add("Seeded from Helium: bookmarks " + seed.bookmarks.records + " posts"
+        + (seed.bookmarks.already ? " (already up to date)" : " (merged)")
+        + ", likes " + seed.likes.records + " posts"
+        + (seed.likes.already ? " (already up to date)" : " (merged)")
+        + (seed.profiles.length ? ", " + seed.profiles.length + " profile archive(s)" : "") + ".");
+    } catch (error) {
+      status.add("Helium seeding unavailable: " + (error instanceof Error ? error.message : String(error)) + ". Continuing with the local store.");
+    }
   }
   const summaries: RunSummary[] = [];
   if (credentials.queryIds["Bookmarks"]) {

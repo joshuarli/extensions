@@ -6,7 +6,8 @@ terminal instead of a toolbar click.
 
 It does not need a browser download pipeline (which keeps failing on
 long MV3 exports) and it never stores cookies on disk: the session is
-read from your running Helium over CDP on each invocation. Everything
+read from your running Helium — or a dedicated bctl appliance with
+`--backend=bctl` — over CDP on each invocation. Everything
 it saves is bookmarks/likes/profile exports in a folder you can open,
 keep, or move.
 
@@ -35,9 +36,10 @@ retained either way.
 
 ## How it works
 
-- **Session**: the CLI attaches to the Helium browser on
-  `127.0.0.1:9222` (override with `--cdp-url` or `X_ARCHIVE_CDP_URL`)
-  via CDP — the same endpoint your `helium` launcher enables. It reads
+- **Session**: the CLI attaches to a browser over CDP — the Helium
+  browser on `127.0.0.1:9222` by default (override with `--cdp-url` or
+  `X_ARCHIVE_CDP_URL`), or a dedicated bctl appliance with
+  `--backend=bctl` (see [bctl](#bctl)). It reads
   your x.com cookies (including HttpOnly ones) and, from the X Archive
   extension's storage, the query IDs/features X's web app uses for the
   GraphQL API. If Helium is not reachable, the CLI falls back to
@@ -67,8 +69,40 @@ retained either way.
 
 ## bctl
 
-A bctl appliance backend (signed-in guest session, background runs) is
-designed against this seam but not built yet — see `EXT-1` in `TODO.md`.
+`--backend=bctl` runs the collection against a dedicated bctl appliance
+instead of everyday Helium — for unattended or background runs (idle
+machine, overnight) without keeping the daily browser open with a debug
+port:
+
+```sh
+bctl profile login xarchive       # once: sign in to x.com in the appliance
+x download self --backend=bctl
+```
+
+One manual sign-in is all; `x` launches or reuses the session (profile
+and session both default to `xarchive`, `--session=NAME` or
+`X_ARCHIVE_SESSION` to override), reads the X session cookies from the
+guest over CDP and collects exactly as on the Helium path. The appliance
+holds the signed-in session between runs and never needs x.com access
+during a collection; GraphQL and media stay host-HTTPS. Stop the session
+when you are done with `bctl down xarchive`.
+
+The appliance has no extension and no access to your Helium profile, so:
+
+- seeding from Helium's IndexedDB is skipped (the local store is used),
+- credentials come from the credential cache seeded by any normal Helium
+  run (seeded by `x download self` on the Helium backend; reused for 30
+  days). Without a cache the run fails with the remedy; the appliance
+  cannot capture fresh ones,
+- the export-cookies.py fallback is disabled on this path; a signed-out
+  or unreachable appliance fails fast with the sign-in instruction.
+
+Prerequisites: `bctl` on PATH (or `X_ARCHIVE_BCTL=/path/to/bctl`), a
+working Nanos runtime (`bctl doctor` passes), and the one-time sign-in.
+X may treat the appliance as a new device and ask for verification; do
+the sign-in by hand and confirm it sticks before relying on overnight
+runs. `X_ARCHIVE_BACKEND=bctl` and `X_ARCHIVE_CDP_URL=URL` (attach to an
+already-minted endpoint instead of launching) are supported.
 
 ## Notes
 

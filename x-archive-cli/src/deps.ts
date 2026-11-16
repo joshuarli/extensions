@@ -6,10 +6,10 @@ import { homedir } from "node:os";
 import { CredentialsSchema, credentialKey, parseUserId, type Credentials, type ProfileTarget } from "../../x-archive-core/src/capture.ts";
 import { Schema } from "effect";
 import type { ArchiveDeps } from "../../x-archive-core/src/collector.ts";
+import { HELIUM_BACKEND, type Backend } from "./backend.ts";
 import { credentialsCachePath, readJsonFile, writeJsonFile, stateDir, stateRoot } from "./state.ts";
 
 const EXTENSION_ID = "lekmlndhaidgepoalcmbcehffnliclil";
-const DEFAULT_CDP_URL = process.env["X_ARCHIVE_CDP_URL"] ?? "http://127.0.0.1:9222";
 const CACHE_MAX_AGE_DAYS = 30;
 const EXPORT_COOKIES = process.env["X_ARCHIVE_COOKIES_HELPER"]
   ?? join(homedir(), "usr", "dotfiles", "darwin", ".local", "bin", "export-cookies.py");
@@ -86,11 +86,17 @@ function cookiesViaExportScript(): Array<{ name: string; value: string }> {
   }
 }
 
-export async function readHeliumSession(cdpUrl: string = DEFAULT_CDP_URL): Promise<XSession> {
+export async function readBrowserSession(cdpUrl: string, backend: Backend = HELIUM_BACKEND): Promise<XSession> {
   let browser;
   try {
     browser = await chromium.connectOverCDP(cdpUrl, { timeout: 10_000 });
   } catch {
+    if (backend.kind === "bctl") {
+      throw new Error(
+        `The bctl session "${backend.session ?? "xarchive"}" is not reachable at ${cdpUrl}. `
+        + "Check `bctl status`; sign in once with `bctl profile login " + (backend.session ?? "xarchive") + "`.",
+      );
+    }
     const cookies = cookiesViaExportScript();
     const twid = cookies.find((cookie) => cookie.name === "twid");
     const userId = parseUserId(twid?.value);
@@ -104,12 +110,14 @@ export async function readHeliumSession(cdpUrl: string = DEFAULT_CDP_URL): Promi
   }
   try {
     const context = browser.contexts()[0];
-    if (!context) throw new Error("Helium has no browser context to read cookies from.");
+    if (!context) throw new Error("The browser at " + cdpUrl + " has no context to read cookies from.");
     const cookies = (await context.cookies("https://x.com/")).map(({ name, value }) => ({ name, value }));
     const twid = cookies.find((cookie) => cookie.name === "twid");
     const userId = parseUserId(twid?.value);
     if (!userId) {
-      throw new Error("Not signed in to X in this Helium (no twid cookie). Sign in to x.com first.");
+      throw new Error(backend.kind === "bctl"
+        ? `Not signed in to X in the bctl session "${backend.session ?? "xarchive"}". Run \`bctl profile login ${backend.session ?? "xarchive"}\` once, then retry.`
+        : "Not signed in to X in this Helium (no twid cookie). Sign in to x.com first.");
     }
     return { userId, cookies };
   } finally {
@@ -117,20 +125,20 @@ export async function readHeliumSession(cdpUrl: string = DEFAULT_CDP_URL): Promi
   }
 }
 
-export async function readCapturedCredentials(session: XSession, cdpUrl: string = DEFAULT_CDP_URL): Promise<Credentials> {
+export async function readCapturedCredentials(session: XSession, cdpUrl: string, backend: Backend = HELIUM_BACKEND): Promise<Credentials> {
   let browser;
   try {
     browser = await chromium.connectOverCDP(cdpUrl, { timeout: 10_000 });
   } catch {
     const cached = cachedCredentials();
     if (cached) return cached;
-    throw new Error(
-      "Helium is not reachable on " + cdpUrl + " and no cached credentials exist yet. Open x.com with the extension loaded, then retry.",
-    );
+    throw new Error(backend.kind === "bctl"
+      ? `The bctl session "${backend.session ?? "xarchive"}" is not reachable at ${cdpUrl} and no cached credentials exist yet. Check \`bctl status\`.`
+      : "Helium is not reachable on " + cdpUrl + " and no cached credentials exist yet. Open x.com with the extension loaded, then retry.");
   }
   try {
     const context = browser.contexts()[0];
-    if (!context) throw new Error("Helium has no browser context to read extension storage from.");
+    if (!context) throw new Error("The browser at " + cdpUrl + " has no context to read extension storage from.");
     const worker = context.serviceWorkers().find((worker) => worker.url().includes(EXTENSION_ID));
     const key = credentialKey(session.userId);
     const raw = worker
@@ -146,9 +154,9 @@ export async function readCapturedCredentials(session: XSession, cdpUrl: string 
     }
     const cached = cachedCredentials();
     if (cached) return cached;
-    throw new Error(
-      "No captured X credentials found. Open x.com (and the pages you archive: /i/history, /i/history/likes, or the profile) once in Helium with the extension loaded, then retry.",
-    );
+    throw new Error(backend.kind === "bctl"
+      ? `The bctl session "${backend.session ?? "xarchive"}" has no X Archive extension and no cached credentials exist yet. Run the CLI once from a signed-in Helium to seed the cache (X_ARCHIVE_BACKEND=helium x download self), then retry.`
+      : "No captured X credentials found. Open x.com (and the pages you archive: /i/history, /i/history/likes, or the profile) once in Helium with the extension loaded, then retry.");
   } finally {
     await browser.close();
   }
@@ -195,6 +203,4 @@ export function buildDeps(session: XSession, credentials: Credentials): ArchiveD
   };
 }
 
-export function defaultCdpUrl(): string {
-  return DEFAULT_CDP_URL;
-}
+
