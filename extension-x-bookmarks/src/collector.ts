@@ -86,7 +86,7 @@ export interface CollectionOptions {
 interface PageSpec<Item> {
   operation: Operation;
   buildVariables(cursor: string | null): Record<string, unknown>;
-  parse(data: unknown, observedAt: string): { valid: boolean; items: Item[]; nextCursor: string | null };
+  parse(data: unknown, observedAt: string): { valid: boolean; items: Item[]; nextCursor: string | null; detail?: string };
   save(items: Item[]): Promise<void>;
   label: string;
   invalidMessage: string;
@@ -106,7 +106,7 @@ async function scanPages<Item>(options: CollectionOptions, spec: PageSpec<Item>)
     stopped(signal);
     if (await currentUserId() !== userId) throw new RequestFailure("auth", "X account changed before saving the page.");
     const result = spec.parse(response, new Date().toISOString());
-    if (!result.valid) throw new Error(spec.invalidMessage);
+    if (!result.valid) throw new Error(spec.invalidMessage + (result.detail ? " Details: " + result.detail : ""));
     pages++;
     if (result.items.length) {
       await spec.save(result.items);
@@ -146,7 +146,7 @@ export async function collectTimeline(
     },
     parse: (data, observedAt) => {
       const result = parseTimeline(data, observedAt);
-      return { valid: result.valid, items: result.bookmarks, nextCursor: result.nextCursor };
+      return { valid: result.valid, items: result.bookmarks, nextCursor: result.nextCursor, ...(result.detail ? { detail: result.detail } : {}) };
     },
     save: (items) => savePage(options.db, items, folderId),
     label: operation,
@@ -272,7 +272,7 @@ export async function collectProfileTimeline(
       if (result.valid && result.profile) profile = result.profile;
       return result.valid
         ? { valid: true, items: result.posts, nextCursor: result.nextCursor }
-        : { valid: false, items: [], nextCursor: null };
+        : { valid: false, items: [], nextCursor: null, ...(result.detail ? { detail: result.detail } : {}) };
     },
     save: (items) => saveProfilePage(options.db, items, targetUserId),
     label: operation,

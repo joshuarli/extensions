@@ -25,7 +25,7 @@ export const BookmarkSchema = Schema.Struct({
 
 export type Bookmark = Schema.Schema.Type<typeof BookmarkSchema>;
 export type Folder = { id: string; name: string };
-export type ParsedPage = { valid: boolean; bookmarks: Bookmark[]; nextCursor: string | null };
+export type ParsedPage = { valid: boolean; bookmarks: Bookmark[]; nextCursor: string | null; detail?: string };
 export type ParsedFolders = { valid: boolean; folders: Folder[]; nextCursor: string | null };
 
 type ObjectValue = Record<string, unknown>;
@@ -219,42 +219,44 @@ function extractTweet(entry: ObjectValue, observedAt: string): Bookmark | null {
   };
 }
 
-type EntriesResult = { valid: true; entries: unknown[] } | { valid: false };
+type EntriesResult = { valid: true; entries: unknown[] } | { valid: false; detail: string };
 
 function instructionEntries(instruction: unknown): EntriesResult {
-  const kind = get(instruction, "type");
+  const kind = string(get(instruction, "type"));
   if (kind === "TimelineTerminateTimeline" || kind === "TimelineClearCache") return { valid: true, entries: [] };
   if (kind !== "TimelineAddEntries" && kind !== "TimelineReplaceEntry" && kind !== "TimelinePinEntry") {
-    return { valid: false };
+    return { valid: false, detail: "unsupported instruction \"" + (kind ?? "unknown") + "\"" };
   }
   const entries: unknown = kind === "TimelineAddEntries"
     ? get(instruction, "entries") : [get(instruction, "entry")];
-  return Array.isArray(entries) ? { valid: true, entries } : { valid: false };
+  return Array.isArray(entries)
+    ? { valid: true, entries }
+    : { valid: false, detail: "\"" + kind + "\" instruction has no entries array" };
 }
 
 function parseInstructions(instructions: unknown, observedAt: string): ParsedPage {
-  const invalid = (): ParsedPage => ({ valid: false, bookmarks: [], nextCursor: null });
-  if (!Array.isArray(instructions)) return invalid();
+  const invalid = (detail: string): ParsedPage => ({ valid: false, bookmarks: [], nextCursor: null, detail });
+  if (!Array.isArray(instructions)) return invalid("timeline instructions are missing or not an array");
   const bookmarks: Bookmark[] = [];
   let nextCursor: string | null = null;
   for (const instruction of instructions) {
     const parsed = instructionEntries(instruction);
-    if (!parsed.valid) return invalid();
+    if (!parsed.valid) return invalid(parsed.detail);
     for (const entry of parsed.entries) {
       const entryObject = object(entry);
-      if (!entryObject) return invalid();
+      if (!entryObject) return invalid("stream contained a non-object entry");
       const id = string(entryObject["entryId"]);
-      if (!id) return invalid();
+      if (!id) return invalid("timeline entry has no entryId");
       if (id.startsWith("tweet-")) {
         const bookmark = extractTweet(entryObject, observedAt);
-        if (!bookmark || !bookmark.tweet_id) return invalid();
+        if (!bookmark || !bookmark.tweet_id) return invalid("entry \"" + id + "\" did not match the tweet shape");
         bookmarks.push(bookmark);
       } else if (id.startsWith("cursor-bottom-")) {
         const value = string(get(entryObject, "content", "value"));
-        if (!value) return invalid();
+        if (!value) return invalid("cursor entry \"" + id + "\" has no content.value");
         nextCursor = value;
       } else if (!id.startsWith("cursor-top-")) {
-        return invalid();
+        return invalid("unsupported entry \"" + id + "\"");
       }
     }
   }
@@ -280,7 +282,7 @@ export interface ProfileInfo {
 
 export type ParsedProfilePage =
   | { valid: true; posts: Bookmark[]; nextCursor: string | null; profile: ProfileInfo | null }
-  | { valid: false; posts: []; nextCursor: null; profile: null };
+  | { valid: false; posts: []; nextCursor: null; profile: null; detail?: string };
 
 export function parseProfileInfo(source: unknown): ProfileInfo | null {
   if (!object(source)) return null;
@@ -299,10 +301,22 @@ export function parseProfileInfo(source: unknown): ProfileInfo | null {
 
 export function parseProfileTimeline(data: unknown, observedAt: string): ParsedProfilePage {
   const source = get(data, "data", "user", "result");
+  if (!object(source)) {
+    return { valid: false, posts: [], nextCursor: null, profile: null,
+      detail: "response has no data.user.result" };
+  }
+  const typename = string(get(source, "__typename"));
   const instructions = get(source, "timeline", "timeline", "instructions") ??
     get(source, "timeline_v2", "timeline", "instructions");
+  if (instructions === undefined) {
+    return { valid: false, posts: [], nextCursor: null, profile: null,
+      detail: "no timeline instructions at timeline.timeline.instructions or timeline_v2.timeline.instructions (result __typename=" + (typename ?? "missing") + ")" };
+  }
   const base = parseInstructions(instructions, observedAt);
-  if (!base.valid) return { valid: false, posts: [], nextCursor: null, profile: null };
+  if (!base.valid) {
+    return { valid: false, posts: [], nextCursor: null, profile: null,
+      ...(base.detail ? { detail: base.detail } : {}) };
+  }
   return { valid: true, posts: base.bookmarks, nextCursor: base.nextCursor, profile: parseProfileInfo(source) };
 }
 

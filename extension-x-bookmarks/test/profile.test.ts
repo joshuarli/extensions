@@ -538,3 +538,24 @@ describe("media downloads", () => {
     ]);
   });
 });
+
+describe("profile timeline parse diagnostics", () => {
+  it("reports the unsupported instruction instead of a bare failure", () => {
+    const data = {
+      data: { user: { result: { rest_id: "1", timeline: { timeline: { instructions: [
+        { type: "TimelineAddToModule", entries: [] },
+      ] } } } } },
+    };
+    const result = parseProfileTimeline(data, "2026-11-15T00:00:00Z");
+    expect(result.valid).toBe(false);
+    if (!result.valid) expect(result.detail).toContain("TimelineAddToModule");
+  });
+
+  it("reports the missing timeline path instead of a bare failure", () => {
+    const result = parseProfileTimeline({ data: { user: { result: { __typename: "UserUnavailable" } } } }, "2026-11-15T00:00:00Z");
+    expect(result.valid).toBe(false);
+    if (!result.valid) expect(result.detail).toContain("UserUnavailable");
+    const empty = parseProfileTimeline({}, "2026-11-15T00:00:00Z");
+    if (!empty.valid) expect(empty.detail).toBe("response has no data.user.result");
+  });
+});
