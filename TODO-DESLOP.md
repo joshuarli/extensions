@@ -5,14 +5,11 @@ Deslop campaign backlog ([plan](https://github.com/laputa-systems/stuff/blob/mai
 
 ## Report
 
-Not started.
-
-Owner stop, 2026-11-16: an unqualified DSLP-6 candidate pins Vitest and
-coverage-v8 to the matching 5.0.5 pair. The lockfile was regenerated using the
-stuff npm mirror with lifecycle scripts disabled; frozen installation passed.
-Tests, coverage and Stryker were not run. The regenerated lockfile also changes
-optional-package engine metadata; inspect that before accepting the candidate.
-No ticket is closed. Work is stopped; resume only at the owner's request.
+DSLP-6 is closed locally: Vitest and coverage-v8 5.0.5 pass the Node tests,
+typecheck, and V8 coverage; omitted optional-package engine declarations were
+restored after checking published metadata. See [verification](docs/deslop-vitest.md).
+Ground, Diagnose, Types, Tests, and Dead code remain open. Stryker, browser tests,
+and test-cost qualification are deferred; this does not qualify the Tests lane.
 
 ## Tickets
 
@@ -60,14 +57,3 @@ No ticket is closed. Work is stopped; resume only at the owner's request.
 - **Recommendation:** Run the deslop Dead code step. Accept: tools clean or allowlisted with reasons; walk-backs filed as Needs owner tickets.
 - **Fix with:** deslop
 - **Effort:** M
-
-
-### DSLP-6 · P2 · Committed Vitest and coverage-v8 versions are an unsupported pair
-
-- **Area:** Tests · tooling
-- **Where:** package.json:28, pnpm-lock.yaml:21
-- **Problem:** package.json and pnpm-lock.yaml pair vitest 5.0.3 with @vitest/coverage-v8 5.0.5; Vitest warns the mixed versions are unsupported, so coverage totals (55.26% lines, 50.77% branches at 910df665) are provisional.
-- **Recommendation:** Pin @vitest/coverage-v8 to the installed Vitest version (or bump both together from the stuff registry), regenerate the lock, and re-measure coverage.
-- **Fix with:** test-audit
-- **Effort:** S
-
