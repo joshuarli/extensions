@@ -1,4 +1,4 @@
-.PHONY: build dist test check install
+.PHONY: build dist test check lint install
 
 build:
 	pnpm run build
@@ -7,10 +7,14 @@ dist:
 	pnpm run dist
 
 test:
-	pnpm run test
+	pnpm run typecheck
+	pnpm run test $(TEST_ARGS)
 
 check:
 	pnpm run check
+
+lint:
+	pnpm run typecheck
 
 install: dist
 	@set -eu; \
