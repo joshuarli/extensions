@@ -334,8 +334,11 @@ async function refresh(): Promise<void> {
     : "None yet — reload the profile tab on x.com";
   profileUnmatchedElement.textContent = unmatchedOps.length === 0
     ? "None — every request X made on this page is known"
-    : unmatchedOps.slice(0, 8).join(", ") + (unmatchedOps.length > 8 ? "…" : "")
-      + " (operations the extension saw but doesn't understand — report these names)";
+    : unmatchedOps.slice(0, 10)
+        .map((entry) => entry.operation + (entry.variables ? " " + entry.variables : ""))
+        .join("\n")
+      + (unmatchedOps.length > 10 ? "\n…" : "")
+      + "\n(operations the extension saw but doesn't understand)";
   downloadProfileButton.disabled = profileSelect.options.length === 0;
   downloadProfileButton.title = profileSelect.options.length === 0
     ? "Disabled: no profile archive yet — collect one first"

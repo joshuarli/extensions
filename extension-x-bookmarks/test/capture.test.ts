@@ -111,3 +111,27 @@ describe("collect profile deep link", () => {
       .toBe(base + "?collect=profile&export=1");
   });
 });
+
+describe("renamed X profile timeline operation", () => {
+  const headers = [{ name: "Authorization", value: "Bearer actual" }];
+
+  it("captures UserOriginalsTimeline as a profile operation with the target user id", () => {
+    const url = "https://x.com/i/api/graphql/WwN77dVd5uQJjW3q8QH4PQ/UserOriginalsTimeline"
+      + "?variables=%7B%22userId%22%3A%2244196397%22%2C%22count%22%3A40%7D"
+      + "&features=%7B%22enabled%22%3Atrue%7D";
+    const captured = captureRequest(url, "https://x.com", headers);
+    expect(captured).toMatchObject({
+      operation: "UserOriginalsTimeline",
+      queryId: "WwN77dVd5uQJjW3q8QH4PQ",
+      targetUserId: "44196397",
+      authorization: "Bearer actual",
+    });
+  });
+
+  it("accepts user_id as a fallback variable key", () => {
+    const url = "https://x.com/i/api/graphql/WwN77dVd5uQJjW3q8QH4PQ/UserOriginalsTimeline"
+      + "?variables=%7B%22user_id%22%3A%2244196397%22%7D";
+    const captured = captureRequest(url, "https://x.com", headers);
+    expect(captured?.targetUserId).toBe("44196397");
+  });
+});

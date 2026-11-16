@@ -1,7 +1,7 @@
 import { Schema } from "effect";
 
 export const BOOKMARK_OPERATIONS = ["Bookmarks", "BookmarkFoldersSlice", "BookmarkFolderTimeline"] as const;
-export const PROFILE_OPERATIONS = ["UserTweets", "UserTweetsAndReplies"] as const;
+export const PROFILE_OPERATIONS = ["UserTweets", "UserTweetsAndReplies", "UserOriginalsTimeline"] as const;
 export const LOOKUP_OPERATIONS = ["UserByScreenName"] as const;
 export const OPERATIONS = [...BOOKMARK_OPERATIONS, ...PROFILE_OPERATIONS, ...LOOKUP_OPERATIONS] as const;
 export type Operation = (typeof OPERATIONS)[number];
@@ -105,9 +105,9 @@ function profileTargetFromVariables(requestUrl: URL): string | undefined {
   const raw = requestUrl.searchParams.get("variables");
   if (!raw) return undefined;
   try {
-    const parsed: unknown = JSON.parse(raw);
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
     if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return undefined;
-    const userId = (parsed as Record<string, unknown>)["userId"];
+    const userId = parsed["userId"] ?? parsed["user_id"];
     if (typeof userId !== "string" && typeof userId !== "number") return undefined;
     const digits = String(userId);
     return /^\d+$/u.test(digits) ? digits : undefined;

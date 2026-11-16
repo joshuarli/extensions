@@ -95,25 +95,48 @@ export function handleXBookmarksContextMenuClick(info: chrome.contextMenus.OnCli
 export const xProfileLastCaptureKey = "x_profile_last_capture";
 export const xProfileUnmatchedOpsKey = "x_profile_unmatched_ops";
 
+export interface UnmatchedOperation {
+  operation: string;
+  variables?: string;
+}
+
+function parseUnmatchedOps(stored: unknown): UnmatchedOperation[] {
+  if (!Array.isArray(stored)) return [];
+  return stored.flatMap((entry): UnmatchedOperation[] => {
+    if (typeof entry === "string") return [{ operation: entry }];
+    if (entry !== null && typeof entry === "object") {
+      const record = entry as Record<string, unknown>;
+      if (typeof record["operation"] !== "string") return [];
+      return [{
+        operation: record["operation"],
+        ...(typeof record["variables"] === "string" ? { variables: record["variables"] } : {}),
+      }];
+    }
+    return [];
+  });
+}
+
 const unmatchedLogged = new Set<string>();
 
-async function recordUnmatchedOperation(operation: string): Promise<void> {
+async function recordUnmatchedOperation(operation: string, url: string): Promise<void> {
   if (unmatchedLogged.has(operation)) return;
   unmatchedLogged.add(operation);
+  let variables: string | undefined;
+  if (/timeline/iu.test(operation)) {
+    try {
+      const raw = new URL(url).searchParams.get("variables");
+      if (raw) variables = raw.length > 1500 ? raw.slice(0, 1500) + "…" : raw;
+    } catch { /* Diagnostics must never break capture. */ }
+  }
   const stored = (await chrome.storage.local.get(xProfileUnmatchedOpsKey))[xProfileUnmatchedOpsKey];
-  const list = Array.isArray(stored)
-    ? stored.filter((entry): entry is string => typeof entry === "string")
-    : [];
-  if (list.length < 100 && !list.includes(operation)) {
-    await chrome.storage.local.set({ [xProfileUnmatchedOpsKey]: [...list, operation] });
+  const list = parseUnmatchedOps(stored);
+  if (list.length < 100 && !list.some((entry) => entry.operation === operation)) {
+    await chrome.storage.local.set({ [xProfileUnmatchedOpsKey]: [...list, { operation, ...(variables ? { variables } : {}) }] });
   }
 }
 
-export async function readXProfileUnmatchedOps(): Promise<string[]> {
-  const stored = (await chrome.storage.local.get(xProfileUnmatchedOpsKey))[xProfileUnmatchedOpsKey];
-  return Array.isArray(stored)
-    ? stored.filter((entry): entry is string => typeof entry === "string")
-    : [];
+export async function readXProfileUnmatchedOps(): Promise<UnmatchedOperation[]> {
+  return parseUnmatchedOps((await chrome.storage.local.get(xProfileUnmatchedOpsKey))[xProfileUnmatchedOpsKey]);
 }
 
 export async function readXProfileLastCapture(): Promise<{ operation: string; targetUserId?: string; at: string } | null> {
@@ -140,7 +163,7 @@ export function handleXBookmarksRequest(
         const op = /^\/i\/api\/graphql\/[A-Za-z0-9_-]+\/([A-Za-z0-9_]+)$/u
           .exec(new URL(details.url).pathname)?.[1];
         if (op && (details.initiator === "https://x.com" || details.initiator === "https://twitter.com")) {
-          await recordUnmatchedOperation(op);
+          await recordUnmatchedOperation(op, details.url);
         }
       } catch { /* Diagnostics must never break capture. */ }
       return;
