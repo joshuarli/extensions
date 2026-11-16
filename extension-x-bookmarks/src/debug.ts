@@ -1,11 +1,6 @@
 import { readXProfileLastCapture, readXProfileUnmatchedOps, type UnmatchedOperation } from "./background.ts";
-import { readCredentials, readProfileTarget, type Credentials, type ProfileTarget } from "./capture.ts";
-import { type MediaExportResult } from "./profile-export.ts";
-
-export interface DebugStatusEntry {
-  text: string;
-  at: string;
-}
+import { readCredentials, readProfileTarget } from "./capture.ts";
+import { type DebugStatusEntry, type LastErrorEntry } from "../../x-archive-core/src/debug.ts";
 
 export const statusLogKey = "x_archive_status_log";
 const STATUS_LOG_LIMIT = 40;
@@ -39,12 +34,6 @@ export async function clearStatusLog(): Promise<void> {
 
 export const lastErrorKey = "x_profile_last_error";
 
-export interface LastErrorEntry {
-  label: string;
-  message: string;
-  at: string;
-}
-
 export async function recordLastError(label: string, message: string): Promise<void> {
   try {
     await chrome.storage.local.set({
@@ -69,62 +58,17 @@ export async function clearLastError(): Promise<void> {
   } catch { /* Diagnostics must never break the run they observe. */ }
 }
 
-export function credentialsSummary(credentials: Credentials): Record<string, {
-  queryId: string;
-  features: string | null;
-  field_toggles_present: boolean;
-  authorization_present: boolean;
-  client_uuid_present: boolean;
-  transaction_id_present: boolean;
-}> {
-  return Object.fromEntries(Object.entries(credentials.queryIds).sort(([a], [b]) => a.localeCompare(b)).map(([operation, queryId]) => [operation, {
-    queryId,
-    features: credentials.features[operation] ?? null,
-    field_toggles_present: !!credentials.fieldToggles?.[operation],
-    authorization_present: !!credentials.authorization,
-    client_uuid_present: !!credentials.clientUuid,
-    transaction_id_present: !!credentials.transactionId,
-  }]));
-}
+export { credentialsSummary } from "../../x-archive-core/src/debug.ts";
+export { buildDebugReport as buildCoreDebugReport } from "../../x-archive-core/src/debug.ts";
+export type { DebugStatusEntry, LastErrorEntry, DebugReportInput, DebugReport, DebugGathered } from "../../x-archive-core/src/debug.ts";
 
-export interface DebugReportInput {
-  accountId: string;
-  requestedProfile: string | undefined;
-  exportFolder: string;
-  extensionVersion: string;
-  archive: unknown;
-  media: MediaExportResult | null;
-  reportName?: string;
-  statusLog?: readonly DebugStatusEntry[];
-}
+import {
+  buildDebugReport as coreBuild,
+  type DebugReportInput,
+  type DebugGathered,
+} from "../../x-archive-core/src/debug.ts";
 
-export interface DebugReport {
-  tool: string;
-  exported_at: string;
-  extension_version: string;
-  account_id: string;
-  requested_profile: string | null;
-  export_folder: string;
-  stored_target: ProfileTarget | null;
-  last_capture: Awaited<ReturnType<typeof readXProfileLastCapture>>;
-  unmatched_operations: UnmatchedOperation[];
-  credentials: ReturnType<typeof credentialsSummary>;
-  profile: unknown;
-  collection: unknown;
-  stats: unknown;
-  archive_meta: unknown;
-  media: {
-    total: number;
-    downloaded: number;
-    stopped: boolean;
-    failed: Array<{ filename: string; error: string }>;
-  } | null;
-  last_error: LastErrorEntry | null;
-  status_log: DebugStatusEntry[];
-  privacy_note: string;
-}
-
-export async function buildDebugReport(input: DebugReportInput): Promise<DebugReport> {
+export async function buildDebugReport(input: DebugReportInput) {
   const [credentials, storedTarget, lastCapture, unmatchedOps, lastError, storedStatusLog] = await Promise.all([
     readCredentials(input.accountId),
     readProfileTarget(input.accountId),
@@ -133,32 +77,13 @@ export async function buildDebugReport(input: DebugReportInput): Promise<DebugRe
     readLastError(),
     readStatusLog(),
   ]);
-  const statusLog = input.statusLog ?? storedStatusLog;
-  return {
-    tool: input.reportName ?? "x-profile-posts-debug",
-    exported_at: new Date().toISOString(),
-    extension_version: input.extensionVersion,
-    account_id: input.accountId,
-    requested_profile: input.requestedProfile ?? null,
-    export_folder: input.exportFolder,
-    stored_target: storedTarget,
-    last_capture: lastCapture,
-    unmatched_operations: unmatchedOps,
-    credentials: credentialsSummary(credentials),
-    profile: (input.archive as Record<string, unknown> | null)?.["profile"] ?? null,
-    collection: (input.archive as Record<string, unknown> | null)?.["collection"] ?? null,
-    stats: (input.archive as Record<string, unknown> | null)?.["stats"] ?? null,
-    archive_meta: input.archive,
-    media: input.media
-      ? {
-        total: input.media.total,
-        downloaded: input.media.downloaded,
-        stopped: input.media.stopped,
-        failed: input.media.failed,
-      }
-      : null,
-    last_error: lastError,
-    status_log: statusLog.slice(-40),
-    privacy_note: "No authorization headers, cookies, or CSRF tokens are included. Query IDs and client feature flags are public X web-app configuration, included for shape-drift debugging.",
+  const gathered: DebugGathered = {
+    credentials,
+    storedTarget,
+    lastCapture,
+    unmatchedOps: unmatchedOps as UnmatchedOperation[],
+    lastError,
+    statusLog: storedStatusLog,
   };
+  return coreBuild(input, gathered);
 }
