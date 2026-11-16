@@ -9,6 +9,7 @@ export interface ScanState {
   bookmarks: Coverage;
   folders: Coverage;
   reason: string;
+  cursors?: Record<string, string> | undefined;
 }
 
 const ScanStateSchema = Schema.Struct({
@@ -17,6 +18,7 @@ const ScanStateSchema = Schema.Struct({
   bookmarks: Schema.Literals(["complete", "partial", "not_checked"]),
   folders: Schema.Literals(["complete", "partial", "not_checked"]),
   reason: Schema.String,
+  cursors: Schema.optional(Schema.Record(Schema.String, Schema.String)),
 });
 
 function request<T>(operation: IDBRequest<T>): Promise<T> {

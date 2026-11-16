@@ -1,7 +1,7 @@
 import "fake-indexeddb/auto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { collectProfile } from "../src/collector.ts";
-import { openProfileArchive, assembleProfileArchive, mergeProfilePost, listProfileStates } from "../src/profile-storage.ts";
+import { openProfileArchive, assembleProfileArchive, mergeProfilePost, listProfileStates, loadProfileState } from "../src/profile-storage.ts";
 import { collectMediaJobs } from "../src/media.ts";
 import { downloadPostsMedia, exportFolderName } from "../src/profile-export.ts";
 import { parseProfileTimeline } from "../src/parser.ts";
@@ -753,5 +753,53 @@ describe("promoted previews inside conversation modules", () => {
     const result = parseProfileTimeline(profilePage([previewDisplay]), "2026-11-15T00:00:00Z", targetUserId);
     expect(result.valid).toBe(true);
     if (result.valid) expect(result.posts.map((post) => post.tweet_id)).toEqual(["800050"]);
+  });
+});
+
+describe("interrupted profile scans resume from the checkpointed cursor", () => {
+  it("persists the page cursor and resumes an unfinished operation", { timeout: 30_000 }, async () => {
+    stubChrome();
+    stored["x_bookmarks_credentials_123"] = {
+      authorization: "Bearer token",
+      queryIds: { UserOriginalsTimeline: "q-originals" },
+      features: { UserOriginalsTimeline: "{}" },
+    };
+    stored["x_profile_target_123"] = { targetUserId, operation: "UserOriginalsTimeline", capturedAt: "2026-11-15T00:00:00Z" };
+    const db = await openTestProfileArchive();
+    const originalFetch = globalThis.fetch;
+    const pageA = profilePage([entry({ rest_id: "100", legacy: { full_text: "A" } }, "100"), cursor("c1")]);
+    const pageB = profilePage([entry({ rest_id: "200", legacy: { full_text: "B" } }, "200"), cursor("c2")]);
+    const pageC = profilePage([entry({ rest_id: "300", legacy: { full_text: "C" } }, "300")]);
+    const served = (variables: Record<string, unknown>): unknown => {
+      if (variables["cursor"] === "c1") return pageB;
+      if (variables["cursor"] === "c2") return pageB;
+      return pageA;
+    };
+    (globalThis as Record<string, unknown>)["fetch"] = (async (url: unknown) => {
+      const variables = JSON.parse(new URL(String(url)).searchParams.get("variables") ?? "{}") as Record<string, unknown>;
+      return new Response(JSON.stringify(served(variables)), { status: 200 });
+    }) as typeof fetch;
+    try {
+      await expect(collectProfile({ userId, db, signal: new AbortController().signal, report: () => {} }))
+        .rejects.toThrow(/repeated cursor/u);
+      const checkpointed = await loadProfileState(db, targetUserId);
+      expect(checkpointed?.cursors).toEqual({ UserOriginalsTimeline: "c2" });
+      let resumedCursor: string | null | undefined;
+      (globalThis as Record<string, unknown>)["fetch"] = (async (url: unknown) => {
+        const variables = JSON.parse(new URL(String(url)).searchParams.get("variables") ?? "{}") as Record<string, unknown>;
+        if (resumedCursor === undefined) resumedCursor = (variables["cursor"] as string | null | undefined) ?? null;
+        return new Response(JSON.stringify(pageC), { status: 200 });
+      }) as typeof fetch;
+      const state = await collectProfile({ userId, db, signal: new AbortController().signal, report: () => {} });
+      expect(resumedCursor).toBe("c2");
+      expect(state.reason).toBe("complete_without_replies");
+      const after = await loadProfileState(db, targetUserId);
+      expect(after?.cursors?.["UserOriginalsTimeline"]).toBeUndefined();
+      const archive = await assembleProfileArchive(db, userId, targetUserId);
+      expect(archive.posts.map((post) => post.tweet_id).sort()).toEqual(["100", "200", "300"]);
+    } finally {
+      (globalThis as Record<string, unknown>)["fetch"] = originalFetch;
+      db.close();
+    }
   });
 });

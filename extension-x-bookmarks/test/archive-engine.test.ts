@@ -1,5 +1,5 @@
 import "fake-indexeddb/auto";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { startXArchiveRun } from "../src/archive-engine.ts";
 
 const stored: Record<string, unknown> = {};
@@ -41,6 +41,10 @@ describe("interrupted archive runs", () => {
     expect(result.ok).toBe(true);
     expect(stored["x_archive_run"]).toMatchObject({ job: "profile", phase: "exporting" });
     expect(stored["x_archive_run"]).not.toMatchObject({ id: "interrupted-run" });
+    await vi.waitFor(() => {
+      const run = stored["x_archive_run"] as { phase?: string };
+      expect(["done", "error"]).toContain(run?.phase);
+    }, { timeout: 5000 });
   });
 
   it("refuses to start while a fresh run is still in flight", async () => {

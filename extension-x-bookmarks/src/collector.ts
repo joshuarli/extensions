@@ -9,8 +9,8 @@ import {
   type ProfileOperation,
 } from "./capture.ts";
 import { parseTimeline, parseFolders, parseProfileTimeline, type Folder } from "./parser.ts";
-import { savePage, saveFolders, saveState, type ScanState } from "./storage.ts";
-import { saveProfilePage, saveProfileState, type ProfileScanProfile, type ProfileScanState } from "./profile-storage.ts";
+import { loadState, savePage, saveFolders, saveState, type ScanState } from "./storage.ts";
+import { loadProfileState, saveProfilePage, saveProfileState, type ProfileScanProfile, type ProfileScanState } from "./profile-storage.ts";
 
 const PAGE_DELAY_MS = 2500;
 const MAX_EMPTY_PAGES = 3;
@@ -81,10 +81,13 @@ export interface CollectionOptions {
   report: (message: string) => void;
   onProgress?: (snapshot: ProgressSnapshot) => void;
   progressBase?: { posts: number; pages: number };
+  resumeCursors?: Record<string, string>;
+  checkpoint?: (key: string, cursor: string | null) => Promise<void>;
 }
 
 interface PageSpec<Item> {
   operation: Operation;
+  stateKey?: string;
   buildVariables(cursor: string | null): Record<string, unknown>;
   parse(data: unknown, observedAt: string): { valid: boolean; items: Item[]; nextCursor: string | null; terminated?: boolean; detail?: string };
   save(items: Item[]): Promise<void>;
@@ -94,8 +97,9 @@ interface PageSpec<Item> {
 
 async function scanPages<Item>(options: CollectionOptions, spec: PageSpec<Item>): Promise<number> {
   const { userId, signal, report } = options;
+  const resumeKey = spec.stateKey ?? spec.operation;
   const visited = new Set<string>();
-  let cursor: string | null = null;
+  let cursor: string | null = options.resumeCursors?.[resumeKey] ?? null;
   let pages = 0;
   let total = 0;
   let empty = 0;
@@ -121,6 +125,7 @@ async function scanPages<Item>(options: CollectionOptions, spec: PageSpec<Item>)
       pages: pages + (options.progressBase?.pages ?? 0),
     });
     const next = result.terminated ? null : result.nextCursor;
+    await options.checkpoint?.(resumeKey, next);
     if (!next) return total;
     if (visited.has(next) || next === cursor) throw new Error("X returned a repeated cursor. Collection is partial.");
     if (empty >= MAX_EMPTY_PAGES) throw new Error("X returned three empty pages. Collection is partial.");
@@ -149,6 +154,7 @@ export async function collectTimeline(
       return { valid: result.valid, items: result.bookmarks, nextCursor: result.nextCursor, terminated: result.terminated === true, ...(result.detail ? { detail: result.detail } : {}) };
     },
     save: (items) => savePage(options.db, items, folderId),
+    ...(folderId ? { stateKey: "BookmarkFolderTimeline:" + folderId } : {}),
     label: operation,
     invalidMessage: "X changed its timeline response. Partial results were preserved.",
   });
@@ -182,9 +188,21 @@ async function collectFolderList(options: CollectionOptions): Promise<Folder[]> 
 export async function collect(options: CollectionOptions): Promise<ScanState> {
   const { db, signal, userId, report } = options;
   const started = new Date().toISOString();
+  const saved = await loadState(db);
   const state: ScanState = {
     started_at: started, updated_at: started,
     bookmarks: "partial", folders: "not_checked", reason: "in_progress",
+    cursors: saved?.cursors,
+  };
+  state.cursors = state.cursors ?? {};
+  const withCursor: CollectionOptions = {
+    ...options,
+    resumeCursors: state.cursors,
+    checkpoint: async (key, cursor) => {
+      const cursors = state.cursors!;
+      if (cursor === null) delete cursors[key]; else cursors[key] = cursor;
+      await persist();
+    },
   };
   const persist = async () => {
     state.updated_at = new Date().toISOString();
@@ -193,7 +211,7 @@ export async function collect(options: CollectionOptions): Promise<ScanState> {
   await persist();
   try {
     report("Scanning all bookmarks. Existing saved posts will be retained.");
-    await collectTimeline(options, "Bookmarks");
+    await collectTimeline(withCursor, "Bookmarks");
     state.bookmarks = "complete";
     state.reason = "main_timeline_complete";
     await persist();
@@ -217,7 +235,7 @@ export async function collect(options: CollectionOptions): Promise<ScanState> {
     for (const folder of folders) {
       stopped(signal);
       report("Scanning folder: " + folder.name);
-      await collectTimeline(options, "BookmarkFolderTimeline", folder.id);
+      await collectTimeline(withCursor, "BookmarkFolderTimeline", folder.id);
       await delay(PAGE_DELAY_MS, signal);
     }
     state.folders = "complete";
@@ -353,6 +371,7 @@ export async function collectProfile(
     : credentials.queryIds["UserTweetsAndReplies"]
       ? ["UserTweetsAndReplies"]
       : credentials.queryIds["UserTweets"] ? ["UserTweets"] : [];
+  const saved = await loadProfileState(db, targetUserId);
   const started = new Date().toISOString();
   const baseProfile: ProfileScanProfile = {
     user_id: targetUserId,
@@ -370,6 +389,17 @@ export async function collectProfile(
     reason: "in_progress",
     ...(operations.length ? { operation: operations[0] } : {}),
     profile: baseProfile,
+    cursors: saved?.cursors,
+  };
+  state.cursors = state.cursors ?? {};
+  const withCursor: CollectionOptions = {
+    ...options,
+    resumeCursors: state.cursors,
+    checkpoint: async (key, cursor) => {
+      const cursors = state.cursors!;
+      if (cursor === null) delete cursors[key]; else cursors[key] = cursor;
+      await persist();
+    },
   };
   const persist = async () => {
     state.updated_at = new Date().toISOString();
@@ -394,7 +424,7 @@ export async function collectProfile(
       let opPages = 0;
       const base = { posts: cumulativePosts, pages: cumulativePages };
       const opOptions: CollectionOptions = {
-        ...options,
+        ...withCursor,
         progressBase: base,
         onProgress: (snapshot) => {
           opPages = snapshot.pages - base.pages;
