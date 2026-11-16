@@ -6,6 +6,7 @@ import {
   type LikesScanState,
 } from "../../x-archive-core/src/storage.ts";
 import { mergeBookmark } from "../../x-archive-core/src/merge.ts";
+import type { LikesStore } from "../../x-archive-core/src/collector.ts";
 
 export type { LikesScanState };
 
@@ -81,4 +82,12 @@ export async function assembleLikesArchive(db: IDBDatabase, userId: string): Pro
     loadLikesState(db),
   ]);
   return assemble(rawLikes as unknown[], state, userId);
+}
+
+export function likesDbStore(db: IDBDatabase): LikesStore {
+  return {
+    savePage: (items) => saveLikesPage(db, items),
+    loadState: () => loadLikesState(db),
+    saveState: (state) => saveLikesState(db, state),
+  };
 }

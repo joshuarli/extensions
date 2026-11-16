@@ -1,7 +1,9 @@
 import "fake-indexeddb/auto";
 import { afterEach, describe, expect, it } from "vitest";
 import { collectLikes } from "../src/collector.ts";
-import { assembleLikesArchive, loadLikesState, openLikesArchive } from "../src/likes-storage.ts";
+import { assembleLikesArchive, loadLikesState, openLikesArchive, likesDbStore } from "../src/likes-storage.ts";
+import { readCredentials, currentUserId, readProfileTarget, writeProfileTarget } from "../src/capture.ts";
+import { chromeSession } from "../src/api.ts";
 import { likesFolderName } from "../src/profile-export.ts";
 import { parseProfileTimeline } from "../../x-archive-core/src/parser.ts";
 
@@ -25,6 +27,14 @@ function stubChrome(): void {
     },
   };
 }
+
+const testDeps = () => ({
+  credentials: readCredentials,
+  currentUserId,
+  readProfileTarget,
+  writeProfileTarget,
+  session: chromeSession,
+});
 
 const databases: string[] = [];
 
@@ -97,7 +107,8 @@ describe("likes collection", () => {
     try {
       const state = await collectLikes({
         userId: "123",
-        db,
+        store: likesDbStore(db),
+        deps: testDeps(),
         signal: new AbortController().signal,
         report: () => {},
       });
@@ -132,7 +143,7 @@ describe("likes collection", () => {
       return new Response(JSON.stringify(page([])), { status: 200 });
     }) as typeof fetch;
     try {
-      await collectLikes({ userId: "123", db, signal: new AbortController().signal, report: () => {} });
+      await collectLikes({ userId: "123", store: likesDbStore(db), deps: testDeps(), signal: new AbortController().signal, report: () => {} });
       expect(seen[0]).toMatchObject({
         userId: "123",
         count: 100,
@@ -155,7 +166,7 @@ describe("likes collection", () => {
     };
     const db = await openTestLikesArchive("123");
     try {
-      await expect(collectLikes({ userId: "123", db, signal: new AbortController().signal, report: () => {} }))
+      await expect(collectLikes({ userId: "123", store: likesDbStore(db), deps: testDeps(), signal: new AbortController().signal, report: () => {} }))
         .rejects.toThrow(/never captured/u);
       const saved = await loadLikesState(db);
       expect(saved?.reason).toMatch(/never captured/u);
@@ -190,7 +201,7 @@ describe("likes collection", () => {
       originalFetch = globalThis.fetch;
     (globalThis as Record<string, unknown>)["fetch"] = timelineFetch([pageA, pageB]);
     try {
-      const state = await collectLikes({ userId: "123", db, signal: new AbortController().signal, report: () => {} });
+      const state = await collectLikes({ userId: "123", store: likesDbStore(db), deps: testDeps(), signal: new AbortController().signal, report: () => {} });
       expect(state.likes).toBe("complete");
       const archive = await assembleLikesArchive(db, "123");
       expect(archive.likes.map((like) => like.tweet_id)).toEqual(["200", "100"]);
@@ -210,7 +221,7 @@ describe("likes collection", () => {
       originalFetch = globalThis.fetch;
     (globalThis as Record<string, unknown>)["fetch"] = timelineFetch([pageA, pageB]);
     try {
-      const state = await collectLikes({ userId: "123", db, signal: new AbortController().signal, report: () => {} });
+      const state = await collectLikes({ userId: "123", store: likesDbStore(db), deps: testDeps(), signal: new AbortController().signal, report: () => {} });
       expect(state.likes).toBe("complete");
       expect(state.reason).toBe("complete");
       const archive = await assembleLikesArchive(db, "123");
@@ -230,7 +241,7 @@ describe("likes collection", () => {
       originalFetch = globalThis.fetch;
     (globalThis as Record<string, unknown>)["fetch"] = timelineFetch([pageA, pageB]);
     try {
-      await expect(collectLikes({ userId: "123", db, signal: new AbortController().signal, report: () => {} }))
+      await expect(collectLikes({ userId: "123", store: likesDbStore(db), deps: testDeps(), signal: new AbortController().signal, report: () => {} }))
         .rejects.toThrow(/repeated cursor/u);
       const saved = await loadLikesState(db);
       expect(saved?.likes).toBe("partial");

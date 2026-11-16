@@ -13,9 +13,10 @@ import {
   assembleProfileArchive,
   listProfileStates,
   openProfileArchive,
+  profileDbStore,
 } from "./profile-storage.ts";
-import { assembleArchive, openArchive } from "./storage.ts";
-import { assembleLikesArchive, openLikesArchive } from "./likes-storage.ts";
+import { assembleArchive, openArchive, bookmarksDbStore } from "./storage.ts";
+import { assembleLikesArchive, openLikesArchive, likesDbStore } from "./likes-storage.ts";
 import { collectMediaJobs } from "../../x-archive-core/src/media.ts";
 import {
   bookmarksFolderName,
@@ -28,7 +29,18 @@ import {
   filterAlreadyDownloadedMedia,
 } from "./profile-export.ts";
 import { buildDebugReport, clearLastError, clearStatusLog, recordLastError, recordStatusEntry } from "./debug.ts";
-import { currentUserId, readProfileTarget } from "./capture.ts";
+import { currentUserId, readCredentials, readProfileTarget, writeProfileTarget } from "./capture.ts";
+import { chromeSession } from "./api.ts";
+
+function archiveDeps() {
+  return {
+    credentials: readCredentials,
+    currentUserId,
+    readProfileTarget,
+    writeProfileTarget,
+    session: chromeSession,
+  };
+}
 
 function log(text: string): void {
   void recordStatusEntry(text);
@@ -56,7 +68,7 @@ async function runProfile(
     let targetUserId = action === "export" ? extras.targetUserId : undefined;
     if (action !== "export") {
       report("Collecting the profile timeline — existing saved posts are retained.");
-      await collectProfile({ userId: account, db: profileDb, signal, report, onProgress },
+      await collectProfile({ userId: account, store: profileDbStore(profileDb), deps: archiveDeps(), signal, report, onProgress },
         extras.screenName ? { screenName: extras.screenName } : undefined);
       if (action === "collect") {
         return "Profile collection finished. Saved pages are retained — re-running only downloads what's new.";
@@ -147,7 +159,7 @@ async function runBookmarks(
   try {
     if (action !== "export") {
       report("Scanning all bookmarks. Existing saved bookmarks are retained.");
-      await collect({ userId: account, db, signal, report, onProgress });
+      await collect({ userId: account, store: bookmarksDbStore(db), deps: archiveDeps(), signal, report, onProgress });
       if (action === "collect") {
         return "Bookmark collection finished. Saved bookmarks are retained.";
       }
@@ -227,7 +239,7 @@ async function runLikes(
   try {
     if (action !== "export") {
       report("Scanning all likes. Existing saved posts are retained.");
-      await collectLikes({ userId: account, db, signal, report, onProgress });
+      await collectLikes({ userId: account, store: likesDbStore(db), deps: archiveDeps(), signal, report, onProgress });
       if (action === "collect") {
         return "Likes collection finished. Saved posts are retained.";
       }

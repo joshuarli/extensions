@@ -5,6 +5,7 @@ import {
   ScanStateSchema,
   type ScanState,
 } from "../../x-archive-core/src/storage.ts";
+import type { BookmarksStore } from "../../x-archive-core/src/collector.ts";
 import { mergeBookmark } from "../../x-archive-core/src/merge.ts";
 
 export { assembleLikesArchive } from "../../x-archive-core/src/storage.ts";
@@ -101,4 +102,13 @@ export async function assembleArchive(db: IDBDatabase, userId: string): Promise<
     loadState(db),
   ]);
   return assembleBookmarkArchive(rawBookmarks as unknown[], rawFolders as unknown[], state, userId);
+}
+
+export function bookmarksDbStore(db: IDBDatabase): BookmarksStore {
+  return {
+    savePage: (items, folderId) => savePage(db, items, folderId),
+    saveFolders: (folders) => saveFolders(db, folders),
+    loadState: () => loadState(db),
+    saveState: (state) => saveState(db, state),
+  };
 }

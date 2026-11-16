@@ -7,6 +7,7 @@ import {
   type ProfileScanState,
 } from "../../x-archive-core/src/storage.ts";
 import { mergeBookmark } from "../../x-archive-core/src/merge.ts";
+import type { ProfileStore } from "../../x-archive-core/src/collector.ts";
 
 export const PROFILE_POSTS_STORE = "posts";
 export const PROFILE_STATE_STORE = "state";
@@ -129,3 +130,11 @@ export async function assembleProfileArchive(db: IDBDatabase, accountUserId: str
   return assemble(rawPosts as unknown[], state, accountUserId, targetUserId);
 }
 
+
+export function profileDbStore(db: IDBDatabase): ProfileStore {
+  return {
+    savePage: (items, targetUserId) => saveProfilePage(db, items, targetUserId),
+    loadState: (targetUserId) => loadProfileState(db, targetUserId),
+    saveState: (targetUserId, state) => saveProfileState(db, targetUserId, state),
+  };
+}

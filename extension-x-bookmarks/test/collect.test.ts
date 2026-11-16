@@ -1,7 +1,9 @@
 import "fake-indexeddb/auto";
 import { afterEach, describe, expect, it } from "vitest";
 import { collect, collectTimeline } from "../src/collector.ts";
-import { assembleArchive, bookmarkCount, loadState, openArchive } from "../src/storage.ts";
+import { assembleArchive, bookmarkCount, loadState, openArchive, bookmarksDbStore } from "../src/storage.ts";
+import { readCredentials, currentUserId, readProfileTarget, writeProfileTarget } from "../src/capture.ts";
+import { chromeSession } from "../src/api.ts";
 
 let twid: string | null = "u=123";
 const stored: Record<string, unknown> = {};
@@ -23,6 +25,14 @@ function stubChrome(): void {
     },
   };
 }
+
+const testDeps = () => ({
+  credentials: readCredentials,
+  currentUserId,
+  readProfileTarget,
+  writeProfileTarget,
+  session: chromeSession,
+});
 
 const databases: string[] = [];
 
@@ -80,7 +90,8 @@ describe("bookmark collection", () => {
     try {
       const state = await collect({
         userId: "123",
-        db,
+        store: bookmarksDbStore(db),
+        deps: testDeps(),
         signal: new AbortController().signal,
         report: () => {},
       });
@@ -114,7 +125,7 @@ describe("bookmark collection", () => {
     (globalThis as Record<string, unknown>)["fetch"] = fetchImpl;
     try {
       const total = await collectTimeline(
-        { userId: "123", db, signal: new AbortController().signal, report: () => {} },
+        { userId: "123", store: bookmarksDbStore(db), deps: testDeps(), signal: new AbortController().signal, report: () => {} },
         "Bookmarks",
       );
       expect(total).toBe(2);
@@ -152,7 +163,8 @@ describe("bookmark collection", () => {
     try {
       const state = await collect({
         userId: "123",
-        db,
+        store: bookmarksDbStore(db),
+        deps: testDeps(),
         signal: new AbortController().signal,
         report: () => {},
       });
@@ -177,7 +189,7 @@ describe("bookmark collection", () => {
     try {
       await expect(
         collectTimeline(
-          { userId: "123", db, signal: new AbortController().signal, report: () => {} },
+          { userId: "123", store: bookmarksDbStore(db), deps: testDeps(), signal: new AbortController().signal, report: () => {} },
           "Bookmarks",
         ),
       ).rejects.toMatchObject({ _tag: "RequestFailure", kind: "auth" });

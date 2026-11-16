@@ -1,7 +1,9 @@
 import "fake-indexeddb/auto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { collectProfile } from "../src/collector.ts";
-import { openProfileArchive, assembleProfileArchive, mergeProfilePost, listProfileStates, loadProfileState } from "../src/profile-storage.ts";
+import { openProfileArchive, assembleProfileArchive, mergeProfilePost, listProfileStates, loadProfileState, profileDbStore } from "../src/profile-storage.ts";
+import { readCredentials, currentUserId, readProfileTarget, writeProfileTarget } from "../src/capture.ts";
+import { chromeSession } from "../src/api.ts";
 import { collectMediaJobs } from "../../x-archive-core/src/media.ts";
 import { downloadPostsMedia, exportFolderName, filterAlreadyDownloadedMedia } from "../src/profile-export.ts";
 import { parseProfileTimeline } from "../../x-archive-core/src/parser.ts";
@@ -30,6 +32,14 @@ function stubChrome(): void {
     },
   };
 }
+
+const testDeps = () => ({
+  credentials: readCredentials,
+  currentUserId,
+  readProfileTarget,
+  writeProfileTarget,
+  session: chromeSession,
+});
 
 const databases: string[] = [];
 
@@ -229,7 +239,8 @@ describe("profile archive", () => {
     try {
       const state = await collectProfile({
         userId,
-        db,
+        store: profileDbStore(db),
+        deps: testDeps(),
         signal: new AbortController().signal,
         report: () => {},
       });
@@ -271,7 +282,8 @@ describe("profile archive", () => {
     try {
       const state = await collectProfile({
         userId,
-        db,
+        store: profileDbStore(db),
+        deps: testDeps(),
         signal: new AbortController().signal,
         report: () => {},
       });
@@ -303,7 +315,8 @@ describe("profile archive", () => {
     try {
       const state = await collectProfile({
         userId,
-        db,
+        store: profileDbStore(db),
+        deps: testDeps(),
         signal: new AbortController().signal,
         report: () => {},
       }, { screenName: "token___garden" });
@@ -327,7 +340,7 @@ describe("profile archive", () => {
     const db = await openTestProfileArchive();
     try {
       await expect(
-        collectProfile({ userId, db, signal: new AbortController().signal, report: () => {} },
+        collectProfile({ userId, store: profileDbStore(db), deps: testDeps(), signal: new AbortController().signal, report: () => {} },
           { screenName: "token___garden" }),
       ).rejects.toMatchObject({ _tag: "RequestFailure", kind: "query" });
     } finally {
@@ -357,7 +370,8 @@ describe("profile archive", () => {
     try {
       const state = await collectProfile({
         userId,
-        db,
+        store: profileDbStore(db),
+        deps: testDeps(),
         signal: new AbortController().signal,
         report: () => {},
       });
@@ -394,7 +408,7 @@ describe("profile archive", () => {
     }) as typeof fetch;
     try {
       await expect(
-        collectProfile({ userId, db, signal: new AbortController().signal, report: () => {} }),
+        collectProfile({ userId, store: profileDbStore(db), deps: testDeps(), signal: new AbortController().signal, report: () => {} }),
       ).rejects.toThrow(/Scan of UserRepliesTimeline failed/u);
       const archive = await assembleProfileArchive(db, userId, targetUserId);
       expect(archive.posts.map((post) => post.full_text)).toEqual(["Kept post"]);
@@ -411,7 +425,7 @@ describe("profile archive", () => {
     const db = await openTestProfileArchive();
     try {
       await expect(
-        collectProfile({ userId, db, signal: new AbortController().signal, report: () => {} }),
+        collectProfile({ userId, store: profileDbStore(db), deps: testDeps(), signal: new AbortController().signal, report: () => {} }),
       ).rejects.toMatchObject({ _tag: "RequestFailure", kind: "query" });
     } finally {
       db.close();
@@ -430,7 +444,7 @@ describe("profile archive", () => {
       originalFetch = globalThis.fetch;
     (globalThis as Record<string, unknown>)["fetch"] = fetchImpl;
     try {
-      const options = { userId, db, signal: new AbortController().signal, report: () => {} };
+      const options = { userId, store: profileDbStore(db), deps: testDeps(), signal: new AbortController().signal, report: () => {} };
       await collectProfile(options);
       await collectProfile(options);
       const archive = await assembleProfileArchive(db, userId, targetUserId);
@@ -780,7 +794,7 @@ describe("interrupted profile scans resume from the checkpointed cursor", () => 
       return new Response(JSON.stringify(served(variables)), { status: 200 });
     }) as typeof fetch;
     try {
-      await expect(collectProfile({ userId, db, signal: new AbortController().signal, report: () => {} }))
+      await expect(collectProfile({ userId, store: profileDbStore(db), deps: testDeps(), signal: new AbortController().signal, report: () => {} }))
         .rejects.toThrow(/repeated cursor/u);
       const checkpointed = await loadProfileState(db, targetUserId);
       expect(checkpointed?.cursors).toEqual({ UserOriginalsTimeline: "c2" });
@@ -790,7 +804,7 @@ describe("interrupted profile scans resume from the checkpointed cursor", () => 
         if (resumedCursor === undefined) resumedCursor = (variables["cursor"] as string | null | undefined) ?? null;
         return new Response(JSON.stringify(pageC), { status: 200 });
       }) as typeof fetch;
-      const state = await collectProfile({ userId, db, signal: new AbortController().signal, report: () => {} });
+      const state = await collectProfile({ userId, store: profileDbStore(db), deps: testDeps(), signal: new AbortController().signal, report: () => {} });
       expect(resumedCursor).toBe("c2");
       expect(state.reason).toBe("complete_without_replies");
       const after = await loadProfileState(db, targetUserId);
