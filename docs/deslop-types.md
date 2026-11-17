@@ -1,14 +1,17 @@
 # Types profile measurement
 
-Measured at `a737ca1923ce1e2dff305d6b4b1b104d180fb519`, macOS arm64,
-Node 26.12.0, pnpm 11.0.2. Parent owns DSLP-3 closure. No
-configuration, source, dependency, or runtime change was made. The existing
-Ground full Node test result remains applicable because those inputs did not
-change. Browser and live-service behavior were not tested.
+Profile baseline: `a737ca1923ce1e2dff305d6b4b1b104d180fb519`, macOS arm64,
+Node 26.12.0, pnpm 11.0.2. The measured profile adopts only
+`typescript/no-unsafe-argument` for TypeScript files, through pinned Oxlint
+1.93.0 and its matching tsrs 0.25.0 provider. The independent compiler gate
+remains. A boolean annotation preserves caption element inference without
+removing the runtime array guard; one redundant Chrome storage assertion is
+deleted. Public signatures, accepted runtime inputs and outputs are unchanged.
+Browser and live-service behavior were not tested.
 
 ## Compiler
 
-The project compiler is `tsrs 0.18.0-ts7.1.0-dev.20260929` (reports
+The baseline compiler is `tsrs 0.18.0-ts7.1.0-dev.20260929` (reports
 TypeScript `7.1.0-dev.20260930.4`). `pnpm install --frozen-lockfile
 --ignore-scripts` and `cpu-guard --cores 2 -- make lint` both exited 0.
 `tsconfig.json` already enables `strict`, `noUncheckedIndexedAccess`,
@@ -51,11 +54,11 @@ its results were discarded and each rule was explicitly enabled afterwards.
 | Rule | Project diagnostics | Decision |
 | --- | ---: | --- |
 | no-explicit-any | 0 | No adoption witness |
-| no-unsafe-argument | 4 | Candidate: 4 lost-inference reports, 0 false positives |
-| no-unsafe-assignment | 5 | Candidate: 2 lost-inference reports, 3 false positives |
+| no-unsafe-argument | 4 | Adopt: 4 lost-inference reports, 0 false positives; final 0 |
+| no-unsafe-assignment | 5 | Decline: same inference gap plus 3 false positives |
 | no-unsafe-call | 0 | No adoption witness |
-| no-unsafe-member-access | 8 | Candidate: 7 lost-inference reports, 1 false positive |
-| no-unsafe-return | 8 | Candidate: 5 lost-inference reports, 3 false positives |
+| no-unsafe-member-access | 8 | Decline: same inference gap plus 1 false positive |
+| no-unsafe-return | 8 | Decline: same inference gap plus 3 false positives |
 | no-unsafe-enum-assignment | 0 | No adoption witness |
 | no-unsafe-enum-comparison | 0 | No adoption witness |
 | no-unsafe-type-assertion | 245 | Reject uniform adoption: at least 5 false positives |
@@ -117,10 +120,12 @@ same expression.
 The four unsafe-propagation rules identify the same real lost-inference
 contract; their respective false-positive counts are 0, 3, 1 and 3 out of
 4, 5, 8 and 8 diagnostics. Under the 17,108-line budget each qualifies for
-consideration, but clean adoption also needs source repairs and a project
-provider. Neither is authorized here. On a production-only denominator the
-three-FP rules exceed the budget; choose the lint scope explicitly before any
-adoption. No runtime defect is asserted.
+consideration. Adopt the zero-false-positive argument rule across TypeScript
+sources and tests. The other three expose no independent contract in these
+findings and would require suppressing legitimate code. Decline those rules
+rather than add suppression debt for the same witness. On a production-only
+denominator the three-FP rules would exceed the budget. No runtime defect is
+asserted.
 
 For `switch-exhaustiveness-check`, both reports are false positives: the
 `switch (true)` in `x-archive-cli/src/cli.ts:97-134` dispatches predicates and
@@ -141,7 +146,7 @@ fails the test, rather than exposing a product-path defect. These ten reports
 are enough to exceed the budget for their respective blanket rules; other
 reports remain unclassified.
 
-`no-unnecessary-type-assertion` has a verified removable hatch at
+`no-unnecessary-type-assertion` found a verified removable hatch at
 `extension-x-bookmarks/src/background.ts:80`: the installed Chrome listener's
 first parameter is an index signature and `noUncheckedIndexedAccess` already
 adds `undefined`. A scratch pinned-compiler type equality witness derived
@@ -149,29 +154,88 @@ adds `undefined`. A scratch pinned-compiler type equality witness derived
 and proved `typeof changes[key]` equals the asserted
 `chrome.storage.StorageChange | undefined` (exit 0). `:81-90` uses the same
 local value and `decodeArchiveRun` accepts `unknown`; removing the assertion
-preserves runtime, inference, absence, and callers. Source was not changed.
+preserves runtime, inference, absence, and callers. The parent removes this
+assertion; the Chrome dependency already gives the local its exact type.
 The rule also reports four DOM queries at `page.ts:169,177,188,244`, suggesting
 explicit generic type arguments instead of the assertions. Those generic
 arguments still claim the same unverified element type; replacing one spelling
 of the hatch with another does not delete trust or reject a bad program. These
 four non-improving reports exceed the budget for uniform adoption; the other
-36 leads remain unclassified. The verified removable hatch is a separate
-parent-owned type-only cleanup candidate, not a proven product defect.
+36 leads remain unclassified. This removable hatch is a type-only cleanup,
+not a proven product defect.
 
-Project adoption of the useful unsafe-propagation rules requires the matching
-lint provider and correction of existing diagnostics; neither a project
-dependency nor source changes are authorized here. Scratch analysis is not
-CI qualification. The parent owns those decisions and DSLP-3 closure.
+## Adopted contract and regression controls
+
+`make lint` independently runs `pnpm run typecheck`, then `pnpm run lint`.
+The Oxlint JSON configuration disables its default correctness category and
+enables only `typescript/no-unsafe-argument` on `**/*.ts`; JavaScript build
+scripts were not part of this TypeScript measurement. The first unrestricted
+invocation also reported 17 unmeasured JavaScript arguments and is not the
+adopted scope. A quoted CLI glob selected no files and was discarded; the
+accepted configuration uses an override and normal directory discovery.
+The accepted file listing includes the 130 tracked TypeScript files.
+
+In `pickCaptionTrack`, the explicit `boolean` local prevents TypeScript's
+aliased-condition narrowing from replacing `readonly CaptionTrack[]` with
+`any[]`. The expression still calls `Array.isArray` first and reads length
+only for arrays; comparing length with zero preserves the old guard exactly.
+It does not claim that a predicate validates every element.
+
+The retained must-reject program is the first language normalization changed
+to `normalizeLanguageCode(track.languageCode.toFixed())`. Reproduce in an
+owned copy of the actual source, then run `pnpm run typecheck`: the old guard
+accepts it, exit 0; the new guard rejects exactly this expression with TS2551,
+exit 2. Reverting only the guard, without inserting the invalid call, makes
+the adopted Oxlint rule emit four `no-unsafe-argument` diagnostics in this
+file and exit 1. Restoring the actual source makes `make lint` exit 0.
+These source-level controls verify the real implementation and provider;
+neither a fabricated runtime failure nor a test-only public API was added.
+
+The provider comes from the Stuff registry with lifecycle scripts disabled.
+tsrs replaces the old compiler pin; Oxlint is a new development dependency.
+Their package metadata names the maintained oxc-project repositories,
+Apache-2.0 and MIT licenses respectively, no ordinary runtime dependencies,
+and optional platform binaries. Four matching packages are installed on
+Darwin arm64, approximately 43 MB rounded. A few local lines cannot perform
+type-aware unsafe propagation analysis. Application dependencies are unchanged,
+and neither tool is imported into extension bundles. Frozen installation
+passes; no workflow or managed tool installation changed. Scratch controls
+do not qualify a mutation CI lane.
 
 ## Escape hatches and costs
 
 `git ls-files '*.ts' | xargs rg -Pc '\bas (?!const\b)|\bany\b|@ts-(ignore|expect-error)|(oxlint|eslint)-disable'`
 summed by file, counted 379
-matching lines before and after, across 17,108 tracked TypeScript lines: 161
+matching lines before, across 17,108 tracked TypeScript lines: 161
 in 10,893 production lines, 218 in 6,040 test lines, and zero in 175 other
 lines. The X implementation is an independent port, not imported code
 (`extension-x-bookmarks/README.md:302`); Ground records no vendored Onefile
 code. It counts lines, not individual hatches.
-No timed claim was measured or made; the earlier Ground costs apply only to
-its recorded environment. Scratch tooling and static documentation do not
-change runtime performance.
+The final source deletes one matching assertion line; no hatch is added by
+the boolean annotation. The profile's baseline is kept separate from the
+candidate checks below.
+
+Final source has 378 matching lines, down from 379. The actual Oxlint file
+list contains exactly the 130 tracked TypeScript files (sorted lists compare
+equal). Frozen install, `make lint`, and the development bundle build pass.
+The independent typecheck and lint invocation use the project's installed
+providers, not the scratch analysis environment. The extension service-worker
+development bundle is 3,660.31 kB as reported by Vite; no runtime dependency
+was added. No production build, install or release ran. The declared Onefile
+capture workload is outside the changed caption-selection path; no caption
+runtime performance workload is declared.
+
+With `TMPDIR=$PWD/.work/tmp`, `/usr/bin/time -p cpu-guard --cores 1 --
+make test TEST_ARGS=--maxWorkers=1` passes all 226 tests in 32 files, 51.54 s
+wall, 7.24 s user, 3.31 s system. Ground's matched one-core warm observation
+is 48.34 s. Candidate `make lint` under the same one-core cap takes 1.16 s,
+1.06 s user, 0.56 s system; Ground's typecheck-only lint was 1.17 s.
+Each measured invocation has actual pre-gate/test-or-lint/immediate-post-gate
+exits 0/0/0. These are suite-cost observations, not speedup claims. The test
+cost stays within the deslop allowance. Browser, extension-appliance and
+live-service checks remain outside this slice.
+
+Existing CI runs `make test`, so it exercises the new compiler and Node
+tests. It does not yet invoke the separate adopted lint command; that is a
+recorded CI integration gap, with workflow changes awaiting separate owner
+authorization. This profile does not claim a qualified mutation lane.
