@@ -66,3 +66,34 @@ its timestamp alone does not validate its credentials or a real archive run.
 An unattended run still needs observed acceptance. Record its start/end,
 outcome, and any recovery or renewal failures. Do not close EXT-1 merely
 because fixtures pass, a browser opens, or a short signed-in pilot completes.
+
+## 2026-11-17 complete run on bctl release 2b858053
+
+The owner's test X account signed in, headed, to the shared `shadowdriver-ig`
+guest profile. That profile also holds the Instagram sign-in. bctl
+`release-2b858053` includes the Tinyland subsurface-role fix and the kernel
+page-cache read-lifetime fix that had ended earlier headed X sign-ins (see
+bctl `tests/qualification/results/2026-11-17-x-signin-macos/`). After a
+stop/flush and a headless restart, the profile was still signed in to both X
+and Instagram.
+
+`pnpm x download self --backend=bctl --session=shadowdriver-ig`, with
+`X_ARCHIVE_BCTL` set to Shadowdriver's downloaded `bctl`, exited 0:
+
+| Export | Posts | Media | Collection |
+| --- | --- | --- | --- |
+| bookmarks | 441 | 690 of 690 | `folder_query_not_captured`; main bookmarks complete |
+| likes | 663 | 914 of 915 (1 unavailable) | complete |
+
+Both exports rendered `archive.html`. The CLI reported that seeding needs the
+Helium extension, which the appliance does not have, and it continued with the
+local store. Bookmark folders therefore stay uncollected until the folder-list
+query is captured.
+
+Everyday Helium was running on `127.0.0.1:9222` during the run, so this run
+does not establish the "Helium closed" condition. The exported account matches
+the guest profile's signed-in X user, not the everyday browser's session, so
+the archive came through the appliance.
+
+Still unestablished: an unattended interval, with renewal and recovery
+outcomes, and a run with everyday Helium closed.
