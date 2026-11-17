@@ -202,6 +202,15 @@ describe("state file helpers", () => {
     writeFileSync(path, "{");
     expect(readJsonFile(path)).toBeNull();
     expect(readFileSync(path, "utf8")).toBe("{");
+    writeFileSync(path, '{"a":3}');
+    chmodSync(path, 0o200);
+    try {
+      expect(() => readFileSync(path)).toThrow(expect.objectContaining({ code: "EACCES" }));
+      expect(readJsonFile(path)).toBeNull();
+    } finally {
+      chmodSync(path, 0o600);
+    }
+    expect(readJsonFile(path)).toEqual({ a: 3 });
   });
 });
 
