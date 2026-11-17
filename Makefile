@@ -15,6 +15,7 @@ check:
 
 lint:
 	pnpm run typecheck
+	pnpm run lint
 
 install: dist
 	@set -eu; \

@@ -9,7 +9,8 @@ export function pickCaptionTrack(
   preferredLanguage?: string,
   playerData?: YouTubePlayerData,
 ): CaptionTrack | undefined {
-  if (!Array.isArray(tracks) || tracks.length === 0) {
+  const hasTracks: boolean = Array.isArray(tracks) && tracks.length !== 0;
+  if (!hasTracks) {
     return undefined;
   }
 

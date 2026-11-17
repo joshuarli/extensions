@@ -10,6 +10,7 @@
     "build:extensions": "node scripts/build-extensions.mjs",
     "icons": "node scripts/render-icons.mjs",
     "typecheck": "tsrs --noEmit",
+    "lint": "oxlint --type-aware --threads=1",
     "vitest": "vitest",
     "dev": "node scripts/build-extensions.mjs --watch",
     "check": "pnpm run typecheck && pnpm run test",
@@ -28,8 +29,9 @@
     "@types/node": "26.6.2",
     "@vitest/coverage-v8": "5.0.5",
     "fake-indexeddb": "^6.2.7",
+    "oxlint": "1.93.0",
     "playwright": "1.64.1",
-    "tsrs": "0.18.0-ts7.1.0-dev.20260929",
+    "tsrs": "0.25.0-ts7.1.0-beta",
     "vite": "8.3.2",
     "vitest": "5.0.5"
   }

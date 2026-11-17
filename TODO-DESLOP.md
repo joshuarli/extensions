@@ -9,8 +9,12 @@ DSLP-6 is closed locally: Vitest and coverage-v8 5.0.5 pass the Node tests,
 typecheck, and V8 coverage; omitted optional-package engine declarations were
 restored after checking published metadata. See [verification](docs/deslop-vitest.md).
 Ground passes at `2b3ebe1`: 226 Node tests, typecheck, gated cold/warm costs,
-green main CI and a clean shared workflow rule. Types, Tests, and Dead code
-remain open. Diagnose files three assumed P2 findings and one P3:
+green main CI and a clean shared workflow rule. Types adopts the measured
+TypeScript unsafe-argument rule, preserves caption inference and removes a
+redundant assertion: 379 to 378 hatch-matching lines, 226 tests and lint clean.
+Current gated warm test/lint costs are 51.54/1.16s; full evidence and the
+separate lint CI integration gap are in docs/deslop-types.md. Tests and Dead
+code remain open. Diagnose files three assumed P2 findings and one P3:
 DSLP-7 and DSLP-8 have synthetic product-module reproductions for crash
 recovery and archive read failures. DSLP-9 remains unproven against actual
 X timeline ordering. DSLP-10 reproduces rejected help syntax at the executable.
@@ -26,14 +30,6 @@ qualify the Tests lane.
 
 
 
-### DSLP-3 · P2 · Types: strict profile and typing findings
-
-- **Area:** deslop · types
-- **Where:** type checker and lint configuration; TypeScript sources
-- **Problem:** The strict-profile candidates in the deslop skill's tools reference have not been measured here.
-- **Recommendation:** Run the deslop Types step. Accept: clean at the adopted profile, escape hatches not increased, witnesses recorded.
-- **Fix with:** deslop
-- **Effort:** M
 
 ### DSLP-4 · P2 · Tests: coverage, boundary gaps, mutation
 
