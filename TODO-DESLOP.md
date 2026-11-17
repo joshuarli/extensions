@@ -9,8 +9,9 @@ DSLP-6 is closed locally: Vitest and coverage-v8 5.0.5 pass the Node tests,
 typecheck, and V8 coverage; omitted optional-package engine declarations were
 restored after checking published metadata. See [verification](docs/deslop-vitest.md).
 Ground passes at `2b3ebe1`: 226 Node tests, typecheck, gated cold/warm costs,
-green main CI and a clean shared workflow rule. Diagnose, Types, Tests, and Dead code remain open. Stryker, browser tests,
-and test-cost qualification are deferred; this does not qualify the Tests lane.
+green main CI and a clean shared workflow rule. Diagnose, Types, Tests, and Dead
+code remain open. Stryker and browser tests remain deferred; Ground does not
+qualify the Tests lane.
 
 ## Tickets
 
