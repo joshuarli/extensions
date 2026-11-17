@@ -65,6 +65,9 @@ retained either way.
   likes keep a cumulative filesystem store under
   `~/.local/state/x-archive/` (`X_ARCHIVE_STATE` overrides), the mirror
   of the extension's IndexedDB layout.
+  Unreadable files, invalid JSON or UTF-8, and non-array record files stop
+  collection before the existing archive file is replaced. Missing files
+  initialize a new store normally.
 - **Incremental updates**: a profile scan always starts from the newest
   posts. Once an earlier run completed, each timeline stops fetching after
   the first page whose posts are all already archived, so re-downloading a

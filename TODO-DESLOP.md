@@ -12,19 +12,25 @@ Ground passes at `2b3ebe1`: 226 Node tests, typecheck, gated cold/warm costs,
 green main CI and a clean shared workflow rule. Types adopts the measured
 TypeScript unsafe-argument rule, preserves caption inference and removes a
 redundant assertion: 379 to 378 hatch-matching lines, 226 tests and lint clean.
-Current gated warm test/lint costs are 51.54/1.16s; full evidence and the
+Types baseline warm test/lint costs are 51.54/1.16s; full evidence and the
 separate lint CI integration gap are in docs/deslop-types.md. Tests and Dead
 code remain open. Diagnose files three assumed P2 findings and one P3:
-DSLP-7 and DSLP-8 have synthetic product-module reproductions for crash
-recovery and archive read failures. DSLP-9 remains unproven against actual
+DSLP-7 has a synthetic product-module reproduction for crash recovery.
+DSLP-8 is repaired: strict record reads reject unreadable/corrupt snapshots
+before replacement while optional-cache semantics remain separate. The final
+fifteen-case component has eleven intended failures on original source; all
+237 Node tests and lint pass on the repair. Its changed reader has 24 mutation
+identities, 22 killed and two equivalent; broader storage qualification remains
+open. Gated warm suite cost is 49.46s; evidence: docs/deslop-filesystem-store.md.
+DSLP-9 remains unproven against actual
 X timeline ordering. DSLP-10 reproduces rejected help syntax at the executable.
 The review refreshes download-directory, Node-version and state-privacy docs.
 Parent typecheck passes with a two-core cap. Browser runtime, appliance,
 live services, credential use and performance were outside this review.
 Preserve account-scoped stores, page persistence before cursor advancement,
 SQLite page rollback and the suite's ownership of global Chrome listeners.
-Stryker and browser tests remain deferred; Ground does not
-qualify the Tests lane.
+Bounded Node Stryker evidence is available; broader Tests and browser
+qualification remain open. Ground does not qualify the Tests lane.
 
 ## Tickets
 
@@ -35,8 +41,8 @@ qualify the Tests lane.
 
 - **Area:** deslop · tests
 - **Where:** test suites and CI
-- **Problem:** Coverage and mutation results are unmeasured; no deslop mutation lane exists. Qualification at 910df665: scratch Vitest V8 reports 1,448/2,620 lines (55.26%) and 848/1,670 branches (50.77%), 21 zero-line-coverage files, 7.99s; Vitest 5.0.3 warns coverage-v8 5.0.5 is an unsupported mismatch. Stryker 10.1.1 scoped URL lines 1-10 generated 17 mutants but both attempts stopped before tests: missing typescript package; no mutation classes or runner validity measured. Preliminary knip 6.45.1 default: 16 unused files, 1 unused-dependency group, 9 export groups, 6 type groups, 1 duplicate group, 2.41s; entry-point hints and production mode remain unresolved. Node Vitest excludes browser tests; Onefile Playwright needs built bundles and Chromium. TypeScript readiness: blocked by missing Stryker typescript dependency and unverified runner/runtime, coverage version mismatch; coverage costs 7.99s and mutation cost unknown. Tools are not mirrored (STUF-83). Follow-up qualification supersedes the incomplete mutation and knip notes above: committed package.json and pnpm-lock.yaml pair Vitest 5.0.3 with unsupported coverage-v8 5.0.5 (repository defect). With scratch-only TypeScript 6.0.3 and explicit Vitest plugin, Stryker critical parser/storage/URL: 345 killed, 199 survived, 147 no coverage, 0 timeout/errors, 656.75s; URL lines 1-10: 16 killed, 1 survived, 0 other, 4.94s; timeout is 10000ms + 1.5 times selected test net time + runner overhead. Node baseline ran 51 related tests; endsWith-to-startsWith hand fault failed its URL assertion and matched a killed mutant. Knip with real build entries: default 0 files, 15 unused exports, 8 unused types, 1 duplicate, 2.44s; production 0 files, 38 exports, 11 types, 1 duplicate, 1.84s; test-only consumers explain production false positives. TypeScript readiness: blocked by committed Vitest/coverage-v8 version mismatch; Node mutation works with scratch prerequisite, costs 656.75s critical and 4.94s scoped, browser/extension runtime remains separate, and STUF-83 mirroring is pending.
-- **Recommendation:** Run the deslop Tests step. Accept: no undispositioned survivor in critical code, the test cost budget holds, and the lane is green where the tools are mirrored.
+- **Problem:** The Vitest/coverage version mismatch is repaired (DSLP-6), and Stryker/coverage tools are mirrored. Whole current first-party coverage, remaining boundary gaps and a qualified whole-change mutation lane remain unfinished. The filesystem-store/state component now has an accounted baseline (95 identities:37 killed,13 survivors,45 uncovered) and a repaired selection (117:80 killed,12 survivors,25 uncovered). Only the changed record reader's24 identities are qualified:22 killed,two equivalent. Remaining component leads include scan-state paths, empty saves, folder filtering, environment defaults and write-failure behavior. Focused V8 coverage is59/71 lines and14/23 branches; all237 Node tests and lint pass. Historical larger parser/storage/URL results do not qualify changed current inputs. Browser/extension runtime remains a separate boundary. See docs/deslop-filesystem-store.md.
+- **Recommendation:** Continue bounded current-version component Scenarios, dispositioning each critical survivor and unrun decision, with public-boundary fault controls. Keep Node and real-browser qualification distinct. Complete first-party coverage reporting and whole-change union/negative controls before relying on a mutation lane; CI changes require separate owner authorization. Accept only when critical survivors, suite-cost budget and supported lane requirements are met.
 - **Fix with:** deslop
 - **Effort:** M
 
@@ -59,14 +65,6 @@ qualify the Tests lane.
 - **Effort:** M
 
 
-### DSLP-8 · P2 · Archive read failures can silently replace saved posts
-
-- **Area:** X archive · durable state
-- **Where:** x-archive-cli/src/state.ts:28; x-archive-cli/src/fs-store.ts:17,41; x-archive-cli/src/run.ts:206,250
-- **Problem:** Assumed P2. Confirmed at acbedac through the actual FsBookmarksStore on owned synthetic files. Save a valid old post, chmod bookmarks.json to 0200, and confirm readFileSync fails with EACCES. allRecords then returns an empty array. Saving a new valid page succeeds and replaces the old record. readJsonFile also converts malformed JSON to null, and readRecords treats null or wrong-shaped values as empty. Likes share this path. The CLI constructs these stores for collection. Live collection and the frequency of damaged local state were not measured.
-- **Recommendation:** Distinguish missing archive files from read, parse and shape failures at the filesystem-store boundary. Preserve original bytes and return an actionable error on failure. Add literal old/new and unreadable/truncated-file regressions. Keep the credential cache's refresh behavior separate from cumulative archives.
-- **Fix with:** durable-state
-- **Effort:** S
 
 
 ### DSLP-9 · P2 · Timeline completion does not distinguish captured operations
