@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { FsBookmarksStore, FsLikesStore, FsProfileStore } from "../src/fs-store.ts";
+import { FsBookmarksStore, FsLikesStore } from "../src/fs-store.ts";
 import { writeJsonFile, readJsonFile } from "../src/state.ts";
 
 const savedHome = process.env["X_ARCHIVE_STATE"];
@@ -64,16 +64,6 @@ describe("filesystem archive stores", () => {
     const state = await store.loadState();
     expect(state?.cursors).toEqual({ Likes: "abc123" });
     expect(state?.likes).toBe("partial");
-  });
-
-  it("scopes profile archives per target user id", async () => {
-    useTempStateRoot();
-    const one = new FsProfileStore("123", "1000");
-    const two = new FsProfileStore("123", "2000");
-    await one.savePage([post("100", "a") as never], "1000");
-    await two.savePage([post("100", "b") as never, post("200", "c") as never], "2000");
-    expect((await one.allRecords())).toHaveLength(1);
-    expect((await two.allRecords())).toHaveLength(2);
   });
 
   it("reads empty archives as empty, not as an error", async () => {

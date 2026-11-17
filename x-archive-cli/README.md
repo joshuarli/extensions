@@ -16,16 +16,24 @@ keep, or move.
 ```sh
 pnpm x download self                 # bookmarks + likes, posts JSON + media + render
 pnpm x download token___garden       # @handle or x.com profile URL: posts, reposts, replies
+pnpm x download token___garden       # same command updates it: only newer posts are fetched
 pnpm x download self --export-only   # re-export from saved data, no re-collection
 pnpm x download self --no-render     # skip archive.html
 pnpm x download self --collect-only  # collect only
-pnpm x download self --out=/path     # output root (default ~/Downloads)
+pnpm x download token___garden --out=/path   # downloads root (default ~/.local/share/x/downloads)
 ```
 
-Each export writes `<folder>-<date>/` with `<kind>.json` (`bookmarks.json`,
-`likes.json`, or `posts.json`), a `media/` folder with the actual files,
-`debug.json`, and `archive.html` — a static, script-free, X-styled page
-of the whole archive. The page references `media/` relatively, so the
+`x` writes exports to a well-known root, `~/.local/share/x/downloads`
+(`X_ARCHIVE_DOWNLOADS` or `XDG_DATA_HOME` override it; `--out=DIR` sets it
+per run). A self export writes `<root>/bookmarks-<date>/` and
+`<root>/likes-<date>/`. A profile export writes `<root>/<handle>/` and is
+updated in place on every re-run: `x download <handle>` fetches only posts
+newer than what is already archived and stops as soon as a timeline page is
+fully covered by the archive. Each export folder holds `<kind>.json`
+(`bookmarks.json`, `likes.json`, or `posts.json`), a `media/` folder with
+the actual files, `debug.json`, and `archive.html` — a static, X-styled page
+of the whole archive (lazy-loaded media, inline lightbox; the page carries
+one small inline script). The page references `media/` relatively, so the
 folder must travel intact (a 13 GB inlined file helps nobody); open
 `archive.html` to browse the archive.
 
@@ -49,14 +57,25 @@ retained either way.
   one interactive Keychain approval on this machine before it can run
   unattended; until then it fails with a clear message. Cached
   credentials are used as a last resort.
-- **Store**: a cumulative filesystem store under
-  `~/.local/state/x-archive/` (`X_ARCHIVE_STATE` overrides) holds every
-  observed post, merged by tweet id on every page saved — the mirror
+- **Store**: a profile archive is a SQLite database,
+  `~/.local/share/x/downloads/<handle>/archive.db`, holding every observed
+  post (merged by tweet id), the per-timeline scan state, and the learned
+  profile — the resumability state travels with the folder. Bookmarks and
+  likes keep a cumulative filesystem store under
+  `~/.local/state/x-archive/` (`X_ARCHIVE_STATE` overrides), the mirror
   of the extension's IndexedDB layout.
-- **Seeding**: on each run the CLI seeds the store from the extension's
-  IndexedDB (bookmarks, likes, every profile archive) by count, so the
-  first CLI export contains everything the extension already archived —
-  no re-collection needed.
+- **Incremental updates**: a profile scan always starts from the newest
+  posts. Once an earlier run completed, each timeline stops fetching after
+  the first page whose posts are all already archived, so re-downloading a
+  quiet profile costs a page per timeline. If a previous scan was
+  interrupted, it resumes from the checkpointed cursor as before; an
+  interrupted scan never looks caught up until it reaches archived pages.
+- **Seeding**: on each run the CLI seeds bookmarks and likes from the
+  extension's IndexedDB by count, so the first CLI export contains
+  everything the extension already archived — no re-collection needed. A
+  profile archive is seeded the same way when you run
+  `x download <handle>`; `x download self` no longer pre-seeds profile
+  archives.
 - **Collection**: same pagination, rate-limit handling, cursor
   checkpoint/resume, and reposts/replies unwrapping as the extension.
   Profile export includes the account's own replies via the captured
@@ -110,6 +129,9 @@ already-minted endpoint instead of launching) are supported.
   extension stays the one-click path for normal use; the CLI is for
   scripted and unattended use. They share the archive format and the
   update semantics (`render_archive.py`, export folders, `debug.json`).
+  Profile stores written before the per-folder SQLite store landed live
+  under `~/.local/state/x-archive/stores/<account>/profile/<target>/` and
+  are no longer read.
 - `X_ARCHIVE_DEBUG=1` prints the URL (no secrets) and HTTP status of
   each GraphQL call for API-drift debugging.
 - The state dir holds public X web-app configuration plus the public

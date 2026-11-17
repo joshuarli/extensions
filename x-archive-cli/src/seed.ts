@@ -9,9 +9,12 @@ import {
   type LikesScanState,
   type ProfileScanState,
 } from "../../x-archive-core/src/storage.ts";
-import { FsBookmarksStore, FsLikesStore, FsProfileStore } from "./fs-store.ts";
+import { FsBookmarksStore, FsLikesStore } from "./fs-store.ts";
+import type { ProfileStore } from "../../x-archive-core/src/collector.ts";
 import type { XSession } from "./deps.ts";
 import { writeJsonFile, stateDir } from "./state.ts";
+
+export type SeedProfileStore = ProfileStore & { allRecords(): Promise<unknown[]> };
 
 const EXTENSION_ID = "lekmlndhaidgepoalcmbcehffnliclil";
 
@@ -154,7 +157,7 @@ async function dumpFromExtension(session: XSession, cdpUrl: string): Promise<Cdp
 export async function seedFromHelium(
   session: XSession,
   cdpUrl: string,
-  options: { onlyProfileTarget?: string } = {},
+  options: { onlyProfileTarget?: string; profileStore?: SeedProfileStore } = {},
 ): Promise<SeedReport> {
   const bookmarksStore = new FsBookmarksStore(session.userId);
   const likesStore = new FsLikesStore(session.userId);
@@ -164,11 +167,10 @@ export async function seedFromHelium(
   const fsLikesCount = (await likesStore.allRecords()).length;
   const bookmarksOk = counts !== null && counts.bookmarks === fsBookmarksCount;
   const likesOk = counts !== null && counts.likes === fsLikesCount;
-  const profileTargetsWanted = options.onlyProfileTarget ? [options.onlyProfileTarget] : Object.keys(counts?.profiles ?? {});
+  const profileTargetsWanted = options.onlyProfileTarget ? [options.onlyProfileTarget] : [];
   const profileFsCounts: Record<string, number> = {};
   for (const targetUserId of profileTargetsWanted) {
-    const store = new FsProfileStore(session.userId, targetUserId);
-    profileFsCounts[targetUserId] = (await store.allRecords()).length;
+    if (options.profileStore) profileFsCounts[targetUserId] = (await options.profileStore.allRecords()).length;
   }
   const profileCountsOk = counts !== null
     && profileTargetsWanted.every((targetUserId) => counts.profiles[targetUserId] === profileFsCounts[targetUserId]);
@@ -179,15 +181,17 @@ export async function seedFromHelium(
       likes: { records: fsLikesCount, state: await likesStore.loadState(), already: true },
       profiles: [],
     };
-    for (const targetUserId of profileTargetsWanted) {
-      const store = new FsProfileStore(session.userId, targetUserId);
-      report.profiles.push({
-        targetUserId,
-        screenName: (await store.loadState(targetUserId))?.profile?.screen_name ?? null,
-        records: (await store.allRecords()).length,
-        state: await store.loadState(targetUserId),
-        already: true,
-      });
+    if (options.profileStore) {
+      for (const targetUserId of profileTargetsWanted) {
+        const state = await options.profileStore.loadState(targetUserId);
+        report.profiles.push({
+          targetUserId,
+          screenName: state?.profile?.screen_name ?? null,
+          records: profileFsCounts[targetUserId]!,
+          state,
+          already: true,
+        });
+      }
     }
     return report;
   }
@@ -231,7 +235,8 @@ export async function seedFromHelium(
 
   for (const profile of dump.profiles) {
     if (options.onlyProfileTarget && profile.targetUserId !== options.onlyProfileTarget) continue;
-    const store = new FsProfileStore(session.userId, profile.targetUserId);
+    if (!options.profileStore) continue;
+    const store = options.profileStore;
     const existing = await store.allRecords();
     const profileState: ProfileScanState | null = profile.state
       ? Schema.decodeUnknownSync(ProfileScanStateSchema)(profile.state)

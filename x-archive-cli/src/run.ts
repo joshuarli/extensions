@@ -16,14 +16,14 @@ import { collectMediaJobs } from "../../x-archive-core/src/media.ts";
 import {
   bookmarksFolderName,
   likesFolderName,
-  exportFolderName,
 } from "../../x-archive-core/src/export-paths.ts";
 import { buildDebugReport } from "../../x-archive-core/src/debug.ts";
 import { Effect } from "effect";
 import { graphqlRequest } from "../../x-archive-core/src/api.ts";
 import { extractLookupUserId } from "../../x-archive-core/src/collector.ts";
 import { parseProfileScreenName, type Credentials } from "../../x-archive-core/src/capture.ts";
-import { FsBookmarksStore, FsLikesStore, FsProfileStore } from "./fs-store.ts";
+import { FsBookmarksStore, FsLikesStore } from "./fs-store.ts";
+import { SqliteProfileStore, profileDbPath } from "./profile-db.ts";
 import type { Backend } from "./backend.ts";
 import {
   buildDeps,
@@ -291,18 +291,21 @@ export async function downloadProfile(handle: string, options: RunOptions): Prom
   const credentials = await readCapturedCredentials(session, options.cdpUrl, options.backend);
   const status = new StatusLog();
   const targetUserId = await resolveTargetUserId(session, credentials, screenName, status);
+  const profileDir = screenName.toLowerCase();
+  const outDir = join(options.outRoot, profileDir);
+  mkdirSync(outDir, { recursive: true });
+  const store = new SqliteProfileStore(profileDbPath(outDir), targetUserId);
   if (options.backend.kind === "bctl") {
     status.add("Seeding needs the Helium extension, which the bctl appliance does not have; continuing with the local store.");
   } else {
     try {
-      const seed = await seedFromHelium(session, options.cdpUrl, { onlyProfileTarget: targetUserId });
+      const seed = await seedFromHelium(session, options.cdpUrl, { onlyProfileTarget: targetUserId, profileStore: store });
       const profile = seed.profiles[0];
       if (profile) status.add("Seeded from Helium: " + profile.records + " saved posts" + (profile.already ? " (already up to date)" : " (merged)") + ".");
     } catch (error) {
       status.add("Helium seeding unavailable: " + (error instanceof Error ? error.message : String(error)) + ". Continuing with the local store.");
     }
   }
-  const store = new FsProfileStore(session.userId, targetUserId);
   const deps = buildDeps(session, credentials);
   if (options.action !== "export") {
     status.add("Scanning @" + screenName + " (existing saved posts are retained)…");
@@ -324,11 +327,10 @@ export async function downloadProfile(handle: string, options: RunOptions): Prom
   const state = await store.loadState(targetUserId);
   const raw = await store.allRecords();
   if (options.action === "export" && raw.length === 0) {
-    throw new Error("The local archive for @" + screenName + " is empty and Helium could not be read. Run `x download " + screenName + "` without --export-only.");
+    throw new Error("The local archive for @" + screenName + " under " + outDir + " is empty. Run `x download " + screenName + "` first.");
   }
   const archive = assembleProfileArchive(raw, state, session.userId, targetUserId);
-  const folder = exportFolderName(archive.profile.screen_name ?? screenName, targetUserId);
-  const outDir = join(options.outRoot, folder);
+  const folder = profileDir;
   mkdirSync(outDir, { recursive: true });
   writeJsonFile(join(outDir, "posts.json"), archive, 0o644);
   return finishExport({

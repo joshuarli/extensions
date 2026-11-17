@@ -136,5 +136,16 @@ export function profileDbStore(db: IDBDatabase): ProfileStore {
     savePage: (items, targetUserId) => saveProfilePage(db, items, targetUserId),
     loadState: (targetUserId) => loadProfileState(db, targetUserId),
     saveState: (targetUserId, state) => saveProfileState(db, targetUserId, state),
+    allKnown: async (items, targetUserId) => {
+      if (items.length === 0) return false;
+      for (const item of items) {
+        const key = await request(
+          db.transaction(PROFILE_POSTS_STORE, "readonly").objectStore(PROFILE_POSTS_STORE)
+            .getKey([targetUserId, item.tweet_id]),
+        );
+        if (key === undefined) return false;
+      }
+      return true;
+    },
   };
 }

@@ -1,5 +1,3 @@
-import { join } from "node:path";
-import { homedir } from "node:os";
 import {
   downloadProfile,
   downloadSelf,
@@ -7,6 +5,7 @@ import {
   type RunOptions,
 } from "./run.ts";
 import { resolveBackend } from "./backend.ts";
+import { downloadsRoot } from "./state.ts";
 
 const USAGE = `x — archive X data to your machine
 
@@ -15,12 +14,15 @@ Usage:
   x download <handle>             Archive a profile's posts, reposts and replies
   x download self --export-only   Re-export from saved data (no re-collection)
   x download self --no-render     Skip archive.html rendering
-  x download <handle> --out DIR   Write the archive folder into DIR
+  x download <handle> --out DIR   Use DIR as the downloads root instead of the default
 
 Options:
   --export-only   skip collection; rebuild JSON/media/render from saved data
   --collect-only  collect only; do not export
-  --out DIR       output directory (default: ~/Downloads)
+  --out DIR       downloads root (default: ~/.local/share/x/downloads,
+                  or X_ARCHIVE_DOWNLOADS / XDG_DATA_HOME). Bookmarks/likes
+                  export to DIR/bookmarks-<date> and DIR/likes-<date>;
+                  a profile exports to DIR/<handle> and is updated in place
   --no-render     skip rendering archive.html
   --backend NAME  helium (default) or bctl — see "bctl" below
   --session NAME  bctl session to launch or attach to (default: xarchive,
@@ -34,8 +36,10 @@ Options:
 Exports read the X session from the browser backend over CDP:
 cookies for authentication, and the query IDs/features that the X Archive
 browser extension captured from your normal x.com usage. If collection
-fails part-way through, re-running is safe — saved pages are retained and
-collection resumes from the last checkpoint.
+fails part-way through, re-running is safe — saved pages are retained.
+Bookmarks and likes resume from the saved checkpoint. A profile scan
+starts from the newest posts and stops once it catches up to what is
+already archived; the archive database travels in the profile's folder.
 
 bctl appliance backend:
   x download self --backend bctl
@@ -77,7 +81,7 @@ function parseArgs(argv: string[]): ParsedArgs {
 
   let target: string | undefined;
   let action: RunOptions["action"] = "download";
-  let outRoot = join(homedir(), "Downloads");
+  let outRoot = downloadsRoot();
   let render = true;
   let backend: string | undefined;
   let session: string | undefined;

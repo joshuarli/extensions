@@ -42,6 +42,7 @@ export interface ProfileStore {
   savePage(items: Bookmark[], targetUserId: string): Promise<void>;
   loadState(targetUserId: string): Promise<ProfileScanState | null>;
   saveState(targetUserId: string, state: ProfileScanState): Promise<void>;
+  allKnown?(items: Bookmark[], targetUserId: string): Promise<boolean>;
 }
 
 const MAX_EMPTY_PAGES = 3;
@@ -116,6 +117,7 @@ export interface CollectionOptions<Store> {
   progressBase?: { posts: number; pages: number };
   resumeCursors?: Record<string, string>;
   checkpoint?: (key: string, cursor: string | null) => Promise<void>;
+  stopWhenAllKnown?: (items: Bookmark[]) => Promise<boolean>;
 }
 
 interface PageSpec<Item> {
@@ -128,7 +130,7 @@ interface PageSpec<Item> {
   invalidMessage: string;
 }
 
-async function scanPages<Item>(options: CollectionOptions<unknown>, spec: PageSpec<Item>): Promise<number> {
+async function scanPages<Item extends Bookmark>(options: CollectionOptions<unknown>, spec: PageSpec<Item>): Promise<{ total: number; stoppedEarly: boolean }> {
   const { userId, signal, report } = options;
   const resumeKey = spec.stateKey ?? spec.operation;
   const visited = new Set<string>();
@@ -145,6 +147,9 @@ async function scanPages<Item>(options: CollectionOptions<unknown>, spec: PageSp
     const result = spec.parse(response, new Date().toISOString());
     if (!result.valid) throw new Error(spec.invalidMessage + (result.detail ? " Details: " + result.detail : ""));
     pages++;
+    const stopAfterThisPage = options.stopWhenAllKnown && result.items.length > 0
+      ? await options.stopWhenAllKnown(result.items)
+      : false;
     if (result.items.length) {
       await spec.save(result.items);
       total += result.items.length;
@@ -158,10 +163,15 @@ async function scanPages<Item>(options: CollectionOptions<unknown>, spec: PageSp
       pages: pages + (options.progressBase?.pages ?? 0),
     });
     const next = result.terminated ? null : result.nextCursor;
+    if (stopAfterThisPage) {
+      await options.checkpoint?.(resumeKey, null);
+      report(spec.label + ": caught up to archived posts; stopped after " + pages + " page(s).");
+      return { total, stoppedEarly: true };
+    }
     await options.checkpoint?.(resumeKey, next);
-    if (!next) return total;
+    if (!next) return { total, stoppedEarly: false };
     if (visited.has(next) || next === cursor) {
-      if (result.items.length === 0) return total;
+      if (result.items.length === 0) return { total, stoppedEarly: false };
       throw new Error("X returned a repeated cursor. Collection is partial.");
     }
     if (empty >= MAX_EMPTY_PAGES) throw new Error("X returned three empty pages. Collection is partial.");
@@ -176,7 +186,7 @@ export async function collectTimeline(
   operation: "Bookmarks" | "BookmarkFolderTimeline",
   folderId?: string,
 ): Promise<number> {
-  return scanPages(options, {
+  const { total } = await scanPages(options, {
     operation,
     buildVariables: (cursor) => {
       const variables: Record<string, unknown> = operation === "Bookmarks"
@@ -194,6 +204,7 @@ export async function collectTimeline(
     label: operation,
     invalidMessage: "X changed its timeline response. Partial results were preserved.",
   });
+  return total;
 }
 
 async function collectFolderList(options: CollectionOptions<BookmarksStore>): Promise<Folder[]> {
@@ -382,9 +393,9 @@ export async function collectProfileTimeline(
   options: CollectionOptions<ProfileStore>,
   operation: ProfileOperation,
   targetUserId: string,
-): Promise<{ total: number; profile: ProfileInfo | null }> {
+): Promise<{ total: number; profile: ProfileInfo | null; stoppedEarly: boolean }> {
   let profile: ProfileInfo | null = null;
-  const total = await scanPages(options, {
+  const { total, stoppedEarly } = await scanPages(options, {
     operation,
     buildVariables: (cursor) => profileTimelineVariables(operation, targetUserId, cursor),
     parse: (data, observedAt) => {
@@ -398,7 +409,7 @@ export async function collectProfileTimeline(
     label: operation,
     invalidMessage: "X changed its profile timeline response. Partial results were preserved.",
   });
-  return { total, profile };
+  return { total, profile, stoppedEarly };
 }
 
 export function extractLookupUserId(response: unknown): string | null {
@@ -475,6 +486,7 @@ export async function collectProfile(
       ? ["UserTweetsAndReplies"]
       : credentials.queryIds["UserTweets"] ? ["UserTweets"] : [];
   const saved = await options.store.loadState(targetUserId);
+  const priorComplete = saved?.posts === "complete";
   const started = new Date().toISOString();
   const baseProfile: ProfileScanProfile = {
     user_id: targetUserId,
@@ -522,6 +534,11 @@ export async function collectProfile(
     let cumulativePosts = 0;
     let cumulativePages = 0;
     let mergedProfile: ProfileScanProfile | null = null;
+    let stoppedOperations = 0;
+    const allKnown = options.store.allKnown?.bind(options.store);
+    const stopWhenAllKnown = priorComplete && allKnown
+      ? (items: Bookmark[]) => allKnown(items, targetUserId)
+      : undefined;
     for (const operation of operations) {
       stopped(signal);
       let opPages = 0;
@@ -529,12 +546,13 @@ export async function collectProfile(
       const opOptions: CollectionOptions<ProfileStore> = {
         ...withCursor,
         progressBase: base,
+        ...(stopWhenAllKnown ? { stopWhenAllKnown } : {}),
         onProgress: (snapshot) => {
           opPages = snapshot.pages - base.pages;
           options.onProgress?.(snapshot);
         },
       };
-      let result: { total: number; profile: ProfileScanProfile | null };
+      let result: { total: number; profile: ProfileScanProfile | null; stoppedEarly: boolean };
       try {
         result = await collectProfileTimeline(opOptions, operation, targetUserId);
       } catch (error) {
@@ -543,6 +561,7 @@ export async function collectProfile(
       }
       cumulativePosts += result.total;
       cumulativePages += opPages;
+      if (result.stoppedEarly) stoppedOperations += 1;
       if (result.profile) mergedProfile = mergedProfile ?? result.profile;
     }
     if (mergedProfile) state.profile = { ...baseProfile, ...mergedProfile };
@@ -552,11 +571,14 @@ export async function collectProfile(
       await options.deps.writeProfileTarget(userId, target);
     }
     state.posts = "complete";
-    state.reason = operations.length === 2 ? "complete"
+    const allStoppedEarly = operations.length > 0 && stoppedOperations === operations.length;
+    state.reason = allStoppedEarly ? "up_to_date"
+      : operations.length === 2 ? "complete"
       : operations[0] === "UserOriginalsTimeline" ? "complete_without_replies"
       : operations[0] === "UserRepliesTimeline" ? "complete_without_posts"
       : operations[0] === "UserTweetsAndReplies" ? "complete"
       : "complete_without_replies";
+    if (allStoppedEarly) report("Profile is up to date. Re-running after new activity fetches only the new posts.");
     if (!operations.includes("UserRepliesTimeline") && !operations.includes("UserTweetsAndReplies")) {
       report("Only the Posts tab was captured. Open the Replies tab on x.com, then collect again to include replies.");
     }

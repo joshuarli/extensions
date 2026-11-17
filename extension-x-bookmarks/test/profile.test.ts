@@ -1,7 +1,7 @@
 import "fake-indexeddb/auto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { collectProfile } from "../src/collector.ts";
-import { openProfileArchive, assembleProfileArchive, mergeProfilePost, listProfileStates, loadProfileState, profileDbStore } from "../src/profile-storage.ts";
+import { openProfileArchive, assembleProfileArchive, mergeProfilePost, listProfileStates, loadProfileState, profileDbStore, saveProfilePage, saveProfileState } from "../src/profile-storage.ts";
 import { readCredentials, currentUserId, readProfileTarget, writeProfileTarget } from "../src/capture.ts";
 import { chromeSession } from "../src/api.ts";
 import { collectMediaJobs } from "../../x-archive-core/src/media.ts";
@@ -767,6 +767,127 @@ describe("promoted previews inside conversation modules", () => {
     const result = parseProfileTimeline(profilePage([previewDisplay]), "2026-11-15T00:00:00Z", targetUserId);
     expect(result.valid).toBe(true);
     if (result.valid) expect(result.posts.map((post) => post.tweet_id)).toEqual(["800050"]);
+  });
+});
+
+describe("profile updates stop early at archived posts", () => {
+  it("fetches one page and reports up_to_date when the archive is caught up", { timeout: 30_000 }, async () => {
+    stubChrome();
+    stored["x_bookmarks_credentials_123"] = {
+      authorization: "Bearer token",
+      queryIds: { UserOriginalsTimeline: "q-originals" },
+      features: { UserOriginalsTimeline: "{}" },
+    };
+    stored["x_profile_target_123"] = { targetUserId, operation: "UserOriginalsTimeline", capturedAt: "2026-11-15T00:00:00Z" };
+    const db = await openTestProfileArchive();
+    const archived = [
+      {
+        tweet_id: "100", sort_index: "100", status: "available", full_text: "A",
+        created_at: "Sun Nov 16 12:00:00 +0000 2026", lang: "en", source: null,
+        conversation_id: "100", in_reply_to_tweet_id: null, in_reply_to_user_id: null,
+        author: { user_id: targetUserId, screen_name: "someone", name: "Some One", profile_image_url: null, verified: false, followers_count: 42 },
+        metrics: { likes: 0, retweets: 0, replies: 0, bookmarks: 0, views: 0 },
+        entities: { urls: [], hashtags: [], mentions: [] },
+        media: [], quoted_tweet: null, card: null, repost_of: undefined, folder_ids: [],
+        observed_at: "2026-11-15T00:00:00Z",
+      },
+      {
+        tweet_id: "200", sort_index: "200", status: "available", full_text: "B",
+        created_at: "Sun Nov 16 11:00:00 +0000 2026", lang: "en", source: null,
+        conversation_id: "200", in_reply_to_tweet_id: null, in_reply_to_user_id: null,
+        author: { user_id: targetUserId, screen_name: "someone", name: "Some One", profile_image_url: null, verified: false, followers_count: 42 },
+        metrics: { likes: 0, retweets: 0, replies: 0, bookmarks: 0, views: 0 },
+        entities: { urls: [], hashtags: [], mentions: [] },
+        media: [], quoted_tweet: null, card: null, repost_of: undefined, folder_ids: [],
+        observed_at: "2026-11-15T00:00:00Z",
+      },
+    ];
+    await saveProfilePage(db, archived as never, targetUserId);
+    await saveProfileState(db, targetUserId, {
+      started_at: "2026-11-15T00:00:00Z",
+      updated_at: "2026-11-15T00:00:00Z",
+      posts: "complete",
+      reason: "complete",
+      operation: "UserOriginalsTimeline",
+      profile: { user_id: targetUserId, screen_name: "someone", name: "Some One", profile_image_url: null, followers_count: 42, verified: false, description: null },
+      cursors: {},
+    });
+    const page = profilePage([
+      entry({ rest_id: "100", legacy: { full_text: "A", user_id_str: targetUserId } }, "100"),
+      entry({ rest_id: "200", legacy: { full_text: "B", user_id_str: targetUserId } }, "200"),
+      cursor("c1"),
+    ]);
+    let fetches = 0;
+    const originalFetch = globalThis.fetch;
+    (globalThis as Record<string, unknown>)["fetch"] = (async () => {
+      fetches += 1;
+      return new Response(JSON.stringify(page), { status: 200 });
+    }) as typeof fetch;
+    try {
+      const state = await collectProfile({ userId, store: profileDbStore(db), deps: testDeps(), signal: new AbortController().signal, report: () => {} });
+      expect(fetches).toBe(1);
+      expect(state.reason).toBe("up_to_date");
+      expect(state.posts).toBe("complete");
+      const after = await loadProfileState(db, targetUserId);
+      expect(after?.cursors?.["UserOriginalsTimeline"]).toBeUndefined();
+      expect((await assembleProfileArchive(db, userId, targetUserId)).posts.map((post) => post.tweet_id).sort()).toEqual(["100", "200"]);
+    } finally {
+      (globalThis as Record<string, unknown>)["fetch"] = originalFetch;
+      db.close();
+    }
+  });
+
+  it("keeps paginating when the first page contains a new post", { timeout: 30_000 }, async () => {
+    stubChrome();
+    stored["x_bookmarks_credentials_123"] = {
+      authorization: "Bearer token",
+      queryIds: { UserOriginalsTimeline: "q-originals" },
+      features: { UserOriginalsTimeline: "{}" },
+    };
+    stored["x_profile_target_123"] = { targetUserId, operation: "UserOriginalsTimeline", capturedAt: "2026-11-15T00:00:00Z" };
+    const db = await openTestProfileArchive();
+    await saveProfilePage(db, [{
+      tweet_id: "100", sort_index: "100", status: "available", full_text: "old",
+      created_at: "Sun Nov 16 12:00:00 +0000 2026", lang: "en", source: null,
+      conversation_id: "100", in_reply_to_tweet_id: null, in_reply_to_user_id: null,
+      author: { user_id: targetUserId, screen_name: "someone", name: "Some One", profile_image_url: null, verified: false, followers_count: 42 },
+      metrics: { likes: 0, retweets: 0, replies: 0, bookmarks: 0, views: 0 },
+      entities: { urls: [], hashtags: [], mentions: [] },
+      media: [], quoted_tweet: null, card: null, repost_of: undefined, folder_ids: [],
+      observed_at: "2026-11-15T00:00:00Z",
+    } as never], targetUserId);
+    await saveProfileState(db, targetUserId, {
+      started_at: "2026-11-15T00:00:00Z",
+      updated_at: "2026-11-15T00:00:00Z",
+      posts: "complete",
+      reason: "complete",
+      operation: "UserOriginalsTimeline",
+      profile: { user_id: targetUserId, screen_name: "someone", name: "Some One", profile_image_url: null, followers_count: 42, verified: false, description: null },
+      cursors: {},
+    });
+    const pageWithNew = profilePage([
+      entry({ rest_id: "999", legacy: { full_text: "new post", user_id_str: targetUserId } }, "999"),
+      entry({ rest_id: "100", legacy: { full_text: "old", user_id_str: targetUserId } }, "100"),
+      cursor("c1"),
+    ]);
+    const secondPage = profilePage([entry({ rest_id: "100", legacy: { full_text: "old", user_id_str: targetUserId } }, "100")]);
+    let fetches = 0;
+    const originalFetch = globalThis.fetch;
+    (globalThis as Record<string, unknown>)["fetch"] = (async (url: unknown) => {
+      const variables = JSON.parse(new URL(String(url)).searchParams.get("variables") ?? "{}") as Record<string, unknown>;
+      fetches += 1;
+      if (variables["cursor"] === "c1") return new Response(JSON.stringify(secondPage), { status: 200 });
+      return new Response(JSON.stringify(pageWithNew), { status: 200 });
+    }) as typeof fetch;
+    try {
+      const state = await collectProfile({ userId, store: profileDbStore(db), deps: testDeps(), signal: new AbortController().signal, report: () => {} });
+      expect(fetches).toBe(2);
+      expect(state.reason).toBe("up_to_date");
+      expect((await assembleProfileArchive(db, userId, targetUserId)).posts.map((post) => post.tweet_id).sort()).toEqual(["100", "999"]);
+    } finally {
+      (globalThis as Record<string, unknown>)["fetch"] = originalFetch;
+      db.close();
+    }
   });
 });
 

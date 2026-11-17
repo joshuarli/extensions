@@ -15,20 +15,14 @@ export function stateDir(accountUserId: string): string {
   return join(stateRoot(), "state", accountUserId);
 }
 
-export function profileStoreDir(accountUserId: string, targetUserId: string): string {
-  return join(stateRoot(), "stores", accountUserId, "profile", targetUserId);
-}
-
-export function profileStateDir(accountUserId: string, targetUserId: string): string {
-  return join(stateRoot(), "state", accountUserId, "profile", targetUserId);
-}
-
 export function credentialsCachePath(): string {
   return join(stateRoot(), "credentials.json");
 }
 
 export function downloadsRoot(): string {
-  return join(homedir(), "Downloads");
+  if (process.env["X_ARCHIVE_DOWNLOADS"]) return process.env["X_ARCHIVE_DOWNLOADS"];
+  const base = process.env["XDG_DATA_HOME"] ?? join(homedir(), ".local", "share");
+  return join(base, "x", "downloads");
 }
 
 export function readJsonFile(path: string): unknown {
