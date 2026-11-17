@@ -1,7 +1,7 @@
-# Types profile measurement (partial)
+# Types profile measurement
 
 Measured at `a737ca1923ce1e2dff305d6b4b1b104d180fb519`, macOS arm64,
-Node 26.12.0, pnpm 11.0.2. This is not completion of DSLP-3. No
+Node 26.12.0, pnpm 11.0.2. Parent owns DSLP-3 closure. No
 configuration, source, dependency, or runtime change was made. The existing
 Ground full Node test result remains applicable because those inputs did not
 change. Browser and live-service behavior were not tested.
@@ -51,50 +51,127 @@ its results were discarded and each rule was explicitly enabled afterwards.
 | Rule | Project diagnostics | Decision |
 | --- | ---: | --- |
 | no-explicit-any | 0 | No adoption witness |
-| no-unsafe-argument | 4 | Unclassified |
-| no-unsafe-assignment | 5 | Unclassified |
+| no-unsafe-argument | 4 | Candidate: 4 lost-inference reports, 0 false positives |
+| no-unsafe-assignment | 5 | Candidate: 2 lost-inference reports, 3 false positives |
 | no-unsafe-call | 0 | No adoption witness |
-| no-unsafe-member-access | 8 | Unclassified |
-| no-unsafe-return | 8 | Unclassified |
+| no-unsafe-member-access | 8 | Candidate: 7 lost-inference reports, 1 false positive |
+| no-unsafe-return | 8 | Candidate: 5 lost-inference reports, 3 false positives |
 | no-unsafe-enum-assignment | 0 | No adoption witness |
 | no-unsafe-enum-comparison | 0 | No adoption witness |
-| no-unsafe-type-assertion | 245 | Unclassified |
+| no-unsafe-type-assertion | 245 | Reject uniform adoption: at least 5 false positives |
 | no-unsafe-unary-minus | 0 | No adoption witness |
 | no-unsafe-declaration-merging | 0 | No adoption witness |
 | no-unsafe-function-type | 0 | No adoption witness |
-| no-non-null-assertion | 116 | Unclassified |
+| no-non-null-assertion | 116 | Reject uniform adoption: at least 5 false positives |
 | no-floating-promises | 0 | No adoption witness |
 | no-misused-promises | 0 | No adoption witness |
-| no-unnecessary-type-assertion | 41 | Unclassified |
-| switch-exhaustiveness-check | 2 | Unclassified; examples below |
+| no-unnecessary-type-assertion | 41 | Reject uniform adoption: at least 4 non-improving reports; one removable hatch |
+| switch-exhaustiveness-check | 2 | Reject: 2 false positives, no real witness |
 
-The switch findings show why diagnostics alone cannot justify adoption:
-`x-archive-cli/src/cli.ts:97` intentionally switches on `true` to dispatch
-predicates, while `x-archive-core/src/collector.ts:366` uses a default for
-other profile operations. Whether each default is semantically complete
-requires caller and external-domain analysis; neither is a proven defect.
-The `no-unnecessary-type-assertion` lead at
-`extension-x-bookmarks/src/background.ts:80` may delete a hatch, but its
-contract and callers have not been verified. The `any` reports in
-`extension-youtube-transcript/src/captions.ts:21` and nearby require tracing
-`CaptionTrack` from its Effect Schema and the `Array.isArray` narrowing;
-they are not established product defects. No executable product-defect
-witness was established and remaining findings are not classified as false.
+### Classification and witnesses
 
-Adopting type-aware lint would require introducing a project lint provider,
-which is outside this lane's permitted dependency and pin changes. More
-source-level classification is also required to establish a real witness and
-the false-positive budget. Do not treat an unavailable project provider, a
-zero count, or this scratch run as a rejection of a useful safety rule. This
-profile remains unfinished; no CI qualification is claimed.
+There are 17,108 tracked TypeScript lines, so four false positives exceed the
+one-per-5,000 budget. Counts below classify the complete 25 unsafe
+argument/assignment/member/return diagnostics; different rules can report the
+same expression.
+
+* `captions.ts:12` applies `Array.isArray` to `readonly CaptionTrack[]`. The
+  pinned compiler narrows its element type to `any`. All four argument reports
+  (`captions.ts:21,80,82,87`), two assignment reports (`:78,81`), seven member
+  reports (`:21,23,69,79,80,82,87`), and five return reports
+  (`:23,48,76,84,87`) trace to this loss of inference. This is a real static
+  safety gap, not a demonstrated production failure: `types.ts:5-8,71` defines
+  the fields, and `youtube-api.ts:30-32,43-47,241-246` decodes the producer
+  with Schema before passing tracks to the consumer. The existing exported
+  function may have other callers, so preserve its runtime array guard in any
+  repair. No live input was used.
+* For a reproducible pinned-compiler witness, create a scratch file importing
+  `CaptionTrack` from `extension-youtube-transcript/src/types.ts`, declare
+  `function f(tracks: readonly CaptionTrack[])`, then after
+  `if (!Array.isArray(tracks) || tracks.length === 0) return;` write
+  `return tracks[0]?.languageCode.toFixed();`. A scratch config extending the
+  project config, with only that file and `noUnusedLocals`/`noUnusedParameters`
+  disabled, compiled with `tsrs -p .work/tmp/analysis/witness-config.json
+  --pretty false` (exit 0). Removing only the `Array.isArray` condition made
+  the corresponding compile exit 2 with TS2551: `toFixed` does not exist on
+  `string`. An `IsAny` type check also confirmed the narrowed element is `any`
+  while `CaptionTrack` is not. This proves a type-checking hole, not that the
+  erroneous call exists in product code.
+* The other assignment reports are safe in context: the sparse array at
+  `extension-onefile/test/browser/perf-compare.spec.ts:121` gets one result per
+  index before `Promise.all` completes (`:130-154`); the `any` array in
+  `extension-x-bookmarks/src/debug.ts:10-12` is retained only as storage data
+  and `readStatusLog` validates each entry (`:17-26`); and the Vitest matcher
+  `expect.any(String)` at `extension-x-bookmarks/test/debug.test.ts:82` is a
+  test expectation, not a stored value. These are three false positives.
+* The remaining member and return reports at
+  `extension-youtube-transcript/test/integration.test.ts:658` inspect JSON
+  generated by the request under test and compare it with literal client
+  names; malformed structure fails that test. This is one false positive for
+  each rule. The other two return reports in
+  `x-archive-core/src/conversation.ts:53,55` parse a JSON string enclosed in
+  quotes; successful parsing yields a string, otherwise it throws. The caller
+  at `:105-111` parses the resulting string as the separate JSON payload.
+  These are two more return false positives.
+
+The four unsafe-propagation rules identify the same real lost-inference
+contract; their respective false-positive counts are 0, 3, 1 and 3 out of
+4, 5, 8 and 8 diagnostics. Under the 17,108-line budget each qualifies for
+consideration, but clean adoption also needs source repairs and a project
+provider. Neither is authorized here. On a production-only denominator the
+three-FP rules exceed the budget; choose the lint scope explicitly before any
+adoption. No runtime defect is asserted.
+
+For `switch-exhaustiveness-check`, both reports are false positives: the
+`switch (true)` in `x-archive-cli/src/cli.ts:97-134` dispatches predicates and
+has a default target handler; `x-archive-core/src/collector.ts:366-389` has a
+deliberate default for the two older operations in `capture.ts:5`, which its
+caller selects at `collector.ts:483-487`. The existing test at
+`extension-x-bookmarks/test/capture.test.ts:144-145` checks the `UserTweets`
+default. This is distinct from the previously recorded CLI help and timeline
+ordering findings.
+
+Five concrete false positives for `no-unsafe-type-assertion` are the partial
+Chrome tab test doubles in `extension-youtube-transcript/test/integration.test.ts`
+lines 197, 212, 233, 253 and 276: the exercised action path accesses `id` and
+`url` (`background.ts:100-112,401-405`), both supplied by those fixtures.
+The five `no-non-null-assertion` reports at `transcript.test.ts:29,31,45-47`
+are test assertions about deliberately nonempty XML fixtures: a missing result
+fails the test, rather than exposing a product-path defect. These ten reports
+are enough to exceed the budget for their respective blanket rules; other
+reports remain unclassified.
+
+`no-unnecessary-type-assertion` has a verified removable hatch at
+`extension-x-bookmarks/src/background.ts:80`: the installed Chrome listener's
+first parameter is an index signature and `noUncheckedIndexedAccess` already
+adds `undefined`. A scratch pinned-compiler type equality witness derived
+`Parameters<Parameters<typeof chrome.storage.onChanged.addListener>[0]>[0]`
+and proved `typeof changes[key]` equals the asserted
+`chrome.storage.StorageChange | undefined` (exit 0). `:81-90` uses the same
+local value and `decodeArchiveRun` accepts `unknown`; removing the assertion
+preserves runtime, inference, absence, and callers. Source was not changed.
+The rule also reports four DOM queries at `page.ts:169,177,188,244`, suggesting
+explicit generic type arguments instead of the assertions. Those generic
+arguments still claim the same unverified element type; replacing one spelling
+of the hatch with another does not delete trust or reject a bad program. These
+four non-improving reports exceed the budget for uniform adoption; the other
+36 leads remain unclassified. The verified removable hatch is a separate
+parent-owned type-only cleanup candidate, not a proven product defect.
+
+Project adoption of the useful unsafe-propagation rules requires the matching
+lint provider and correction of existing diagnostics; neither a project
+dependency nor source changes are authorized here. Scratch analysis is not
+CI qualification. The parent owns those decisions and DSLP-3 closure.
 
 ## Escape hatches and costs
 
 `git ls-files '*.ts' | xargs rg -Pc '\bas (?!const\b)|\bany\b|@ts-(ignore|expect-error)|(oxlint|eslint)-disable'`
 summed by file, counted 379
-matching lines before and after, across 17,108 tracked TypeScript lines. This
-includes tests and the repository's independent X implementation; Ground
-records no vendored Onefile code. It counts lines, not individual hatches.
+matching lines before and after, across 17,108 tracked TypeScript lines: 161
+in 10,893 production lines, 218 in 6,040 test lines, and zero in 175 other
+lines. The X implementation is an independent port, not imported code
+(`extension-x-bookmarks/README.md:302`); Ground records no vendored Onefile
+code. It counts lines, not individual hatches.
 No timed claim was measured or made; the earlier Ground costs apply only to
 its recorded environment. Scratch tooling and static documentation do not
 change runtime performance.
