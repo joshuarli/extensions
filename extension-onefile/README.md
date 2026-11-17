@@ -4,6 +4,8 @@ Saves the active tab as a universal self-extracting ZIP (`.u.zip.html`): a page 
 
 Onefile is one feature of the unified extension. For browser installation, follow the [repository README](../README.md) and load `build/extension-suite` (development) or `dist/extension-suite` (production) as an unpacked extension.
 
+For terminal capture, see the [Onefile CLI](../onefile-cli/README.md).
+
 ## Use
 
 Open the toolbar popup and choose **Save page**. The extension captures the tab, builds the archive, and downloads `Page Title (2026-10-27 15-30-00).u.zip.html`. The badge shows save progress as a percentage and the title shows the fetched file count, `!` with a count when files were missing, and both clear on success. Restricted pages (for example `chrome://`) fail loudly through the action title.

@@ -19,7 +19,8 @@
     "test": "pnpm run vitest run",
     "test:browser": "playwright test --config extension-onefile/playwright.config.ts",
     "perf:onefile": "playwright test --config extension-onefile/playwright.perf.config.ts",
-    "x": "node x-archive-cli/src/cli.ts"
+    "x": "node x-archive-cli/src/cli.ts",
+    "onefile": "node onefile-cli/src/cli.ts"
   },
   "dependencies": {
     "effect": "4.0.0"

@@ -27,6 +27,7 @@ This repository builds one Chromium Manifest V3 extension from four feature pack
 - Allow Right-Click architecture: [docs/allow-right-click.md](docs/allow-right-click.md)
 - YouTube user and message API: [extension-youtube-transcript/README.md](extension-youtube-transcript/README.md)
 - X Bookmarks collection/export: [extension-x-bookmarks/README.md](extension-x-bookmarks/README.md)
+- Onefile terminal CLI: [onefile-cli/README.md](onefile-cli/README.md)
 - Onefile save and format: [extension-onefile/README.md](extension-onefile/README.md), [extension-onefile/ARCHITECTURE.md](extension-onefile/ARCHITECTURE.md), [extension-onefile/FORMAT.md](extension-onefile/FORMAT.md)
 
 ## Verification
