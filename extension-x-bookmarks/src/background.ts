@@ -77,7 +77,7 @@ export function installXBookmarksContextMenus(): void {
 export function installArchiveRunBadge(): void {
   chrome.storage.onChanged.addListener((changes, areaName) => {
     if (areaName !== "local") return;
-    const change = changes[archiveRunKey] as chrome.storage.StorageChange | undefined;
+    const change = changes[archiveRunKey];
     const run = change ? decodeArchiveRun(change.newValue) : undefined;
     if (!run || !change) {
       if (change && !change.newValue) void chrome.action.setBadgeText({ text: "" });
