@@ -125,6 +125,30 @@ a { color:var(--accent); text-decoration:none; }
 .lb-count { position:absolute; bottom:16px; left:50%; transform:translateX(-50%); background:rgba(22,24,28,.8);
   color:var(--text); font-size:13px; padding:4px 14px; border-radius:13px; }
 @media (max-width:700px) { .lb-prev { left:6px; } .lb-next { right:6px; } }
+.thread-btn { display:inline-flex; align-items:center; gap:5px; background:none; border:1px solid var(--border); border-radius:16px;
+  color:var(--muted); font-size:12px; font-weight:600; padding:2px 10px; cursor:pointer; margin-top:6px; }
+.thread-btn:hover { color:var(--accent); border-color:var(--accent); }
+.thread-btn svg { width:14px; height:14px; fill:var(--muted); }
+.thread-btn:hover svg { fill:var(--accent); }
+.thread-overlay { position:fixed; inset:0; z-index:90; background:rgba(0,0,0,.92); display:flex; justify-content:center; }
+.thread-overlay[hidden] { display:none; }
+.thread-panel { width:100%; max-width:620px; display:flex; flex-direction:column; background:var(--bg);
+  border-left:1px solid var(--border); border-right:1px solid var(--border); }
+.thread-head { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:12px 16px; border-bottom:1px solid var(--border); }
+.thread-head b { font-size:16px; }
+.thread-head .note { color:var(--muted); font-size:12px; }
+.thread-tabs { display:flex; gap:6px; }
+.thread-tab { border:1px solid var(--border); background:none; color:var(--muted); border-radius:14px; padding:3px 12px; font-size:12px; font-weight:600; cursor:pointer; }
+.thread-tab.active { color:var(--accent); border-color:var(--accent); }
+.thread-close { display:flex; align-items:center; justify-content:center; width:34px; height:34px; border:0; border-radius:50%;
+  background:rgba(22,24,28,.75); cursor:pointer; }
+.thread-close:hover { background:rgba(47,51,54,.9); }
+.thread-close svg { width:18px; height:18px; fill:var(--text); }
+.thread-scroll { overflow-y:auto; flex:1; padding:0 0 40px; }
+.thread-current { outline:2px solid var(--accent); outline-offset:-2px; background:#10171d; }
+.thread-x { padding:12px 16px; display:flex; justify-content:center; min-height:120px; }
+.thread-x blockquote { margin:0 !important; }
+.thread-note { color:var(--muted); font-size:12px; padding:12px 16px 4px; }
 """
 
 X_LOGO = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.244 3H21l-6.7 7.66L22 21h-5.4l-4.4-5.15L7.4 21H4.6l7.2-8.24L2 3h5.5l4 4.7L18.244 3Z"/></svg>'
@@ -138,7 +162,155 @@ ICON_PLAY = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"
 ICON_CLOSE = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.3 5.7 12 12l6.3 6.3-1.4 1.4L10.6 13.4 4.3 19.7 2.9 18.3 9.2 12 2.9 5.7 4.3 4.3l6.3 6.3 6.3-6.3z" transform="translate(1 0) scale(.92)"/></svg>'
 ICON_CHEVRON_LEFT = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15.4 5.4 8.8 12l6.6 6.6-1.4 1.4L6 12l8-8z" transform="translate(1 0)"/></svg>'
 ICON_CHEVRON_RIGHT = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8.6 5.4 15.2 12l-6.6 6.6 1.4 1.4L18 12l-8-8z" transform="translate(-1 0)"/></svg>'
+ICON_THREAD = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H8.4L4 19.8V5Z"/></svg>'
 X_LINK = "https://x.com/i/web/status/"
+
+THREAD_HTML = (
+    '<div class="thread-overlay" id="thread-overlay" hidden role="dialog" aria-modal="true" aria-label="Thread">\n'
+    '  <div class="thread-panel">\n'
+    '    <div class="thread-head">\n'
+    '      <div><b>Thread</b><div class="note" id="thread-sub"></div></div>\n'
+    '      <div style="display:flex;align-items:center;gap:10px">\n'
+    '        <div class="thread-tabs">\n'
+    '          <button class="thread-tab active" id="thread-tab-archived">Archived</button>\n'
+    '          <button class="thread-tab" id="thread-tab-full">Full thread</button>\n'
+    '        </div>\n'
+    f'        <button class="thread-close" aria-label="Close">{ICON_CLOSE}</button>\n'
+    '      </div>\n'
+    '    </div>\n'
+    '    <div class="thread-scroll">\n'
+    '      <div id="thread-archived"></div>\n'
+    '      <div id="thread-full" hidden>\n'
+    '        <div class="thread-x" id="thread-x"></div>\n'
+    '        <div class="thread-note">Loads X\'s own embed of the conversation when this tab opens; X sees you opened it. Nothing leaves this folder until then.</div>\n'
+    '      </div>\n'
+    '    </div>\n'
+    '  </div>\n'
+    '</div>\n'
+    '<script>\n'
+    '(function () {\n'
+    '  var overlay = document.getElementById("thread-overlay");\n'
+    '  if (!overlay) return;\n'
+    '  var scroll = overlay.querySelector(".thread-scroll");\n'
+    '  var archivedPane = overlay.querySelector("#thread-archived");\n'
+    '  var fullPane = overlay.querySelector("#thread-full");\n'
+    '  var xWrap = overlay.querySelector("#thread-x");\n'
+    '  var sub = overlay.querySelector("#thread-sub");\n'
+    '  var tabArchived = overlay.querySelector("#thread-tab-archived");\n'
+    '  var tabFull = overlay.querySelector("#thread-tab-full");\n'
+    '  var lastFocus = null;\n'
+    '  var widgetsRequested = false;\n'
+    '  function archivedPostsOf(cid) {\n'
+    '    var nodes = document.querySelectorAll(\'article.post[data-conversation="\' + cid + \'"]\');\n'
+    '    var arr = Array.prototype.slice.call(nodes);\n'
+    '    arr.sort(function (a, b) {\n'
+    '      return (a.getAttribute("data-sort-index") || "").localeCompare(b.getAttribute("data-sort-index") || "");\n'
+    '    });\n'
+    '    return arr;\n'
+    '  }\n'
+    '  function hasGap(cid) {\n'
+    '    var posts = archivedPostsOf(cid);\n'
+    '    var ids = {};\n'
+    '    posts.forEach(function (p) { ids[p.getAttribute("data-tweet")] = true; });\n'
+    '    return posts.some(function (p) {\n'
+    '      var parent = p.getAttribute("data-parent");\n'
+    '      return parent && !ids[parent];\n'
+    '    });\n'
+    '  }\n'
+    '  function showPane(which) {\n'
+    '    var archived = which === "archived";\n'
+    '    archivedPane.hidden = !archived;\n'
+    '    fullPane.hidden = archived;\n'
+    '    tabArchived.classList.toggle("active", archived);\n'
+    '    tabFull.classList.toggle("active", !archived);\n'
+    '    if (!archived) loadXThread();\n'
+    '  }\n'
+    '  function loadXThread() {\n'
+    '    var cid = overlay.getAttribute("data-cid");\n'
+    '    if (!cid) { xWrap.textContent = "No conversation id recorded for this post."; return; }\n'
+    '    if (xWrap.getAttribute("data-rendered-for") === cid) return;\n'
+    '    xWrap.setAttribute("data-rendered-for", cid);\n'
+    '    while (xWrap.firstChild) xWrap.removeChild(xWrap.firstChild);\n'
+    '    var blockquote = document.createElement("blockquote");\n'
+    '    blockquote.className = "twitter-tweet";\n'
+    '    blockquote.setAttribute("data-theme", "dark");\n'
+    '    blockquote.setAttribute("data-conversation", "all");\n'
+    '    blockquote.setAttribute("data-dnt", "true");\n'
+    '    blockquote.setAttribute("data-width", "550");\n'
+    '    var link = document.createElement("a");\n'
+    '    link.href = "https://x.com/x/status/" + cid;\n'
+    '    link.textContent = "View the full thread on x.com (requires network)";\n'
+    '    blockquote.appendChild(link);\n'
+    '    xWrap.appendChild(blockquote);\n'
+    '    if (window.twttr && window.twttr.widgets && window.twttr.widgets.load) {\n'
+    '      window.twttr.widgets.load(xWrap);\n'
+    '    } else if (!widgetsRequested) {\n'
+    '      widgetsRequested = true;\n'
+    '      var script = document.createElement("script");\n'
+    '      script.async = true;\n'
+    '      script.src = "https://platform.twitter.com/widgets.js";\n'
+    '      script.onload = function () {\n'
+    '        if (window.twttr && window.twttr.widgets && window.twttr.widgets.load) window.twttr.widgets.load(xWrap);\n'
+    '      };\n'
+    '      document.body.appendChild(script);\n'
+    '    }\n'
+    '  }\n'
+    '  function open(cid, fromEl) {\n'
+    '    var arr = archivedPostsOf(cid);\n'
+    '    if (!arr.length) return;\n'
+    '    overlay.setAttribute("data-cid", cid);\n'
+    '    archivedPane.innerHTML = "";\n'
+    '    arr.forEach(function (node) {\n'
+    '      var clone = node.cloneNode(true);\n'
+    '      clone.removeAttribute("id");\n'
+    '      archivedPane.appendChild(clone);\n'
+    '    });\n'
+    '    var current = fromEl && fromEl.closest ? fromEl.closest(".post") : null;\n'
+    '    if (current) {\n'
+    '      var wanted = current.getAttribute("data-tweet");\n'
+    '      var clones = archivedPane.querySelectorAll("article.post");\n'
+    '      for (var i = 0; i < clones.length; i++) {\n'
+    '        if (clones[i].getAttribute("data-tweet") === wanted) clones[i].classList.add("thread-current");\n'
+    '      }\n'
+    '    }\n'
+    '    sub.textContent = arr.length + " archived post" + (arr.length === 1 ? "" : "s") + " in this conversation";\n'
+    '    lastFocus = document.activeElement;\n'
+    '    overlay.hidden = false;\n'
+    '    document.body.style.overflow = "hidden";\n'
+    '    showPane(hasGap(cid) ? "full" : "archived");\n'
+    '    scroll.scrollTop = 0;\n'
+    '    var marked = archivedPane.querySelector(".thread-current");\n'
+    '    if (marked) marked.scrollIntoView({ block: "start" });\n'
+    '    overlay.querySelector(".thread-close").focus();\n'
+    '  }\n'
+    '  function close() {\n'
+    '    if (overlay.hidden) return;\n'
+    '    overlay.hidden = true;\n'
+    '    document.body.style.overflow = "";\n'
+    '    archivedPane.innerHTML = "";\n'
+    '    xWrap.innerHTML = "";\n'
+    '    xWrap.removeAttribute("data-rendered-for");\n'
+    '    if (lastFocus && lastFocus.focus) lastFocus.focus();\n'
+    '  }\n'
+    '  document.addEventListener("click", function (event) {\n'
+    '    var target = event.target;\n'
+    '    var btn = target && target.closest ? target.closest(".thread-btn") : null;\n'
+    '    if (btn) {\n'
+    '      event.preventDefault();\n'
+    '      open(btn.getAttribute("data-thread"), btn);\n'
+    '      return;\n'
+    '    }\n'
+    '    if (target === overlay) close();\n'
+    '  });\n'
+    '  tabArchived.addEventListener("click", function () { showPane("archived"); });\n'
+    '  tabFull.addEventListener("click", function () { showPane("full"); });\n'
+    '  overlay.querySelector(".thread-close").addEventListener("click", close);\n'
+    '  document.addEventListener("keydown", function (event) {\n'
+    '    if (event.key === "Escape" && !overlay.hidden) close();\n'
+    '  });\n'
+    '})();\n'
+    '</script>\n'
+)
 
 LIGHTBOX_HTML = (
     '<div class="lightbox" id="lightbox" hidden role="dialog" aria-modal="true" aria-label="Media viewer">\n'
@@ -393,7 +565,7 @@ def render_quoted(quoted, tweet_id, mode, assets):
     )
 
 
-def render_post(post, mode, assets):
+def render_post(post, mode, assets, conv_counts):
     tweet_id = str(post.get("tweet_id") or "?")
     created = parse_created_at(post.get("created_at"))
     author = post.get("author") or {}
@@ -401,6 +573,15 @@ def render_post(post, mode, assets):
     handle = author.get("screen_name") or "unknown"
     status = post.get("status") or "available"
     unavailable = status == "unavailable"
+    conversation_id = str(post.get("conversation_id") or "")
+    sort_index = str(post.get("sort_index") or "")
+    parent_id = post.get("in_reply_to_tweet_id")
+    parent_attr = str(parent_id) if parent_id else ""
+    conv_size = conv_counts.get(conversation_id, 1) if conversation_id else 1
+    show_thread = bool(conversation_id) and (bool(parent_id) or conv_size > 1)
+    data_attrs = (
+        f' data-tweet="{esc(tweet_id)}" data-conversation="{esc(conversation_id)}"'
+        f' data-sort-index="{esc(sort_index)}" data-parent="{esc(parent_attr)}"')
 
     head_bits = []
     if post.get("repost_of"):
@@ -434,9 +615,11 @@ def render_post(post, mode, assets):
             f'{quoted_html}'
             f'{metrics_html}'
         )
+    if show_thread:
+        body += f'<button class="thread-btn" data-thread="{esc(conversation_id)}">{ICON_THREAD}Thread</button>'
 
     return (
-        f'<article class="post" id="post-{esc(tweet_id)}">{avatar_html(author, 40, assets)}'
+        f'<article class="post" id="post-{esc(tweet_id)}"{data_attrs}>{avatar_html(author, 40, assets)}'
         '<div class="post-body">'
         + "".join(head_bits)
         + f'<div class="p-head"><span class="p-name">{esc(name)}</span>'
@@ -610,13 +793,18 @@ def main():
         )
     parts.append(f'<main class="feed">\n')
 
+    conv_counts = collections.Counter(
+        post.get("conversation_id") or "" for post in posts if isinstance(post, dict)
+    )
+
     for post in posts:
-        parts.append(render_post(post, mode, assets))
+        parts.append(render_post(post, mode, assets, conv_counts))
 
     parts.append(
         f'</main><footer class="footer">End of the archive · {total_posts} posts ({available} available, {unavailable} unavailable)<br>'
-        'Generated by the local X Archive exporter — static page; one small inline script powers the media lightbox.</footer>\n'
+        'Generated by the local X Archive exporter — static page; one small inline script powers the media lightbox and the thread viewer.</footer>\n'
         + LIGHTBOX_HTML
+        + THREAD_HTML
         + '</body>\n</html>\n'
     )
 
