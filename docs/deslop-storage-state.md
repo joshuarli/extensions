@@ -132,3 +132,10 @@ browser behavior. The collector test uses a synthetic response and the real
 filesystem store; it establishes that a rejected page save does not checkpoint.
 The two reader guard equivalences and the optional-reader race are distinct;
 no exclusion or silent acceptance of the latter is claimed.
+
+A separate lock-protected guard probe replaced the inner `&&` with `||`,
+parenthesized before the existing errno check, and ran
+`cpu-guard --cores 1 -- pnpm exec vitest run x-archive-cli/test/fs-store.test.ts
+--maxWorkers=1 -t 'existing archive cannot be read'`. Exit 0, two EACCES tests
+passed; the source was restored and its SHA-256 matches the value above. This
+checks the supported error case but does not model substituted primitive throws.
