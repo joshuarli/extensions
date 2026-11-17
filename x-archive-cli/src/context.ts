@@ -7,7 +7,7 @@ const USER_AGENT = (
   + " (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36"
 );
 const PAGE_DELAY_MS = 900;
-const MAX_ATTEMPTS = 3;
+const MAX_ATTEMPTS = 6;
 const MAX_CONSECUTIVE_FAILURES = 10;
 const FETCH_TIMEOUT_MS = 45_000;
 
@@ -122,11 +122,14 @@ export async function syncContextThreads(options: ContextSyncOptions): Promise<C
     }
     const focalId = work.pop()!;
     if (await store.contextPageStatus(focalId) === "ok") continue;
+    if ((await store.contextPageAttempts(focalId) ?? 0) >= MAX_ATTEMPTS) {
+      result.unreachable += 1;
+      continue;
+    }
     const made = (attempts.get(focalId) ?? 0) + 1;
     attempts.set(focalId, made);
     if (made > MAX_ATTEMPTS) {
       result.unreachable += 1;
-      attempts.delete(focalId);
       continue;
     }
     const conversationId = conversationOf.get(focalId) ?? focalId;
@@ -143,7 +146,7 @@ export async function syncContextThreads(options: ContextSyncOptions): Promise<C
     } catch (error) {
       consecutiveFailures += 1;
       result.failed += 1;
-      if (made >= MAX_ATTEMPTS) await store.markContextPage(focalId, "failed");
+      await store.markContextPage(focalId, "failed");
       if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
         report("Context backfill paused after repeated X failures; re-running resumes where it left off.");
         break;

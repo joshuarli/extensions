@@ -119,4 +119,27 @@ describe("SqliteProfileStore", () => {
     expect(await store.loadState("1000")).toBeNull();
     store.close();
   });
+
+  it("migrates a pre-attempts context_pages table and keeps counting failures", async () => {
+    const dir = useTempDir();
+    const dbPath = join(dir, "archive.db");
+    const { DatabaseSync } = await import("node:sqlite");
+    const legacy = new DatabaseSync(dbPath);
+    legacy.exec(
+      "CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);"
+      + "INSERT INTO meta (key, value) VALUES ('schema_version', '1');"
+      + "CREATE TABLE context_pages (target_user_id TEXT NOT NULL, focal_id TEXT NOT NULL,"
+      + "  status TEXT NOT NULL, fetched_at TEXT NOT NULL, PRIMARY KEY (target_user_id, focal_id));"
+      + "INSERT INTO context_pages VALUES ('1000', '42', 'failed', '2026-11-16T00:00:00.000Z');",
+    );
+    legacy.close();
+
+    const store = new SqliteProfileStore(dbPath, "1000");
+    expect(await store.contextPageAttempts("42")).toBe(2);
+    await store.markContextPage("42", "failed");
+    expect(await store.contextPageAttempts("42")).toBe(3);
+    await store.markContextPage("42", "ok");
+    expect(await store.contextPageAttempts("42")).toBe(0);
+    store.close();
+  });
 });

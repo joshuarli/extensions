@@ -52,9 +52,15 @@ export class SqliteProfileStore implements ProfileStore {
       + "  focal_id TEXT NOT NULL,"
       + "  status TEXT NOT NULL,"
       + "  fetched_at TEXT NOT NULL,"
+      + "  attempts INTEGER NOT NULL DEFAULT 0,"
       + "  PRIMARY KEY (target_user_id, focal_id)"
       + ")",
     );
+    const columns = this.db.prepare("PRAGMA table_info(context_pages)").all() as Array<{ name: string }>;
+    if (!columns.some((column) => column.name === "attempts")) {
+      this.db.exec("ALTER TABLE context_pages ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0");
+      this.db.exec("UPDATE context_pages SET attempts = 2 WHERE status = 'failed'");
+    }
     const row = this.db.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get() as
       | { value: string }
       | undefined;
@@ -178,11 +184,25 @@ export class SqliteProfileStore implements ProfileStore {
     return null;
   }
 
+  async contextPageAttempts(focalId: string): Promise<number | null> {
+    const row = this.db.prepare("SELECT attempts FROM context_pages WHERE target_user_id = ? AND focal_id = ?")
+      .get(this.targetUserId, focalId) as { attempts: number | bigint } | undefined;
+    return row === undefined ? null : Number(row.attempts);
+  }
+
   async markContextPage(focalId: string, status: "ok" | "failed"): Promise<void> {
+    const now = new Date().toISOString();
+    if (status === "ok") {
+      this.db.prepare(
+        "INSERT INTO context_pages (target_user_id, focal_id, status, fetched_at, attempts) VALUES (?, ?, 'ok', ?, 0)"
+        + " ON CONFLICT(target_user_id, focal_id) DO UPDATE SET status = 'ok', fetched_at = excluded.fetched_at, attempts = 0",
+      ).run(this.targetUserId, focalId, now);
+      return;
+    }
     this.db.prepare(
-      "INSERT INTO context_pages (target_user_id, focal_id, status, fetched_at) VALUES (?, ?, ?, ?)"
-      + " ON CONFLICT(target_user_id, focal_id) DO UPDATE SET status = excluded.status, fetched_at = excluded.fetched_at",
-    ).run(this.targetUserId, focalId, status, new Date().toISOString());
+      "INSERT INTO context_pages (target_user_id, focal_id, status, fetched_at, attempts) VALUES (?, ?, 'failed', ?, 1)"
+      + " ON CONFLICT(target_user_id, focal_id) DO UPDATE SET status = 'failed', fetched_at = excluded.fetched_at, attempts = context_pages.attempts + 1",
+    ).run(this.targetUserId, focalId, now);
   }
 
   count(): number {

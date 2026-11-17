@@ -22,6 +22,40 @@ function findWrappedValue(html: string, anchor: string): string | null {
   return null;
 }
 
+function lenientXUnescape(wrapped: string): string {
+  let out = "";
+  let index = 0;
+  while (index < wrapped.length) {
+    if (wrapped[index] !== "\\") {
+      out += wrapped[index];
+      index += 1;
+      continue;
+    }
+    let end = index + 1;
+    while (wrapped[end] === "\\") end += 1;
+    const backslashes = wrapped.slice(index, end);
+    if (backslashes.length % 2 === 1 && wrapped[end] === "x") {
+      const hex = wrapped.slice(end + 1, end + 3);
+      if (/^[0-9A-Fa-f]{2}$/u.test(hex)) {
+        out += backslashes.slice(0, -1) + String.fromCharCode(parseInt(hex, 16));
+        index = end + 3;
+        continue;
+      }
+    }
+    out += backslashes;
+    index = end;
+  }
+  return out;
+}
+
+function parseWrappedValue(wrapped: string): string {
+  try {
+    return JSON.parse('"' + wrapped + '"');
+  } catch {
+    return JSON.parse('"' + lenientXUnescape(wrapped) + '"');
+  }
+}
+
 function unwrapTweetResult(value: unknown): Record<string, unknown> | null {
   let node = value as Record<string, unknown> | null;
   if (node?.["__isTweetResult"] !== "Tweet" && typeof node?.["result"] === "object" && node["result"] !== null) {
@@ -71,7 +105,7 @@ function findEntries(value: unknown, sink: Map<string, Record<string, unknown>>)
 export function extractConversationTweets(html: string): ConversationPage {
   const wrapped = findWrappedValue(html, "threaded_conversation_with_injections_v2");
   if (wrapped === null) throw new Error("X did not serve a conversation payload for this post.");
-  const inner = JSON.parse('"' + wrapped + '"') as string;
+  const inner = parseWrappedValue(wrapped);
   const parsed = JSON.parse(inner) as Record<string, unknown>;
   const tweets = new Map<string, Record<string, unknown>>();
   findEntries(parsed, tweets);
