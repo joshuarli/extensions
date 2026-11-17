@@ -130,11 +130,14 @@ describe("SqliteProfileStore", () => {
       + "INSERT INTO meta (key, value) VALUES ('schema_version', '1');"
       + "CREATE TABLE context_pages (target_user_id TEXT NOT NULL, focal_id TEXT NOT NULL,"
       + "  status TEXT NOT NULL, fetched_at TEXT NOT NULL, PRIMARY KEY (target_user_id, focal_id));"
-      + "INSERT INTO context_pages VALUES ('1000', '42', 'failed', '2026-11-16T00:00:00.000Z');",
+      + "INSERT INTO context_pages VALUES ('1000', '42', 'failed', '2026-11-16T00:00:00.000Z');"
+      + "INSERT INTO context_pages VALUES ('1000', '43', 'ok', '2026-11-16T00:00:00.000Z');",
     );
     legacy.close();
 
     const store = new SqliteProfileStore(dbPath, "1000");
+    expect(await store.contextPageStatus("43")).toBeNull();
+    expect(await store.contextPageStatus("42")).toBe("failed");
     expect(await store.contextPageAttempts("42")).toBe(2);
     await store.markContextPage("42", "failed");
     expect(await store.contextPageAttempts("42")).toBe(3);
@@ -142,4 +145,19 @@ describe("SqliteProfileStore", () => {
     expect(await store.contextPageAttempts("42")).toBe(0);
     store.close();
   });
+  it("does not add completion validity to an unsupported schema", async () => {
+    const dbPath = join(useTempDir(), "archive.db");
+    const { DatabaseSync } = await import("node:sqlite");
+    const db = new DatabaseSync(dbPath);
+    db.exec("CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);"
+      + "INSERT INTO meta VALUES ('schema_version', '999');"
+      + "CREATE TABLE context_pages (target_user_id TEXT NOT NULL, focal_id TEXT NOT NULL, status TEXT NOT NULL, fetched_at TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (target_user_id, focal_id));");
+    db.close();
+    expect(() => new SqliteProfileStore(dbPath, "1000")).toThrow("Unsupported archive.db schema version: 999");
+    const reopened = new DatabaseSync(dbPath);
+    const columns = reopened.prepare("PRAGMA table_info(context_pages)").all() as Array<{ name: string }>;
+    expect(columns.map((column) => column.name)).not.toContain("completion_valid");
+    reopened.close();
+  });
+
 });
