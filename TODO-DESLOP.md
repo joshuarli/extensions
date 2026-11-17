@@ -15,7 +15,7 @@ redundant assertion: 379 to 378 hatch-matching lines, 226 tests and lint clean.
 Types baseline warm test/lint costs are 51.54/1.16s; full evidence and the
 separate lint CI integration gap are in docs/deslop-types.md. Tests and Dead
 code remain open. Diagnose files three assumed P2 findings and one P3:
-DSLP-7 has a synthetic product-module reproduction for crash recovery.
+DSLP-7 is repaired with crash/reopen and legacy completion regression evidence in docs/deslop-context-recovery.md.
 DSLP-8 is repaired: strict record reads reject unreadable/corrupt snapshots
 before replacement while optional-cache semantics remain separate. The final
 fifteen-case component has eleven intended failures on original source; all
@@ -54,18 +54,6 @@ qualification remain open. Ground does not qualify the Tests lane.
 - **Recommendation:** Run the deslop Dead code step. Accept: tools clean or allowlisted with reasons; walk-backs filed as Needs owner tickets.
 - **Fix with:** deslop
 - **Effort:** M
-
-### DSLP-7 · P2 · Context completion survives a crash before its posts are saved
-
-- **Area:** X archive · durable state
-- **Where:** x-archive-cli/src/context.ts:145,173; x-archive-cli/src/run.ts:330; x-archive-cli/test/fixtures/conversation-page.html
-- **Problem:** Assumed P2. Confirmed at acbedac using the actual syncContextThreads and SQLite store with synthetic data. The page is durably marked ok before saveContextPage. An owned child was killed with SIGKILL at its first context save, then the database was reopened: page status ok, context count zero. A normal retry fetched zero pages and retained zero context because the ok page is skipped. The CLI tells users that rerunning resumes this operation. The probe used the existing conversation fixture and focal post 2121991008691130620 with missing parent 2121990345332576733; it injected termination at the store call and did not run a live collection.
-- **Recommendation:** Add a bounded process-crash regression using the existing context fixture and an owned SQLite database. Advance completion only after durable processing, or commit posts and completion together. Preserve idempotent retries and the existing treatment of unavailable ancestors.
-- **Fix with:** durable-state
-- **Effort:** M
-
-
-
 
 ### DSLP-9 · P2 · Timeline completion does not distinguish captured operations
 

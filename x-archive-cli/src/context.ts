@@ -142,7 +142,6 @@ export async function syncContextThreads(options: ContextSyncOptions): Promise<C
       const page = extractConversationTweets(html);
       tweetsById = new Map(page.tweets.map((tweet) => [String(tweet["rest_id"]), tweet]));
       consecutiveFailures = 0;
-      await store.markContextPage(focalId, "ok");
     } catch (error) {
       consecutiveFailures += 1;
       result.failed += 1;
@@ -182,6 +181,8 @@ export async function syncContextThreads(options: ContextSyncOptions): Promise<C
       const pushed = work.includes(cur);
       if (!pushed) work.push(cur);
     }
+
+    await store.markContextPage(focalId, "ok");
 
     if (result.fetched % 25 === 0) {
       report("Context: " + result.fetched + " pages fetched, " + result.stored + " posts stored, " + result.failed + " pages failed, " + work.length + " still queued.");

@@ -3,6 +3,8 @@ import { mkdtempSync, rmSync, readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
+import { spawnSync } from "node:child_process";
+import { DatabaseSync } from "node:sqlite";
 import { SqliteProfileStore } from "../src/profile-db.ts";
 import { syncContextThreads } from "../src/context.ts";
 
@@ -82,6 +84,90 @@ describe("syncContextThreads", () => {
       pageDelayMs: 0,
     });
     expect(again).toEqual({ fetched: 0, stored: 0, failed: 0, unreachable: 0 });
+    store.close();
+  });
+
+  it("recovers when killed before the first ancestor save", async () => {
+    const dbPath = join(useTempDir(), "archive.db");
+    const store = new SqliteProfileStore(dbPath, "1000");
+    await store.savePage([post("2121991008691130620", "our reply", "2121990345332576733", CONVERSATION) as never], "1000");
+    store.close();
+    const child = spawnSync(process.execPath, [join(dirname(fileURLToPath(import.meta.url)), "fixtures", "context-crash-child.ts"), dbPath], { timeout: 10000 });
+    expect(child.error).toBeUndefined();
+    expect(child.signal).toBe("SIGKILL");
+    const reopened = new SqliteProfileStore(dbPath, "1000");
+    expect(await reopened.contextCount()).toBe(0);
+    const result = await syncContextThreads({ store: reopened, targetUserId: "1000", signal: new AbortController().signal,
+      report: () => {}, fetchHtml: async () => fixtureHtml, pageDelayMs: 0 });
+    expect(result.stored).toBe(2);
+    expect(await reopened.contextCount()).toBe(2);
+    expect((await reopened.allRecords()).length).toBe(1);
+    reopened.close();
+  });
+
+  it("resumes from an ancestor committed before a crash", async () => {
+    const dbPath = join(useTempDir(), "archive.db");
+    const initial = new SqliteProfileStore(dbPath, "1000");
+    await initial.savePage([post("2121991008691130620", "our reply", "2121990345332576733", CONVERSATION) as never], "1000");
+    initial.close();
+    const child = spawnSync(process.execPath, [join(dirname(fileURLToPath(import.meta.url)), "fixtures", "context-crash-child.ts"), dbPath, "2"], { timeout: 10000 });
+    expect(child.error).toBeUndefined();
+    expect(child.signal).toBe("SIGKILL");
+    const store = new SqliteProfileStore(dbPath, "1000");
+    expect(await store.contextCount()).toBe(1);
+    await syncContextThreads({ store, targetUserId: "1000", signal: new AbortController().signal,
+      report: () => {}, fetchHtml: async () => fixtureHtml, pageDelayMs: 0 });
+    expect(await store.contextCount()).toBe(2);
+    store.close();
+  });
+
+  it("caches a genuine legacy gap after one retry", async () => {
+    const dbPath = join(useTempDir(), "archive.db");
+    let store = new SqliteProfileStore(dbPath, "1000");
+    await store.savePage([post("1", "our reply", "2", CONVERSATION) as never], "1000");
+    store.close();
+    const db = new DatabaseSync(dbPath);
+    db.prepare("INSERT INTO context_pages (target_user_id, focal_id, status, fetched_at, attempts) VALUES ('1000', ?, 'ok', 'old', 0)").run("1");
+    db.close();
+    store = new SqliteProfileStore(dbPath, "1000");
+    let calls = 0;
+    const options = { store, targetUserId: "1000", signal: new AbortController().signal, report: () => {},
+      fetchHtml: async () => { calls++; return fixtureHtml; }, pageDelayMs: 0 };
+    await syncContextThreads(options);
+    await syncContextThreads(options);
+    expect(calls).toBe(1);
+    store.close();
+  });
+
+  it("repairs a legacy false ok when ancestors are available", async () => {
+    const dbPath = join(useTempDir(), "archive.db");
+    const initial = new SqliteProfileStore(dbPath, "1000");
+    await initial.savePage([post("2121991008691130620", "our reply", "2121990345332576733", CONVERSATION) as never], "1000");
+    initial.close();
+    const db = new DatabaseSync(dbPath);
+    db.prepare("INSERT INTO context_pages (target_user_id, focal_id, status, fetched_at, attempts) VALUES ('1000', ?, 'ok', 'old', 0)").run("2121991008691130620");
+    db.close();
+    const store = new SqliteProfileStore(dbPath, "1000");
+    const result = await syncContextThreads({ store, targetUserId: "1000", signal: new AbortController().signal,
+      report: () => {}, fetchHtml: async () => fixtureHtml, pageDelayMs: 0 });
+    expect(result.stored).toBe(2);
+    expect(await store.contextCount()).toBe(2);
+    store.close();
+  });
+
+  it("preserves the failed attempt budget across restarts", async () => {
+    const dbPath = join(useTempDir(), "archive.db");
+    let store = new SqliteProfileStore(dbPath, "1000");
+    await store.savePage([post("1", "reply", "2", CONVERSATION) as never], "1000");
+    for (let i = 0; i < 6; i++) await store.markContextPage("1", "failed");
+    store.close();
+    store = new SqliteProfileStore(dbPath, "1000");
+    let calls = 0;
+    const result = await syncContextThreads({ store, targetUserId: "1000", signal: new AbortController().signal,
+      report: () => {}, fetchHtml: async () => { calls++; return fixtureHtml; }, pageDelayMs: 0 });
+    expect(calls).toBe(0);
+    expect(result.unreachable).toBe(1);
+    expect(await store.contextPageAttempts("1")).toBe(6);
     store.close();
   });
 

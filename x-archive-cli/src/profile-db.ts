@@ -70,6 +70,9 @@ export class SqliteProfileStore implements ProfileStore {
       this.db.close();
       throw new Error("Unsupported archive.db schema version: " + row.value);
     }
+    if (!columns.some((column) => column.name === "completion_valid")) {
+      this.db.exec("ALTER TABLE context_pages ADD COLUMN completion_valid INTEGER NOT NULL DEFAULT 0 CHECK (completion_valid IN (0, 1))");
+    }
   }
 
   close(): void {
@@ -178,7 +181,7 @@ export class SqliteProfileStore implements ProfileStore {
   }
 
   async contextPageStatus(focalId: string): Promise<"ok" | "failed" | null> {
-    const row = this.db.prepare("SELECT status FROM context_pages WHERE target_user_id = ? AND focal_id = ?")
+    const row = this.db.prepare("SELECT status FROM context_pages WHERE target_user_id = ? AND focal_id = ? AND (status != 'ok' OR completion_valid = 1)")
       .get(this.targetUserId, focalId) as { status: string } | undefined;
     if (row?.status === "ok" || row?.status === "failed") return row.status;
     return null;
@@ -194,14 +197,14 @@ export class SqliteProfileStore implements ProfileStore {
     const now = new Date().toISOString();
     if (status === "ok") {
       this.db.prepare(
-        "INSERT INTO context_pages (target_user_id, focal_id, status, fetched_at, attempts) VALUES (?, ?, 'ok', ?, 0)"
-        + " ON CONFLICT(target_user_id, focal_id) DO UPDATE SET status = 'ok', fetched_at = excluded.fetched_at, attempts = 0",
+        "INSERT INTO context_pages (target_user_id, focal_id, status, fetched_at, attempts, completion_valid) VALUES (?, ?, 'ok', ?, 0, 1)"
+        + " ON CONFLICT(target_user_id, focal_id) DO UPDATE SET status = 'ok', fetched_at = excluded.fetched_at, attempts = 0, completion_valid = 1",
       ).run(this.targetUserId, focalId, now);
       return;
     }
     this.db.prepare(
       "INSERT INTO context_pages (target_user_id, focal_id, status, fetched_at, attempts) VALUES (?, ?, 'failed', ?, 1)"
-      + " ON CONFLICT(target_user_id, focal_id) DO UPDATE SET status = 'failed', fetched_at = excluded.fetched_at, attempts = context_pages.attempts + 1",
+      + " ON CONFLICT(target_user_id, focal_id) DO UPDATE SET status = 'failed', fetched_at = excluded.fetched_at, attempts = context_pages.attempts + 1, completion_valid = 0",
     ).run(this.targetUserId, focalId, now);
   }
 
