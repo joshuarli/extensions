@@ -151,6 +151,62 @@ describe("saveTab", () => {
     );
   });
 
+  it("walks minified module syntax through the graph", async () => {
+    const modules = new Map<string, { data: Uint8Array; mime: string }>([
+      [
+        "https://example.com/startup.js",
+        { data: new TextEncoder().encode('import{a}from"./min.js";import"./side.js";'), mime: "application/javascript" },
+      ],
+      ["https://example.com/min.js", { data: new TextEncoder().encode("export const a = 1;"), mime: "application/javascript" }],
+      ["https://example.com/side.js", { data: new TextEncoder().encode("window.__side = true;"), mime: "application/javascript" }],
+    ]);
+    const deps = stubDeps({
+      fetchResource: async (url) => {
+        const hit = modules.get(url);
+        if (!hit) throw new ResourceFetchError(url, "bad-status", "HTTP 404");
+        return hit;
+      },
+      executeCapture: async () => ({
+        ...payload(),
+        pageHtml: '<script type="module" src="startup.js"></script>',
+        resources: [{ url: "https://example.com/startup.js", kind: "script" as const }],
+      }),
+    });
+    const outcome = await Effect.runPromise(saveTab({ id: 15 }, deps, new Map()));
+    expect(outcome.degraded).toBe(false);
+    const archiveBytes = new Uint8Array(await deps.downloads[0]?.blob.arrayBuffer() ?? []),
+      directory = readStoredArchive(archiveBytes);
+    expect(directory.entries.map((entry) => entry.name).sort()).toEqual(
+      ["metadata.json", "min.js", "side.js", "startup.js"].sort(),
+    );
+  });
+
+  it("leaves cross-origin modules in the graph as hotlinks", async () => {
+    const deps = stubDeps({
+      fetchResource: async (url) => {
+        if (url === "https://example.com/startup.js") {
+          return {
+            data: new TextEncoder().encode('import "https://cdn.other.test/lib.js"; export const ok = 1;'),
+            mime: "application/javascript",
+          };
+        }
+        throw new ResourceFetchError(url, "bad-status", "HTTP 404");
+      },
+      executeCapture: async () => ({
+        ...payload(),
+        pageHtml: '<script type="module" src="startup.js"></script>',
+        resources: [{ url: "https://example.com/startup.js", kind: "script" as const }],
+      }),
+    });
+    const outcome = await Effect.runPromise(saveTab({ id: 16 }, deps, new Map()));
+    expect(outcome.degraded).toBe(false);
+    const archiveBytes = new Uint8Array(await deps.downloads[0]?.blob.arrayBuffer() ?? []),
+      directory = readStoredArchive(archiveBytes);
+    expect(directory.entries.map((entry) => entry.name).sort()).toEqual(
+      ["metadata.json", "startup.js"].sort(),
+    );
+  });
+
   it("keeps entry names stable when resources resolve out of order", async () => {
     const order: string[] = [],
       deps = stubDeps({

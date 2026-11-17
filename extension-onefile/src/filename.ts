@@ -53,8 +53,12 @@ export function resourceEntryName(index: number, url: string, mime: string): str
 export function originPathName(url: string): string | null {
   try {
     const path = new URL(url).pathname.replace(/^\/+/u, "");
-    if (path === "" || path.split("/").includes("..")) return null;
-    return path;
+    if (path === "") return null;
+    const decoded = decodeURIComponent(path);
+    const segments = decoded.split("/").filter((segment) => segment !== "" && segment !== ".");
+    if (segments.some((segment) => segment === "..")) return null;
+    const name = segments.join("/");
+    return name === "" ? null : name;
   } catch {
     return null;
   }

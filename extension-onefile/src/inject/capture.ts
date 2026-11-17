@@ -87,12 +87,12 @@ export async function resolveCssImports(
 }
 
 const moduleSpecifierPattern =
-  /(?:import|export)(?:\s+[\w$*{},\s]*?\sfrom\s+|\s*)['"]([^'"]+)['"]|import\s*\(\s*['"]([^'"]+)['"]\s*\)|new\s+URL\(\s*['"]([^'"]+)['"]/g;
+  /(?:import|export)[\w$*{},\s]*?\s*from\s*['"]([^'"]+)['"]|(?:^|[^A-Za-z0-9_$])import\s*['"]([^'"]+)['"]|import\s*\(\s*['"]([^'"]+)['"]\s*\)|new\s+URL\(\s*['"]([^'"]+)['"]/g;
 
 export function collectModuleSpecifiers(source: string): string[] {
   const specifiers: string[] = [];
   for (const match of source.matchAll(moduleSpecifierPattern)) {
-    const specifier = match[1] ?? match[2] ?? match[3];
+    const specifier = match[1] ?? match[2] ?? match[3] ?? match[4];
     if (specifier) specifiers.push(specifier);
   }
   return specifiers;
