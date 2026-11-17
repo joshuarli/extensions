@@ -164,10 +164,12 @@ export function assembleProfileArchive(
   state: ProfileScanState | null,
   accountUserId: string,
   targetUserId: string,
+  rawContext?: unknown[],
 ): {
   export_metadata: object;
   profile: ProfileScanProfile;
   posts: Array<Omit<Bookmark, "folder_ids">>;
+  context_posts?: Array<Omit<Bookmark, "folder_ids">>;
 } {
   const posts = rawPosts.map((record) =>
     Schema.decodeUnknownSync(BookmarkSchema)(stripTarget(record)));
@@ -184,7 +186,7 @@ export function assembleProfileArchive(
     description: null,
   };
   const exported = posts.map(({ folder_ids: _folderIds, ...post }) => post);
-  return {
+  const base = {
     export_metadata: {
       tool: "x-profile-posts",
       schema_version: 1,
@@ -207,6 +209,22 @@ export function assembleProfileArchive(
     },
     profile,
     posts: exported,
+  };
+  if (rawContext === undefined) return base;
+  const context = rawContext.map((record) =>
+    Schema.decodeUnknownSync(BookmarkSchema)(stripTarget(record)));
+  context.sort((a, b) => b.sort_index?.localeCompare(a.sort_index ?? "") ?? -1);
+  const contextPosts = context.map(({ folder_ids: _folderIds, ...post }) => post);
+  return {
+    ...base,
+    export_metadata: {
+      ...base.export_metadata,
+      stats: {
+        ...base.export_metadata.stats,
+        context_posts: contextPosts.length,
+      },
+    },
+    context_posts: contextPosts,
   };
 }
 

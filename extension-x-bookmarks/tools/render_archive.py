@@ -111,6 +111,8 @@ a { color:var(--accent); text-decoration:none; }
 .footer { max-width:598px; margin:0 auto; padding:28px 16px 72px; color:var(--muted); text-align:center;
   border-left:1px solid var(--border); border-right:1px solid var(--border); font-size:13px; }
 .note { color:var(--muted); font-size:12px; }
+.context-note { color:var(--muted); font-size:11px; border:1px solid var(--border); border-radius:8px; padding:0 6px; margin-left:2px; }
+.context-archive[hidden] { display:none; }
 .lightbox { position:fixed; inset:0; z-index:100; background:rgba(0,0,0,.92); display:flex; align-items:center; justify-content:center; }
 .lightbox[hidden] { display:none; }
 .lb-stage { display:flex; align-items:center; justify-content:center; max-width:92vw; max-height:88vh; }
@@ -137,18 +139,13 @@ a { color:var(--accent); text-decoration:none; }
 .thread-head { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:12px 16px; border-bottom:1px solid var(--border); }
 .thread-head b { font-size:16px; }
 .thread-head .note { color:var(--muted); font-size:12px; }
-.thread-tabs { display:flex; gap:6px; }
-.thread-tab { border:1px solid var(--border); background:none; color:var(--muted); border-radius:14px; padding:3px 12px; font-size:12px; font-weight:600; cursor:pointer; }
-.thread-tab.active { color:var(--accent); border-color:var(--accent); }
+.thread-head .note { color:var(--muted); font-size:12px; }
 .thread-close { display:flex; align-items:center; justify-content:center; width:34px; height:34px; border:0; border-radius:50%;
   background:rgba(22,24,28,.75); cursor:pointer; }
 .thread-close:hover { background:rgba(47,51,54,.9); }
 .thread-close svg { width:18px; height:18px; fill:var(--text); }
 .thread-scroll { overflow-y:auto; flex:1; padding:0 0 40px; }
 .thread-current { outline:2px solid var(--accent); outline-offset:-2px; background:#10171d; }
-.thread-x { padding:12px 16px; display:flex; justify-content:center; min-height:120px; }
-.thread-x blockquote { margin:0 !important; }
-.thread-note { color:var(--muted); font-size:12px; padding:12px 16px 4px; }
 """
 
 X_LOGO = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.244 3H21l-6.7 7.66L22 21h-5.4l-4.4-5.15L7.4 21H4.6l7.2-8.24L2 3h5.5l4 4.7L18.244 3Z"/></svg>'
@@ -170,21 +167,9 @@ THREAD_HTML = (
     '  <div class="thread-panel">\n'
     '    <div class="thread-head">\n'
     '      <div><b>Thread</b><div class="note" id="thread-sub"></div></div>\n'
-    '      <div style="display:flex;align-items:center;gap:10px">\n'
-    '        <div class="thread-tabs">\n'
-    '          <button class="thread-tab active" id="thread-tab-archived">Archived</button>\n'
-    '          <button class="thread-tab" id="thread-tab-full">Full thread</button>\n'
-    '        </div>\n'
-    f'        <button class="thread-close" aria-label="Close">{ICON_CLOSE}</button>\n'
-    '      </div>\n'
+    f'      <button class="thread-close" aria-label="Close">{ICON_CLOSE}</button>\n'
     '    </div>\n'
-    '    <div class="thread-scroll">\n'
-    '      <div id="thread-archived"></div>\n'
-    '      <div id="thread-full" hidden>\n'
-    '        <div class="thread-x" id="thread-x"></div>\n'
-    '        <div class="thread-note">Loads X\'s own embed of the conversation when this tab opens; X sees you opened it. Nothing leaves this folder until then.</div>\n'
-    '      </div>\n'
-    '    </div>\n'
+    '    <div class="thread-scroll"><div id="thread-archived"></div></div>\n'
     '  </div>\n'
     '</div>\n'
     '<script>\n'
@@ -193,13 +178,8 @@ THREAD_HTML = (
     '  if (!overlay) return;\n'
     '  var scroll = overlay.querySelector(".thread-scroll");\n'
     '  var archivedPane = overlay.querySelector("#thread-archived");\n'
-    '  var fullPane = overlay.querySelector("#thread-full");\n'
-    '  var xWrap = overlay.querySelector("#thread-x");\n'
     '  var sub = overlay.querySelector("#thread-sub");\n'
-    '  var tabArchived = overlay.querySelector("#thread-tab-archived");\n'
-    '  var tabFull = overlay.querySelector("#thread-tab-full");\n'
     '  var lastFocus = null;\n'
-    '  var widgetsRequested = false;\n'
     '  function archivedPostsOf(cid) {\n'
     '    var nodes = document.querySelectorAll(\'article.post[data-conversation="\' + cid + \'"]\');\n'
     '    var arr = Array.prototype.slice.call(nodes);\n'
@@ -208,57 +188,9 @@ THREAD_HTML = (
     '    });\n'
     '    return arr;\n'
     '  }\n'
-    '  function hasGap(cid) {\n'
-    '    var posts = archivedPostsOf(cid);\n'
-    '    var ids = {};\n'
-    '    posts.forEach(function (p) { ids[p.getAttribute("data-tweet")] = true; });\n'
-    '    return posts.some(function (p) {\n'
-    '      var parent = p.getAttribute("data-parent");\n'
-    '      return parent && !ids[parent];\n'
-    '    });\n'
-    '  }\n'
-    '  function showPane(which) {\n'
-    '    var archived = which === "archived";\n'
-    '    archivedPane.hidden = !archived;\n'
-    '    fullPane.hidden = archived;\n'
-    '    tabArchived.classList.toggle("active", archived);\n'
-    '    tabFull.classList.toggle("active", !archived);\n'
-    '    if (!archived) loadXThread();\n'
-    '  }\n'
-    '  function loadXThread() {\n'
-    '    var cid = overlay.getAttribute("data-cid");\n'
-    '    if (!cid) { xWrap.textContent = "No conversation id recorded for this post."; return; }\n'
-    '    if (xWrap.getAttribute("data-rendered-for") === cid) return;\n'
-    '    xWrap.setAttribute("data-rendered-for", cid);\n'
-    '    while (xWrap.firstChild) xWrap.removeChild(xWrap.firstChild);\n'
-    '    var blockquote = document.createElement("blockquote");\n'
-    '    blockquote.className = "twitter-tweet";\n'
-    '    blockquote.setAttribute("data-theme", "dark");\n'
-    '    blockquote.setAttribute("data-conversation", "all");\n'
-    '    blockquote.setAttribute("data-dnt", "true");\n'
-    '    blockquote.setAttribute("data-width", "550");\n'
-    '    var link = document.createElement("a");\n'
-    '    link.href = "https://x.com/x/status/" + cid;\n'
-    '    link.textContent = "View the full thread on x.com (requires network)";\n'
-    '    blockquote.appendChild(link);\n'
-    '    xWrap.appendChild(blockquote);\n'
-    '    if (window.twttr && window.twttr.widgets && window.twttr.widgets.load) {\n'
-    '      window.twttr.widgets.load(xWrap);\n'
-    '    } else if (!widgetsRequested) {\n'
-    '      widgetsRequested = true;\n'
-    '      var script = document.createElement("script");\n'
-    '      script.async = true;\n'
-    '      script.src = "https://platform.twitter.com/widgets.js";\n'
-    '      script.onload = function () {\n'
-    '        if (window.twttr && window.twttr.widgets && window.twttr.widgets.load) window.twttr.widgets.load(xWrap);\n'
-    '      };\n'
-    '      document.body.appendChild(script);\n'
-    '    }\n'
-    '  }\n'
     '  function open(cid, fromEl) {\n'
     '    var arr = archivedPostsOf(cid);\n'
     '    if (!arr.length) return;\n'
-    '    overlay.setAttribute("data-cid", cid);\n'
     '    archivedPane.innerHTML = "";\n'
     '    arr.forEach(function (node) {\n'
     '      var clone = node.cloneNode(true);\n'
@@ -273,11 +205,10 @@ THREAD_HTML = (
     '        if (clones[i].getAttribute("data-tweet") === wanted) clones[i].classList.add("thread-current");\n'
     '      }\n'
     '    }\n'
-    '    sub.textContent = arr.length + " archived post" + (arr.length === 1 ? "" : "s") + " in this conversation";\n'
+    '    sub.textContent = arr.length + " post" + (arr.length === 1 ? "" : "s") + " in this conversation · fully offline";\n'
     '    lastFocus = document.activeElement;\n'
     '    overlay.hidden = false;\n'
     '    document.body.style.overflow = "hidden";\n'
-    '    showPane(hasGap(cid) ? "full" : "archived");\n'
     '    scroll.scrollTop = 0;\n'
     '    var marked = archivedPane.querySelector(".thread-current");\n'
     '    if (marked) marked.scrollIntoView({ block: "start" });\n'
@@ -288,8 +219,6 @@ THREAD_HTML = (
     '    overlay.hidden = true;\n'
     '    document.body.style.overflow = "";\n'
     '    archivedPane.innerHTML = "";\n'
-    '    xWrap.innerHTML = "";\n'
-    '    xWrap.removeAttribute("data-rendered-for");\n'
     '    if (lastFocus && lastFocus.focus) lastFocus.focus();\n'
     '  }\n'
     '  document.addEventListener("click", function (event) {\n'
@@ -302,8 +231,6 @@ THREAD_HTML = (
     '    }\n'
     '    if (target === overlay) close();\n'
     '  });\n'
-    '  tabArchived.addEventListener("click", function () { showPane("archived"); });\n'
-    '  tabFull.addEventListener("click", function () { showPane("full"); });\n'
     '  overlay.querySelector(".thread-close").addEventListener("click", close);\n'
     '  document.addEventListener("keydown", function (event) {\n'
     '    if (event.key === "Escape" && !overlay.hidden) close();\n'
@@ -503,7 +430,7 @@ def media_items(post_or_quoted, tweet_id: str, quoted: bool, mode: str):
             ext = ext_from_url(best.get("url", "") if best else url, "mp4")
             kind = "video"
         filename = tweet_media_filename(tweet_id, index, ext, quoted)
-        if mode == "text-only":
+        if mode != "media":
             continue
         src = "media/" + filename
         items.append((kind, src, alt))
@@ -592,9 +519,10 @@ def render_post(post, mode, assets, conv_counts):
     entities = post.get("entities") or {}
     url_values = [u.get("expanded_url") or u.get("url") for u in (entities.get("urls") or []) if isinstance(u, dict)]
 
+    is_context = mode == "context"
     media = media_items(post, tweet_id, False, mode)
     quoted = post.get("quoted_tweet") if isinstance(post.get("quoted_tweet"), dict) else None
-    quoted_html = render_quoted(quoted, tweet_id, mode, assets) if quoted else ""
+    quoted_html = render_quoted(quoted, tweet_id, "text-only" if is_context else mode, assets) if quoted else ""
 
     metrics = post.get("metrics") or {}
     metrics_html = (
@@ -615,14 +543,15 @@ def render_post(post, mode, assets, conv_counts):
             f'{quoted_html}'
             f'{metrics_html}'
         )
-    if show_thread:
+    if show_thread and not is_context:
         body += f'<button class="thread-btn" data-thread="{esc(conversation_id)}">{ICON_THREAD}Thread</button>'
 
+    article_class = "post context-post" if is_context else "post"
     return (
-        f'<article class="post" id="post-{esc(tweet_id)}"{data_attrs}>{avatar_html(author, 40, assets)}'
+        f'<article class="{article_class}" id="post-{esc(tweet_id)}"{data_attrs}>{avatar_html(author, 40, assets)}'
         '<div class="post-body">'
         + "".join(head_bits)
-        + f'<div class="p-head"><span class="p-name">{esc(name)}</span>'
+        + f'<div class="p-head"><span class="p-name">{esc(name)}</span>{" <span class=\"context-note\">thread context</span>" if is_context else ""}'
           f'<span class="p-handle">@{esc(handle)}<span class="dot"> · </span><a href="{X_LINK}{esc(tweet_id)}" rel="noopener"><span class="p-time">{esc(fmt_date(created))}</span></a></span></div>'
         + body
         + "</div></article>"
@@ -748,6 +677,9 @@ def main():
     else:
         parser.error(f"{alt_path} carries no posts, likes or bookmarks array")
     meta = data.get("export_metadata") or {}
+    context_posts = data.get("context_posts") if archive_kind == "posts" else None
+    context_posts = context_posts if isinstance(context_posts, list) else []
+    context_ids = sum(1 for post in context_posts if isinstance(post, dict) and post.get("tweet_id"))
 
     def sort_key(post):
         parsed = parse_created_at(post.get("created_at"))
@@ -794,14 +726,21 @@ def main():
     parts.append(f'<main class="feed">\n')
 
     conv_counts = collections.Counter(
-        post.get("conversation_id") or "" for post in posts if isinstance(post, dict)
+        post.get("conversation_id") or "" for post in (*posts, *context_posts) if isinstance(post, dict)
     )
 
     for post in posts:
         parts.append(render_post(post, mode, assets, conv_counts))
 
+    if context_posts:
+        parts.append('<div class="context-archive" hidden>\n')
+        for post in context_posts:
+            parts.append(render_post(post, "context", assets, conv_counts))
+        parts.append('</div>\n')
+
+    context_note = f" · {context_ids:,} thread-context posts" if context_ids else ""
     parts.append(
-        f'</main><footer class="footer">End of the archive · {total_posts} posts ({available} available, {unavailable} unavailable)<br>'
+        f'</main><footer class="footer">End of the archive · {total_posts} posts ({available} available, {unavailable} unavailable){context_note}<br>'
         'Generated by the local X Archive exporter — static page; one small inline script powers the media lightbox and the thread viewer.</footer>\n'
         + LIGHTBOX_HTML
         + THREAD_HTML

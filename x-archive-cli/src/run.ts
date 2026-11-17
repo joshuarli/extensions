@@ -34,6 +34,7 @@ import {
 } from "./deps.ts";
 import { downloadPostsMedia, filterCompletedMedia } from "./media.ts";
 import { writeJsonFile } from "./state.ts";
+import { syncContextThreads } from "./context.ts";
 import { seedFromHelium } from "./seed.ts";
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -47,6 +48,7 @@ export interface RunOptions {
   render: boolean;
   backend: Backend;
   cdpUrl: string;
+  noContext?: boolean;
 }
 
 export interface RunSummary {
@@ -58,6 +60,7 @@ export interface RunSummary {
   mediaFailed: number;
   archiveHtml: string | null;
   collectionReason: string;
+  contextPosts: number;
 }
 
 class StatusLog {
@@ -140,6 +143,7 @@ interface FinishExportInput {
   debugTool: string;
   archiveMeta: unknown;
   collectionReason: string;
+  contextPosts: number;
 }
 
 async function finishExport(input: FinishExportInput): Promise<RunSummary> {
@@ -194,6 +198,7 @@ async function finishExport(input: FinishExportInput): Promise<RunSummary> {
     mediaFailed: media.failed.length + missingFromArchive,
     archiveHtml,
     collectionReason,
+    contextPosts: input.contextPosts,
   };
 }
 
@@ -214,7 +219,7 @@ export async function downloadBookmarks(session: XSession, credentials: Credenti
       const state = await store.loadState();
       return { folder: "-", jsonFile: "-", posts: (await store.allRecords()).length,
         mediaTotal: 0, mediaDownloaded: 0, mediaFailed: 0, archiveHtml: null,
-        collectionReason: state?.reason ?? "unknown" };
+        collectionReason: state?.reason ?? "unknown", contextPosts: 0 };
     }
   }
   const state = await store.loadState();
@@ -232,6 +237,7 @@ export async function downloadBookmarks(session: XSession, credentials: Credenti
     jsonFile: "bookmarks.json",
     posts: archive.bookmarks,
     mediaFailedInArchive: 0,
+    contextPosts: 0,
     debugTool: "x-bookmarks-debug",
     archiveMeta: archive.export_metadata,
     collectionReason: (archive.export_metadata as Record<string, unknown>)["collection"]
@@ -257,7 +263,7 @@ export async function downloadLikes(session: XSession, credentials: Credentials,
       const state = await store.loadState();
       return { folder: "-", jsonFile: "-", posts: (await store.allRecords()).length,
         mediaTotal: 0, mediaDownloaded: 0, mediaFailed: 0, archiveHtml: null,
-        collectionReason: state?.reason ?? "unknown" };
+        collectionReason: state?.reason ?? "unknown", contextPosts: 0 };
     }
   }
   const state = await store.loadState();
@@ -275,6 +281,7 @@ export async function downloadLikes(session: XSession, credentials: Credentials,
     jsonFile: "likes.json",
     posts: archive.likes,
     mediaFailedInArchive: 0,
+    contextPosts: 0,
     debugTool: "x-likes-debug",
     archiveMeta: archive.export_metadata,
     collectionReason: String(((archive.export_metadata as Record<string, unknown>)["collection"] as Record<string, unknown> | undefined)?.["reason"] ?? "unknown"),
@@ -317,11 +324,27 @@ export async function downloadProfile(handle: string, options: RunOptions): Prom
       report: (text) => status.add(text),
       onProgress: progressLogger(screenName),
     });
+    if (options.noContext) {
+      status.add("Skipping thread context fetch (--no-context).");
+    } else {
+      status.add("Fetching thread context — ancestors of archived replies (text only, no media)…");
+      try {
+        const context = await syncContextThreads({
+          store,
+          targetUserId,
+          signal: AbortSignal.timeout(SAFETY_TIMEOUT_MS),
+          report: (text) => status.add(text),
+        });
+        status.add("Context: " + context.stored + " posts stored (" + context.fetched + " pages fetched, " + context.failed + " failed, " + context.unreachable + " unreachable).");
+      } catch (error) {
+        status.add("Context backfill failed: " + (error instanceof Error ? error.message : String(error)) + ". Re-running `x download " + screenName + "` resumes it; the archive exports with what it has.");
+      }
+    }
     if (options.action === "collect") {
       const state = await store.loadState(targetUserId);
       return { folder: "-", jsonFile: "-", posts: (await store.allRecords()).length,
         mediaTotal: 0, mediaDownloaded: 0, mediaFailed: 0, archiveHtml: null,
-        collectionReason: state?.reason ?? "unknown" };
+        collectionReason: state?.reason ?? "unknown", contextPosts: await store.contextCount() };
     }
   }
   const state = await store.loadState(targetUserId);
@@ -329,7 +352,8 @@ export async function downloadProfile(handle: string, options: RunOptions): Prom
   if (options.action === "export" && raw.length === 0) {
     throw new Error("The local archive for @" + screenName + " under " + outDir + " is empty. Run `x download " + screenName + "` first.");
   }
-  const archive = assembleProfileArchive(raw, state, session.userId, targetUserId);
+  const rawContext = await store.allContextRecords();
+  const archive = assembleProfileArchive(raw, state, session.userId, targetUserId, rawContext);
   const folder = profileDir;
   mkdirSync(outDir, { recursive: true });
   writeJsonFile(join(outDir, "posts.json"), archive, 0o644);
@@ -338,6 +362,7 @@ export async function downloadProfile(handle: string, options: RunOptions): Prom
     jsonFile: "posts.json",
     posts: archive.posts,
     mediaFailedInArchive: 0,
+    contextPosts: rawContext.length,
     debugTool: "x-profile-posts-debug",
     archiveMeta: archive.export_metadata,
     collectionReason: String(((archive.export_metadata as Record<string, unknown>)["collection"] as Record<string, unknown> | undefined)?.["reason"] ?? "unknown"),
@@ -386,6 +411,7 @@ export function printSummary(label: string, summary: RunSummary): void {
     + " · " + summary.posts + " posts"
     + " · media " + summary.mediaDownloaded + "/" + summary.mediaTotal + " downloaded"
     + (summary.mediaFailed ? " (" + summary.mediaFailed + " unavailable)" : "")
+    + (summary.contextPosts ? " · context " + summary.contextPosts + " posts" : "")
     + " · collection: " + summary.collectionReason
     + html + "\n",
   );

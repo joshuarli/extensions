@@ -358,12 +358,13 @@ GIF, or video thumbnail opens an inline lightbox scoped to that post's media
 (arrow keys and on-screen buttons cycle through the gallery, Escape and the
 close button dismiss it). Posts are threaded locally: any reply or member of a
 multi-post conversation carries a "Thread" button that opens a modal with the
-unrolled conversation — posts already in the archive render offline, and a
-"Full thread" tab lazy-loads X's own embed of the whole conversation (the page
-hits the network only when you open that tab; nothing is downloaded into the
-archive). The page carries one small inline script and makes no
-external requests until a thread's Full thread tab is opened; everything else
-works with scripts disabled. At render time
+unrolled conversation. The archive includes the strangers' ancestor posts the
+profile replied to (stored by the CLI in the same folder, text and metrics
+only — no profile photos, no media), so the modal renders the full thread
+offline, including context above the profile's own posts. Thread-context posts
+are marked with a muted "thread context" badge in the modal. The page carries
+one small inline script and makes no external requests; everything else works
+with scripts disabled. At render time
 the tool fetches the profile photo and the profile banner from x.com, cached
 into `media/profile.*` and `media/cover.jpg`, so re-renders and offline viewing
 reuse the cache; a failed fetch falls back to initial circles and a gradient

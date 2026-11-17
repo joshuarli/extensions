@@ -33,7 +33,8 @@ fully covered by the archive. Each export folder holds `<kind>.json`
 (`bookmarks.json`, `likes.json`, or `posts.json`), a `media/` folder with
 the actual files, `debug.json`, and `archive.html` — a static, X-styled page
 of the whole archive (lazy-loaded media, inline lightbox; the page carries
-one small inline script). The page references `media/` relatively, so the
+one small inline script and makes no external requests). The page references
+`media/` relatively, so the
 folder must travel intact (a 13 GB inlined file helps nobody); open
 `archive.html` to browse the archive.
 
@@ -70,6 +71,13 @@ retained either way.
   quiet profile costs a page per timeline. If a previous scan was
   interrupted, it resumes from the checkpointed cursor as before; an
   interrupted scan never looks caught up until it reaches archived pages.
+- **Thread context**: profile downloads also fetch the strangers' ancestor
+  posts that archived replies reply to — one request per missing ancestor,
+  resumable per page, text and metrics only, no profile photos and no
+  media — and store them in the same archive.db, so `posts.json` carries a
+  separate `context_posts` array (readers ignore the extra top-level key)
+  and the archive page renders threads fully offline. `--no-context` skips
+  the backfill; the first run takes a while, and re-running resumes it.
 - **Seeding**: on each run the CLI seeds bookmarks and likes from the
   extension's IndexedDB by count, so the first CLI export contains
   everything the extension already archived — no re-collection needed. A

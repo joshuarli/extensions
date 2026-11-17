@@ -40,6 +40,19 @@ export class SqliteProfileStore implements ProfileStore {
       + "CREATE TABLE IF NOT EXISTS state ("
       + "  target_user_id TEXT PRIMARY KEY,"
       + "  json TEXT NOT NULL"
+      + ");"
+      + "CREATE TABLE IF NOT EXISTS context_posts ("
+      + "  target_user_id TEXT NOT NULL,"
+      + "  tweet_id TEXT NOT NULL,"
+      + "  json TEXT NOT NULL,"
+      + "  PRIMARY KEY (target_user_id, tweet_id)"
+      + ");"
+      + "CREATE TABLE IF NOT EXISTS context_pages ("
+      + "  target_user_id TEXT NOT NULL,"
+      + "  focal_id TEXT NOT NULL,"
+      + "  status TEXT NOT NULL,"
+      + "  fetched_at TEXT NOT NULL,"
+      + "  PRIMARY KEY (target_user_id, focal_id)"
       + ")",
     );
     const row = this.db.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get() as
@@ -117,6 +130,59 @@ export class SqliteProfileStore implements ProfileStore {
   async allRecords(): Promise<unknown[]> {
     const rows = this.db.prepare("SELECT json FROM posts WHERE target_user_id = ?").all(this.targetUserId) as Array<{ json: string }>;
     return rows.map((row) => JSON.parse(row.json) as unknown);
+  }
+
+  async saveContextPage(items: Bookmark[], targetUserId: string): Promise<void> {
+    if (items.length === 0) return;
+    if (targetUserId !== this.targetUserId) throw new Error("Profile store scope mismatch.");
+    const upsert = this.db.prepare(
+      "INSERT INTO context_posts (target_user_id, tweet_id, json) VALUES (?, ?, ?)"
+      + " ON CONFLICT(target_user_id, tweet_id) DO UPDATE SET json = excluded.json",
+    );
+    this.db.exec("BEGIN");
+    try {
+      for (const item of items) {
+        Schema.decodeUnknownSync(BookmarkSchema)(item);
+        upsert.run(targetUserId, item.tweet_id, JSON.stringify(item));
+      }
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  async allContextIds(targetUserId: string): Promise<Set<string>> {
+    if (targetUserId !== this.targetUserId) throw new Error("Profile store scope mismatch.");
+    const rows = this.db.prepare("SELECT tweet_id FROM context_posts WHERE target_user_id = ?")
+      .all(this.targetUserId) as Array<{ tweet_id: string }>;
+    return new Set(rows.map((row) => row.tweet_id));
+  }
+
+  async contextCount(): Promise<number> {
+    const row = this.db.prepare("SELECT COUNT(*) AS count FROM context_posts WHERE target_user_id = ?")
+      .get(this.targetUserId) as { count: number | bigint };
+    return Number(row.count);
+  }
+
+  async allContextRecords(): Promise<unknown[]> {
+    const rows = this.db.prepare("SELECT json FROM context_posts WHERE target_user_id = ?")
+      .all(this.targetUserId) as Array<{ json: string }>;
+    return rows.map((row) => JSON.parse(row.json) as unknown);
+  }
+
+  async contextPageStatus(focalId: string): Promise<"ok" | "failed" | null> {
+    const row = this.db.prepare("SELECT status FROM context_pages WHERE target_user_id = ? AND focal_id = ?")
+      .get(this.targetUserId, focalId) as { status: string } | undefined;
+    if (row?.status === "ok" || row?.status === "failed") return row.status;
+    return null;
+  }
+
+  async markContextPage(focalId: string, status: "ok" | "failed"): Promise<void> {
+    this.db.prepare(
+      "INSERT INTO context_pages (target_user_id, focal_id, status, fetched_at) VALUES (?, ?, ?, ?)"
+      + " ON CONFLICT(target_user_id, focal_id) DO UPDATE SET status = excluded.status, fetched_at = excluded.fetched_at",
+    ).run(this.targetUserId, focalId, status, new Date().toISOString());
   }
 
   count(): number {

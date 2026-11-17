@@ -19,6 +19,7 @@ Usage:
 Options:
   --export-only   skip collection; rebuild JSON/media/render from saved data
   --collect-only  collect only; do not export
+  --no-context    skip fetching strangers' ancestor posts for threads (saves time on large backfills)
   --out DIR       downloads root (default: ~/.local/share/x/downloads,
                   or X_ARCHIVE_DOWNLOADS / XDG_DATA_HOME). Bookmarks/likes
                   export to DIR/bookmarks-<date> and DIR/likes-<date>;
@@ -40,6 +41,10 @@ fails part-way through, re-running is safe — saved pages are retained.
 Bookmarks and likes resume from the saved checkpoint. A profile scan
 starts from the newest posts and stops once it catches up to what is
 already archived; the archive database travels in the profile's folder.
+Profile downloads also fetch the strangers' ancestor posts that archived
+replies reply to — full text, author, metrics, no profile photos or
+media — so threads render offline; pass --no-context to skip, and
+re-running resumes a partly-finished backfill.
 
 bctl appliance backend:
   x download self --backend bctl
@@ -64,6 +69,7 @@ interface ParsedArgs {
     action: RunOptions["action"];
     outRoot: string;
     render: boolean;
+    noContext: boolean;
     backend: string | undefined;
     session: string | undefined;
     cdpUrl: string | undefined;
@@ -86,6 +92,7 @@ function parseArgs(argv: string[]): ParsedArgs {
   let backend: string | undefined;
   let session: string | undefined;
   let cdpUrl: string | undefined;
+  let noContext = false;
   for (const arg of rest) {
     switch (true) {
       case arg === "--export-only":
@@ -96,6 +103,9 @@ function parseArgs(argv: string[]): ParsedArgs {
         break;
       case arg === "--no-render":
         render = false;
+        break;
+      case arg === "--no-context":
+        noContext = true;
         break;
       case arg.startsWith("--out="):
         outRoot = arg.slice("--out=".length);
@@ -126,7 +136,7 @@ function parseArgs(argv: string[]): ParsedArgs {
   }
   if (target === undefined) throw new UsageError("download needs a target: self, @handle, or a profile URL.\n\n" + USAGE);
   const definedTarget: string = target;
-  return { command, target: definedTarget, options: { action, outRoot, render, backend, session, cdpUrl } };
+  return { command, target: definedTarget, options: { action, outRoot, render, backend, session, cdpUrl, noContext } };
 }
 
 async function main(argv: string[]): Promise<number> {
@@ -147,6 +157,7 @@ async function main(argv: string[]): Promise<number> {
       action: options.action,
       outRoot: options.outRoot,
       render: options.render,
+      noContext: options.noContext,
       backend: resolved.backend,
       cdpUrl: resolved.cdpUrl,
     };
