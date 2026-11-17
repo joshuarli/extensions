@@ -204,3 +204,96 @@ describe("state file helpers", () => {
     expect(readFileSync(path, "utf8")).toBe("{");
   });
 });
+
+describe.each([["bookmarks", FsBookmarksStore], ["likes", FsLikesStore]] as const)("%s persistence boundaries", (kind, Store) => {
+  it("leaves missing and corrupt archives untouched on empty pages", async () => {
+    const dir = useTempStateRoot();
+    const store = new Store("123");
+    await store.savePage([]);
+    const path = join(dir, "x-archive", "stores", "123", `${kind}.json`);
+    expect(() => readFileSync(path)).toThrow(expect.objectContaining({ code: "ENOENT" }));
+    writeJsonFile(path, ["old"]);
+    writeFileSync(path, "{broken");
+    await store.savePage([]);
+    expect(readFileSync(path, "utf8")).toBe("{broken");
+  });
+
+  it("rejects a failed replacement without changing the existing archive", async () => {
+    const dir = useTempStateRoot();
+    const store = new Store("123");
+    const old = Schema.decodeUnknownSync(BookmarkSchema)(post("100", "old"));
+    const incoming = Schema.decodeUnknownSync(BookmarkSchema)(post("200", "new"));
+    await store.savePage([old]);
+    const path = join(dir, "x-archive", "stores", "123", `${kind}.json`);
+    const bytes = readFileSync(path);
+    // A directory at the staging path causes a real filesystem write failure.
+    const { mkdirSync } = await import("node:fs");
+    mkdirSync(path + ".tmp");
+    await expect(store.savePage([incoming])).rejects.toMatchObject({ code: "EISDIR" });
+    expect(readFileSync(path)).toEqual(bytes);
+  });
+});
+
+it("filters folder records without string ids before merging", async () => {
+  const dir = useTempStateRoot();
+  const path = join(dir, "x-archive", "stores", "123", "folders.json");
+  writeJsonFile(path, [{ id: 42, name: "discard" }, { name: "missing" }, { id: "keep", name: "old" }]);
+  const store = new FsBookmarksStore("123");
+  await store.saveFolders([{ id: "new", name: "added" }]);
+  expect(await store.allFolders()).toEqual([{ id: "keep", name: "old" }, { id: "new", name: "added" }]);
+});
+
+it("validates and isolates bookmark and likes scan state", async () => {
+  const dir = useTempStateRoot();
+  const bookmarks = new FsBookmarksStore("123");
+  const likes = new FsLikesStore("123");
+  const other = new FsBookmarksStore("456");
+  const state = { started_at: "start", updated_at: "update", bookmarks: "partial" as const, folders: "complete" as const, reason: "resume", cursors: { Bookmarks: "next" } };
+  await bookmarks.saveState(state);
+  expect(await bookmarks.loadState()).toEqual(state);
+  expect(await other.loadState()).toBeNull();
+  expect(await likes.loadState()).toBeNull();
+  const path = join(dir, "x-archive", "state", "123", "bookmarks-state.json");
+  const bytes = readFileSync(path);
+  await expect(bookmarks.saveState({ ...state, bookmarks: "invalid" } as never)).rejects.toThrow();
+  expect(readFileSync(path)).toEqual(bytes);
+  writeFileSync(path, JSON.stringify({ ...state, bookmarks: "invalid" }));
+  expect(await bookmarks.loadState()).toBeNull();
+  const likesPath = join(dir, "x-archive", "state", "123", "likes-state.json");
+  const likesState = { started_at: "start", updated_at: "update", likes: "partial" as const, reason: "resume", cursors: { Likes: "next" } };
+  await likes.saveState(likesState);
+  expect(await likes.loadState()).toEqual(likesState);
+  const likesBytes = readFileSync(likesPath);
+  await expect(likes.saveState({ ...likesState, likes: "invalid" } as never)).rejects.toThrow();
+  expect(readFileSync(likesPath)).toEqual(likesBytes);
+  writeFileSync(likesPath, '{"likes":"invalid"}');
+  expect(await likes.loadState()).toBeNull();
+});
+
+it("does not advance a collector checkpoint when the filesystem page save fails", async () => {
+  const { collectTimeline } = await import("../../x-archive-core/src/collector.ts");
+  const dir = useTempStateRoot();
+  const store = new FsBookmarksStore("123");
+  const path = join(dir, "x-archive", "stores", "123", "bookmarks.json");
+  writeJsonFile(path, []);
+  writeFileSync(path, "{broken");
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({ data: { bookmark_timeline_v2: { timeline: { instructions: [{ type: "TimelineAddEntries", entries: [
+    { entryId: "tweet-1", sortIndex: "999", content: { itemContent: { tweet_results: { result: { rest_id: "1", legacy: { full_text: "First" } } } } } },
+    { entryId: "cursor-bottom-0", content: { value: "next" } },
+  ] }] } } } }), { status: 200 });
+  const checkpoints: unknown[] = [];
+  try {
+    await expect(collectTimeline({
+      userId: "123", store, signal: new AbortController().signal, report: () => {},
+      checkpoint: async (key, cursor) => { checkpoints.push([key, cursor]); },
+      deps: {
+        credentials: async () => ({ authorization: "test", queryIds: { Bookmarks: "test" }, features: {} }),
+        currentUserId: async () => "123", readProfileTarget: async () => null,
+        writeProfileTarget: async () => {}, session: async () => ({ userId: "123", csrfToken: "test" }),
+      },
+    }, "Bookmarks")).rejects.toThrow(`Cannot parse archive ${path}`);
+    expect(checkpoints).toEqual([]);
+    expect(readFileSync(path, "utf8")).toBe("{broken");
+  } finally { globalThis.fetch = originalFetch; }
+});
