@@ -9,8 +9,8 @@ DSLP-6 is closed locally: Vitest and coverage-v8 5.0.5 pass the Node tests,
 typecheck, and V8 coverage; omitted optional-package engine declarations were
 restored after checking published metadata. See [verification](docs/deslop-vitest.md).
 Ground passes at `2b3ebe1`: 226 Node tests, typecheck, gated cold/warm costs,
-green main CI and a clean shared workflow rule. Diagnose, Types, Tests, and Dead
-code remain open. Diagnose files three assumed P2 findings and one P3:
+green main CI and a clean shared workflow rule. Types, Tests, and Dead code
+remain open. Diagnose files three assumed P2 findings and one P3:
 DSLP-7 and DSLP-8 have synthetic product-module reproductions for crash
 recovery and archive read failures. DSLP-9 remains unproven against actual
 X timeline ordering. DSLP-10 reproduces rejected help syntax at the executable.
@@ -91,4 +91,3 @@ qualify the Tests lane.
 - **Recommendation:** Align the advertised and accepted flag syntax, and make explicit help requests succeed. Add bounded executable tests for help and representative accepted/rejected flags without launching a browser.
 - **Fix with:** design-cli
 - **Effort:** S
-
