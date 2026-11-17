@@ -8,19 +8,13 @@ Deslop campaign backlog ([plan](https://github.com/laputa-systems/stuff/blob/mai
 DSLP-6 is closed locally: Vitest and coverage-v8 5.0.5 pass the Node tests,
 typecheck, and V8 coverage; omitted optional-package engine declarations were
 restored after checking published metadata. See [verification](docs/deslop-vitest.md).
-Ground, Diagnose, Types, Tests, and Dead code remain open. Stryker, browser tests,
-and test-cost qualification are deferred; this does not qualify the Tests lane.
+Ground passes at `2b3ebe1`: 226 Node tests, typecheck, gated cold/warm costs,
+green main CI and a clean shared workflow rule. Diagnose, Types, Tests, and Dead
+code remain open. Stryker and browser tests remain deferred; Ground does not
+qualify the Tests lane.
 
 ## Tickets
 
-### DSLP-1 · P2 · Ground: baseline, boundaries, and CI test entry point
-
-- **Area:** deslop · ground
-- **Where:** AGENTS.md, Makefile, .github/workflows/
-- **Problem:** At base 36f448cc, make test and CI retain typecheck plus the Node unit suite; make lint uses the existing typechecker. The verification map and local correctness evidence are recorded in docs/deslop-ground.md. Cold and warm test costs and lint cost remain unmeasured because the performance gate is unavailable on the constrained host; CI has not yet run this change. Earlier fleet lint counts and line counts were from an older base and are not current findings.
-- **Recommendation:** On a ready host measure cold and warm make test and make lint; verify CI is green and the shared make test workflow is clean, then close Ground only when its acceptance is met.
-- **Fix with:** deslop
-- **Effort:** S
 
 ### DSLP-2 · P2 · Diagnose: ultrareview into this backlog
 
