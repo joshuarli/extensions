@@ -350,10 +350,19 @@ far are kept. Reload and try again; if it persists, report the shape drift.
 ## Viewing the archive locally
 
 `python3 extension-x-bookmarks/tools/render_archive.py <export-folder>` writes a
-static `archive.html` next to `posts.json`: a script-free, X-styled dark timeline
+static `archive.html` next to `posts.json`: an X-styled dark timeline
 of every post with dates, metrics, quoted posts, replies, and media linked from
 the export's `media/` folder, so open the page from inside that folder (or keep
-the folder intact anywhere else). `--text-only` drops media entirely.
+the folder intact anywhere else). All media is lazy loaded; clicking a photo,
+GIF, or video thumbnail opens an inline lightbox scoped to that post's media
+(arrow keys and on-screen buttons cycle through the gallery, Escape and the
+close button dismiss it). The page carries one small inline script and makes no
+external requests; everything else works with scripts disabled. At render time
+the tool fetches the profile photo and the profile banner from x.com, cached
+into `media/profile.*` and `media/cover.jpg`, so re-renders and offline viewing
+reuse the cache; a failed fetch falls back to initial circles and a gradient
+banner. `--no-fetch` skips the network entirely and uses only the cached
+assets. `--text-only` drops media entirely.
 
 ## Development
 
