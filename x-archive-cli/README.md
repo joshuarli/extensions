@@ -142,9 +142,6 @@ already-minted endpoint instead of launching) are supported.
   are no longer read.
 - `X_ARCHIVE_DEBUG=1` prints the URL (no secrets) and HTTP status of
   each GraphQL call for API-drift debugging.
-- The state dir holds public X web-app configuration plus the public
-  web bearer token that X ships to every web client (in the credential
-  cache), and it never holds your cookies — those stay in the running
-  browser or, when the export-cookies.py fallback runs, are passed
-  through memory only. Your session lives in X, not in this directory;
-  copying it elsewhere leaks nothing private.
+- The state dir holds the credential cache and cumulative bookmarks and
+  likes, which may be private. It does not hold your cookies: those stay
+  in the browser or pass through memory via the cookie helper.
