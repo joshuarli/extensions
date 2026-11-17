@@ -4,14 +4,6 @@ import { capturePolicy } from "../policy.ts";
 export const resourceTokenPrefix = "onefile-resource-",
   missingResourceToken = "onefile-missing";
 
-const simpleDeclaration = /(^|[{};])(\s*(?:--)?[-_a-zA-Z][-_a-zA-Z0-9]*\s*:)([^;{}()"']*(?=[;}]))/gm;
-
-export function hoistSimpleDeclarationsToImportant(css: string): string {
-  return css.replace(simpleDeclaration, (match, prefix: string, name: string, value: string) =>
-    /!important/i.test(value) ? match : `${prefix}${name}${value.trimEnd()} !important`,
-  );
-}
-
 const maxFrameDepth = 3;
 
 const cssUrlPattern = /url\(\s*(?:"([^"]*)"|'([^']*)'|([^)"'\s][^)"']*))\s*\)/g,
@@ -94,6 +86,18 @@ export async function resolveCssImports(
   return { text, failed };
 }
 
+const moduleSpecifierPattern =
+  /(?:import|export)(?:\s+[\w$*{},\s]*?\sfrom\s+|\s*)['"]([^'"]+)['"]|import\s*\(\s*['"]([^'"]+)['"]\s*\)|new\s+URL\(\s*['"]([^'"]+)['"]/g;
+
+export function collectModuleSpecifiers(source: string): string[] {
+  const specifiers: string[] = [];
+  for (const match of source.matchAll(moduleSpecifierPattern)) {
+    const specifier = match[1] ?? match[2] ?? match[3];
+    if (specifier) specifiers.push(specifier);
+  }
+  return specifiers;
+}
+
 export function collectCssResources(
   cssText: string,
   base: string,
@@ -116,13 +120,19 @@ export function collectCssResources(
       offset: number,
     ) => {
       const raw = String(doubleQuoted ?? singleQuoted ?? bare ?? "");
-      if (raw.trim() === "" || raw.startsWith("data:")) return match;
-      const absolute = absolutizeHttpUrl(raw, base);
+      const trimmed = raw.trim();
+      if (trimmed === "" || trimmed.startsWith("data:") || trimmed.startsWith("#")) return match;
+      const fragmentIndex = raw.indexOf("#"),
+        fragment = fragmentIndex >= 0 ? raw.slice(fragmentIndex) : "",
+        absolute = absolutizeHttpUrl(fragmentIndex >= 0 ? raw.slice(0, fragmentIndex) : raw, base);
       if (!absolute) return match;
+      if (fragment !== "" && absolute === absolutizeHttpUrl(base, base)) {
+        return `url("#${fragment.slice(1)}")`;
+      }
       const insideFont = fontRanges.some(([start, end]) => offset >= start && offset < end),
         kind = insideFont ? "font" : "image";
       resources.push({ url: absolute, kind });
-      return `url("${take(absolute, kind)}")`;
+      return `url("${take(absolute, kind)}${fragment}")`;
     },
   );
   return { rewritten, resources };
@@ -130,8 +140,9 @@ export function collectCssResources(
 
 interface CaptureShared {
   seen: Map<string, string>;
+  scriptUrls: Set<string>;
   nodeMap: Map<Node, Node>;
-  resources: { url: string; kind: "image" | "stylesheet" | "font" }[];
+  resources: { url: string; kind: "image" | "stylesheet" | "font" | "script" }[];
   unresolved: { url: string; reason: string }[];
   fetcher: typeof fetch;
   ownerDoc: Document;
@@ -266,55 +277,8 @@ function rewriteSrcsetElement(element: Element, baseUrl: string, shared: Capture
   }
 }
 
-function replaceCanvas(live: ParentNode, clone: ParentNode, shared: CaptureShared): void {
-  const liveCanvases = Array.from(live.querySelectorAll("canvas")),
-    cloneCanvases = Array.from(clone.querySelectorAll("canvas"));
-  liveCanvases.forEach((liveCanvas, index) => {
-    const cloneCanvas = cloneCanvases[index];
-    if (!cloneCanvas) return;
-    let snapshot: string | null = null;
-    try {
-      snapshot = liveCanvas.toDataURL("image/png");
-    } catch {
-      snapshot = null;
-    }
-    if (!snapshot) {
-      shared.unresolved.push({ url: "(canvas snapshot)", reason: "canvas snapshot failed" });
-      return;
-    }
-    const replacement = shared.ownerDoc.createElement("img");
-    for (const attribute of ["id", "class", "style", "width", "height"]) {
-      const value = liveCanvas.getAttribute(attribute);
-      if (value !== null) replacement.setAttribute(attribute, value);
-    }
-    replacement.setAttribute("src", snapshot);
-    cloneCanvas.replaceWith(replacement);
-  });
-}
-
-function applyNoscriptFallbacks(clone: Element | DocumentFragment, shared: CaptureShared): void {
-  for (const element of Array.from(clone.querySelectorAll("noscript"))) {
-    const holder = shared.ownerDoc.createElement("template"),
-      hasElementChildren = Array.from(element.childNodes).some((node) => node.nodeType === 1);
-    if (hasElementChildren) {
-      while (element.firstChild) holder.content.append(element.firstChild);
-    } else {
-      holder.innerHTML = element.textContent ?? "";
-    }
-    for (const script of Array.from(holder.content.querySelectorAll("script"))) script.remove();
-    for (const meta of Array.from(holder.content.querySelectorAll("meta"))) {
-      if ((meta.getAttribute("http-equiv") ?? "").trim().toLowerCase() === "refresh") meta.remove();
-    }
-    for (const node of Array.from(holder.content.querySelectorAll("*"))) {
-      for (const attribute of Array.from(node.attributes)) {
-        if (attribute.name.toLowerCase().startsWith("on")) node.removeAttribute(attribute.name);
-      }
-    }
-    for (const style of Array.from(holder.content.querySelectorAll("style"))) {
-      style.textContent = hoistSimpleDeclarationsToImportant(style.textContent ?? "");
-    }
-    element.replaceWith(holder.content);
-  }
+function dropNoscript(clone: Element | DocumentFragment): void {
+  for (const element of Array.from(clone.querySelectorAll("noscript"))) element.remove();
 }
 
 async function captureScope(
@@ -324,8 +288,22 @@ async function captureScope(
   shared: CaptureShared,
   depth: number,
 ): Promise<void> {
-  clone.querySelectorAll("script").forEach((element) => element.remove());
-  applyNoscriptFallbacks(clone, shared);
+  for (const element of Array.from(clone.querySelectorAll("script"))) {
+    if (element.hasAttribute("data-onefile-capture")) {
+      element.remove();
+      continue;
+    }
+    const src = element.getAttribute("src");
+    if (src === null || src.trim() === "") continue;
+    const absolute = absolutizeHttpUrl(src, baseUrl);
+    if (absolute === null) continue;
+    if (new URL(absolute).origin === new URL(baseUrl).origin && !shared.scriptUrls.has(absolute)) {
+      shared.scriptUrls.add(absolute);
+      shared.resources.push({ url: absolute, kind: "script" });
+      shared.seen.set(`onefile-script:${absolute}`, "script");
+    }
+  }
+  dropNoscript(clone);
   for (const element of Array.from(clone.querySelectorAll("link"))) {
     const rel = (element.getAttribute("rel") ?? "").toLowerCase();
     if (rel !== "stylesheet") {
@@ -389,7 +367,6 @@ async function captureScope(
       element.removeAttribute(attribute);
       if (raw.trim() !== "") shared.unresolved.push({ url: raw, reason: "media capture is out of scope" });
     });
-  replaceCanvas(live, clone, shared);
   const liveHosts = Array.from(live.querySelectorAll("*")).filter(
     (element): element is Element & { shadowRoot: ShadowRoot } => (element as Element & { shadowRoot?: ShadowRoot | null }).shadowRoot instanceof ShadowRoot,
   );
@@ -451,6 +428,7 @@ export async function captureDocument(
 ): Promise<CapturePayload> {
   const shared: CaptureShared = {
       seen: new Map(),
+      scriptUrls: new Set(),
       nodeMap: new Map(),
       resources: [],
       unresolved: [],
@@ -470,6 +448,9 @@ export async function captureDocument(
     unresolved: shared.unresolved,
   };
 }
+
+const captureScript = typeof document !== "undefined" ? document.currentScript : null;
+captureScript?.setAttribute("data-onefile-capture", "");
 
 globalThis.onefileCapture = (_stamp: string, nowMs: number): Promise<CapturePayload> =>
   captureDocument(document, location.href, nowMs);

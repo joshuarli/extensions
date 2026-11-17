@@ -74,7 +74,7 @@ test("css-heavy pages inline imports at scale", async ({ page }) => {
   expect(payload.resources.length).toBe(2000);
 });
 
-test("saved scripts stay dead when the archive opens from file", async ({ page }) => {
+test("saved scripts run when the archive opens from file", async ({ page }) => {
   await page.goto("about:blank");
   await page.evaluate(() => {
     document.title = "Counter page";
@@ -86,7 +86,7 @@ test("saved scripts stay dead when the archive opens from file", async ({ page }
   await page.waitForFunction(() => (document.getElementById("counter")?.textContent ?? "0") !== "0");
   await page.addScriptTag({ path: captureSource });
   const payload = await captureLive(page);
-  expect(payload.pageHtml).not.toContain("<script");
+  expect(payload.pageHtml).toContain("<script");
   const archive = buildPolyglot({
       pageHtml: payload.pageHtml,
       loaderSource,
@@ -106,9 +106,9 @@ test("saved scripts stay dead when the archive opens from file", async ({ page }
   });
   opened.on("pageerror", (error) => errors.push(String(error)));
   await opened.goto(`file://${filePath}`);
-  const frozen = await opened.locator("#counter").textContent();
+  const before = Number(await opened.locator("#counter").textContent() ?? "0");
   await opened.waitForTimeout(400);
-  expect(await opened.locator("#counter").textContent()).toBe(frozen);
+  expect(Number(await opened.locator("#counter").textContent() ?? "0")).toBeGreaterThan(before);
   expect(await opened.title()).toBe("Counter page");
   expect(externalRequests).toEqual([]);
   expect(errors).toEqual([]);

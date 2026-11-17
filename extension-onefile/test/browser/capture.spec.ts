@@ -165,11 +165,10 @@ test.describe("capture corpus", () => {
     );
   });
 
-  test("canvas snapshots inline as data urls", async ({ page }) => {
+  test("canvas elements and their scripts survive capture", async ({ page }) => {
     const payload = await captureFixture(page, `${servers.mainOrigin}/canvas.html`);
-    expect(payload.pageHtml).toContain('<img id="drawn"');
-    expect(payload.pageHtml).toContain('src="data:image/png;base64,');
-    expect(payload.pageHtml).not.toContain("<canvas");
+    expect(payload.pageHtml).toContain('<canvas id="drawn"');
+    expect(payload.pageHtml).toContain("getContext");
   });
 
   test("adopted stylesheets inline", async ({ page }) => {
@@ -179,14 +178,9 @@ test.describe("capture corpus", () => {
     expect(payload.pageHtml).toContain("onefile-resource-");
   });
 
-  test("noscript fallbacks apply when page scripts are stripped", async ({ page }) => {
+  test("noscript content is dropped because archives run their scripts", async ({ page }) => {
     const payload = await captureFixture(page, `${servers.mainOrigin}/noscript.html`);
-    expect(payload.pageHtml).not.toContain("<script");
     expect(payload.pageHtml).not.toContain("<noscript");
-    expect(payload.pageHtml).toContain("visibility: visible !important");
-    expect(payload.pageHtml).toContain("Reader is shown without scripts.");
-    await page.setContent(payload.pageHtml);
-    await expect(page.locator(".reader")).toBeVisible();
-    await expect(page.locator(".no-js-note")).toBeVisible();
+    expect(payload.pageHtml).not.toContain("Reader is shown without scripts.");
   });
 });

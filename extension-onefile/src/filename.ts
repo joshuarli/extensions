@@ -49,3 +49,13 @@ export function resourceEntryName(index: number, url: string, mime: string): str
   })();
   return `resources/${index}.${fromPath ?? "bin"}`;
 }
+
+export function originPathName(url: string): string | null {
+  try {
+    const path = new URL(url).pathname.replace(/^\/+/u, "");
+    if (path === "" || path.split("/").includes("..")) return null;
+    return path;
+  } catch {
+    return null;
+  }
+}

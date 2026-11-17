@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en" data-native-visible="false">
+<head>
+<meta charset="utf-8">
+<title>garden fixture</title>
+<style>
+html .copy { visibility: hidden; }
+html[data-startup="ready"] .copy { visibility: visible; }
+</style>
+</head>
+<body>
+<main class="copy" inert><p>garden text</p></main>
+<script id="garden-startup-guard">
+window.gardenStartup = {
+  fail: () => { document.documentElement.dataset.startup = 'failed'; },
+  ready: () => { document.documentElement.dataset.startup = 'ready'; }
+};
+</script>
+<script id="garden-entry" type="module" src="garden-entry.js"></script>
+</body>
+</html>

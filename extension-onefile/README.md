@@ -10,9 +10,9 @@ For terminal capture, see the [Onefile CLI](../onefile-cli/README.md).
 
 Open the toolbar popup and choose **Save page**. The extension captures the tab, builds the archive, and downloads `Page Title (2026-10-27 15-30-00).u.zip.html`. The badge shows save progress as a percentage and the title shows the fetched file count, `!` with a count when files were missing, and both clear on success. Restricted pages (for example `chrome://`) fail loudly through the action title.
 
-Open the file over `http(s)` served by a polyglot-aware server (such as `laputa-systems/srv`) for full fidelity — CSS-referenced resources resolve at their archive paths; a plain static server still shows the text and blob-swapped images. Via `file://` you get text and layout with image placeholders. `unzip -t` validates the embedded archive. See [FORMAT.md](FORMAT.md) for the layout and [PERFORMANCE.md](PERFORMANCE.md) for budgets.
+Open the file over `http(s)` served by a server that serves the archive's entries at their paths (such as `laputa-systems/srv`) for full fidelity — scripts re-run, CSS-referenced resources resolve at their archive paths, and the page's own boot sequence replays. A plain static server 404s the archived module graph and the page falls back to its own failure path; via `file://` you get text and layout with image placeholders. `unzip -t` validates the embedded archive. See [FORMAT.md](FORMAT.md) for the layout and [PERFORMANCE.md](PERFORMANCE.md) for budgets.
 
-The archive never runs the saved page's scripts, so the page's `<noscript>` fallbacks are applied at capture instead: the archive shows the author's no-JS rendering. A page saved mid-animation keeps its intermediate layout; save again at rest for the revealed state.
+Page scripts are part of the archive: same-origin `<script src>` and the ES-module graph they pull in are stored at their origin paths, so the page re-runs its own boot code on open (animations, canvas scenes, scripted layout) instead of freezing the capture-time frame. Cross-origin scripts are kept as hotlinks, and `<noscript>` fallbacks are dropped because archives always run JavaScript. Save whenever; the intro replays on open.
 
 ## Permissions
 

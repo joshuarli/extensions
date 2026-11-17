@@ -2,7 +2,7 @@ import { Schema } from "effect";
 
 const ResourceReferenceSchema = Schema.Struct({
   url: Schema.String,
-  kind: Schema.Literals(["image", "stylesheet", "font"]),
+  kind: Schema.Literals(["image", "stylesheet", "font", "script"]),
 });
 
 const UnresolvedResourceSchema = Schema.Struct({

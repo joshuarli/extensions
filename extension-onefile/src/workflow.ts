@@ -10,9 +10,9 @@ import {
   SaveInProgressError,
   type CaptureFailureKind,
 } from "./errors.ts";
-import { buildArchiveFilename, resourceEntryName } from "./filename.ts";
+import { buildArchiveFilename, originPathName, resourceEntryName } from "./filename.ts";
 import { buildPolyglot, type PolyglotResource } from "./polyglot.ts";
-import { missingResourceToken, resourceTokenPrefix } from "./inject/capture.ts";
+import { collectModuleSpecifiers, missingResourceToken, resourceTokenPrefix } from "./inject/capture.ts";
 import { capturePolicy } from "./policy.ts";
 import { downloadArchive } from "./downloads.ts";
 
@@ -116,8 +116,8 @@ export function saveTab(
           try: () => deps.fetchResource(reference.url),
           catch: (error) => error,
           }).pipe(
-            Effect.map((value) => ({ index, url: reference.url, fetched: true as const, value })),
-            Effect.catch((error: unknown) => Effect.succeed({ index, url: reference.url, fetched: false as const, value: error })),
+            Effect.map((value) => ({ index, url: reference.url, kind: reference.kind, fetched: true as const, value })),
+            Effect.catch((error: unknown) => Effect.succeed({ index, url: reference.url, kind: reference.kind, fetched: false as const, value: error })),
             Effect.tap(() => {
               completedResources += 1;
               if (totalResources === 0) return Effect.void;
@@ -137,16 +137,76 @@ export function saveTab(
       const zipResources: PolyglotResource[] = [],
         unresolved: { url: string; reason: string }[] = [...payload.unresolved];
       for (const outcome of fetched) {
-        const token = `${resourceTokenPrefix}${outcome.index}`;
+        const isScript = outcome.kind === "script",
+          token = `${resourceTokenPrefix}${outcome.index}`;
         if (!outcome.fetched) {
-          pageHtml = pageHtml.replaceAll(token, missingResourceToken);
+          if (!isScript) pageHtml = pageHtml.replaceAll(token, missingResourceToken);
           const reason = outcome.value instanceof Error ? outcome.value.message : String(outcome.value);
           unresolved.push({ url: outcome.url, reason });
+          continue;
+        }
+        if (isScript) {
+          const name = originPathName(outcome.url);
+          if (name === null) {
+            unresolved.push({ url: outcome.url, reason: "unsupported script path" });
+            continue;
+          }
+          zipResources.push({ name, mime: outcome.value.mime, data: outcome.value.data });
           continue;
         }
         const name = resourceEntryName(outcome.index, outcome.url, outcome.value.mime);
         pageHtml = pageHtml.replaceAll(token, name);
         zipResources.push({ name, mime: outcome.value.mime, data: outcome.value.data });
+      }
+
+      const textDecoder = new TextDecoder(),
+        archivedPaths = new Set(zipResources.map((resource) => resource.name)),
+        moduleClosure: { url: string; data: Uint8Array; mime: string }[] = [];
+      for (const outcome of fetched) {
+        if (outcome.kind === "script" && outcome.fetched) {
+          moduleClosure.push({ url: outcome.url, data: outcome.value.data, mime: outcome.value.mime });
+        }
+      }
+      let walked = 0;
+      while (moduleClosure.length > 0) {
+        const current = moduleClosure.pop();
+        walked += 1;
+        if (walked > 256) {
+          unresolved.push({ url: current?.url ?? "", reason: "module dependency limit exceeded" });
+          break;
+        }
+        if (!current) break;
+        for (const specifier of collectModuleSpecifiers(textDecoder.decode(current.data))) {
+          let resolved: URL;
+          try {
+            resolved = new URL(specifier, current.url);
+          } catch {
+            unresolved.push({ url: specifier, reason: "unresolvable module specifier" });
+            continue;
+          }
+          if (resolved.origin !== new URL(current.url).origin) continue;
+          const name = originPathName(resolved.href);
+          if (name === null) {
+            unresolved.push({ url: resolved.href, reason: "unsupported module path" });
+            continue;
+          }
+          if (archivedPaths.has(name)) continue;
+          const fetchedDep = yield* Effect.tryPromise({
+            try: () => deps.fetchResource(resolved.href),
+            catch: (error) => error,
+          }).pipe(
+            Effect.map((value) => ({ fetched: true as const, value })),
+            Effect.catch((error: unknown) => Effect.succeed({ fetched: false as const, error })),
+          );
+          if (!fetchedDep.fetched) {
+            const reason = fetchedDep.error instanceof Error ? fetchedDep.error.message : String(fetchedDep.error);
+            unresolved.push({ url: resolved.href, reason });
+            continue;
+          }
+          archivedPaths.add(name);
+          zipResources.push({ name, mime: fetchedDep.value.mime, data: fetchedDep.value.data });
+          moduleClosure.push({ url: resolved.href, data: fetchedDep.value.data, mime: fetchedDep.value.mime });
+        }
       }
       const archive = yield* Effect.try({
         try: () =>

@@ -15,7 +15,7 @@ const nested = document.createElement("div");
 nested.id = "nested-host";
 open.append(nested);
 nested.attachShadow({ mode: "open" }).innerHTML = "<p>nested shadow text</p>";
-document.getElementById("closed-host").attachShadow({ mode: "closed" }).innerHTML = "<p>closed shadow text</p>";
+document.getElementById("closed-host").attachShadow({ mode: "closed" }).innerHTML = "<p>closed shadow " + "text</p>";
 </script>
 </body>
 </html>

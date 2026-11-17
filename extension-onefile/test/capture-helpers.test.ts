@@ -2,36 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   absolutizeHttpUrl,
   collectCssResources,
-  hoistSimpleDeclarationsToImportant,
   resolveCssImports,
   splitSrcset,
 } from "../src/inject/capture.ts";
-
-describe("hoistSimpleDeclarationsToImportant", () => {
-  it("forces author !important on simple declarations", () => {
-    expect(hoistSimpleDeclarationsToImportant("html .a { visibility: visible; pointer-events: auto }")).toBe(
-      "html .a { visibility: visible !important; pointer-events: auto !important}",
-    );
-  });
-
-  it("leaves values with parens or quotes untouched", () => {
-    expect(
-      hoistSimpleDeclarationsToImportant(".b{background:url(x.png);font-family:'x';color:red}"),
-    ).toBe(".b{background:url(x.png);font-family:'x';color:red !important}");
-  });
-
-  it("leaves data uri values untouched", () => {
-    expect(hoistSimpleDeclarationsToImportant(".b{background:url(data:image/png;base64,AA==)}")).toBe(
-      ".b{background:url(data:image/png;base64,AA==)}",
-    );
-  });
-
-  it("does not double-apply to declarations that are already important", () => {
-    expect(hoistSimpleDeclarationsToImportant(".c{display:none !important}")).toBe(
-      ".c{display:none !important}",
-    );
-  });
-});
 
 describe("absolutizeHttpUrl", () => {
   it("resolves relative urls and rejects non-http schemes", () => {
