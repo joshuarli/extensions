@@ -2,10 +2,11 @@
 
 Scope: `x-archive-cli/src/fs-store.ts` and `state.ts` at base
 `aa120bb78309a5a03bdd0e19acdae093afa18267`, with filesystem tests in
-`x-archive-cli/test/fs-store.test.ts` and `state.test.ts`. The subsequent
-correction removes the optional JSON reader's existence precheck without changing
-its best-effort contract. No public API, persisted format, dependency, or workflow
-is changed. The generic optional JSON reader remains deliberately tolerant. The separate strict reader
+`x-archive-cli/test/fs-store.test.ts` and `state.test.ts`. Optional JSON reads
+now use one read operation, returning a parsed value or null for absent,
+malformed or unreadable input. Removing the existence precheck preserves that
+best-effort contract and samples concurrently created files at the read.
+No public API, persisted format, dependency, or workflow changes. The separate strict reader
 repair and its earlier inventory are documented in [filesystem store](deslop-filesystem-store.md).
 
 ## Scenario inventory
