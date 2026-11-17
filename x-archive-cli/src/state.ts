@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, renameSync, writeFileSync, existsSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 
@@ -26,7 +26,6 @@ export function downloadsRoot(): string {
 }
 
 export function readJsonFile(path: string): unknown {
-  if (!existsSync(path)) return null;
   try {
     return JSON.parse(readFileSync(path, "utf8")) as unknown;
   } catch {
