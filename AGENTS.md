@@ -31,6 +31,7 @@ This repository builds one Chromium Manifest V3 extension from four feature pack
 
 ## Verification
 
+- Types profile measurements and remaining lint proof: [Types](docs/deslop-types.md).
 - `make test` typechecks and runs all Node Vitest tests; `make lint` typechecks only. With one CPU and `TEST_ARGS=--maxWorkers=1`, cold/warm test costs are 50.49/48.34s (226 tests), lint 1.17s. Settings and gate receipts: [Ground](docs/deslop-ground.md).
 - `make test TEST_ARGS=--maxWorkers=1` bounds Vitest workers; browser tests are separate (`pnpm run test:browser`).
 - Suite manifest and bundle shape: `extension-allow-right-click/test/extension-contract.test.ts`; suite messages: `extension-suite/test/message-contract.test.ts`.
