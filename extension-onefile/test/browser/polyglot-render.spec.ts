@@ -64,6 +64,11 @@ test("loader upgrades images when the archive serves its own bytes", async ({ pa
     await expect
       .poll(async () => (await page.locator("img").getAttribute("src")) ?? "", { timeout: 10_000 })
       .toMatch(/^blob:/);
+    const imageBytes = await page.locator("img").evaluate(async (image) => {
+      const response = await fetch((image as HTMLImageElement).src);
+      return Array.from(new Uint8Array(await response.arrayBuffer()));
+    });
+    expect(imageBytes).toEqual(Array.from(onePixelPng));
     await expect(page.locator("#onefile-banner")).toBeHidden();
     expect(errors).toEqual([]);
     expect(probeReads).toEqual([`http://127.0.0.1:${port}/probe.u.zip.html`]);
