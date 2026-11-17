@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Schema } from "effect";
+import { BookmarkSchema } from "../../x-archive-core/src/parser.ts";
 import { FsBookmarksStore, FsLikesStore } from "../src/fs-store.ts";
 import { writeJsonFile, readJsonFile } from "../src/state.ts";
 
@@ -71,6 +73,61 @@ describe("filesystem archive stores", () => {
     const store = new FsBookmarksStore("123");
     expect(await store.allRecords()).toEqual([]);
     expect(await store.allFolders()).toEqual([]);
+  });
+});
+
+describe.each([
+  ["bookmarks", FsBookmarksStore],
+  ["likes", FsLikesStore],
+] as const)("%s archive safety", (kind, Store) => {
+  it("initializes a missing profile, merges valid records, and isolates accounts", async () => {
+    useTempStateRoot();
+    const first = new Store("123");
+    const second = new Store("456");
+    const old = Schema.decodeUnknownSync(BookmarkSchema)(post("100", "old"));
+    const incoming = Schema.decodeUnknownSync(BookmarkSchema)(post("200", "new"));
+    await first.savePage([old]);
+    await first.savePage([incoming]);
+    expect(await first.allRecords()).toEqual([old, incoming]);
+    expect(await second.allRecords()).toEqual([]);
+    await second.savePage([incoming]);
+    expect(await first.allRecords()).toEqual([old, incoming]);
+    expect(await second.allRecords()).toEqual([incoming]);
+  });
+
+  it.each([
+    ["malformed JSON", "[{\"tweet_id\":\"old\""],
+    ["non-array JSON", "{\"tweet_id\":\"old\"}\n"],
+  ])("rejects a save over %s and preserves its bytes", async (_description, bytes) => {
+    const dir = useTempStateRoot();
+    const store = new Store("123");
+    const incoming = Schema.decodeUnknownSync(BookmarkSchema)(post("200", "new"));
+    await store.savePage([Schema.decodeUnknownSync(BookmarkSchema)(post("100", "old"))]);
+    const path = join(dir, "x-archive", "stores", "123", `${kind}.json`);
+    writeFileSync(path, bytes);
+
+    const result = await Promise.allSettled([store.savePage([incoming])]);
+    expect.soft(result[0]?.status).toBe("rejected");
+    expect.soft(readFileSync(path, "utf8")).toBe(bytes);
+  });
+
+  it("rejects a save when the existing archive cannot be read and preserves its bytes", async () => {
+    const dir = useTempStateRoot();
+    const store = new Store("123");
+    const old = Schema.decodeUnknownSync(BookmarkSchema)(post("100", "old"));
+    const incoming = Schema.decodeUnknownSync(BookmarkSchema)(post("200", "new"));
+    await store.savePage([old]);
+    const path = join(dir, "x-archive", "stores", "123", `${kind}.json`);
+    const bytes = readFileSync(path);
+    chmodSync(path, 0o200);
+    try {
+      expect(() => readFileSync(path)).toThrow(expect.objectContaining({ code: "EACCES" }));
+      const result = await Promise.allSettled([store.savePage([incoming])]);
+      expect.soft(result[0]?.status).toBe("rejected");
+    } finally {
+      chmodSync(path, 0o600);
+    }
+    expect(readFileSync(path)).toEqual(bytes);
   });
 });
 
