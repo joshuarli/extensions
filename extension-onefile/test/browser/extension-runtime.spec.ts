@@ -11,11 +11,17 @@ test("installed suite toggles right-click on a local tab through its worker", as
     response.writeHead(200, { "content-type": "text/html" });
     response.end("<!doctype html><title>Local fixture</title><p>fixture</p>");
   });
-  await new Promise<void>((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
-  const address = server.address();
-  if (!address || typeof address === "string") throw new Error("No fixture port");
   let context: BrowserContext | undefined;
   try {
+    await new Promise<void>((resolveListen, reject) => {
+      server.once("error", reject);
+      server.listen(0, "127.0.0.1", () => {
+        server.off("error", reject);
+        resolveListen();
+      });
+    });
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("No fixture port");
     context = await chromium.launchPersistentContext(profile, {
       channel: "chromium",
       headless: true,
@@ -28,7 +34,9 @@ test("installed suite toggles right-click on a local tab through its worker", as
     const fixture = await context.newPage();
     await fixture.goto(`http://127.0.0.1:${address.port}/`);
     expect(await fixture.title()).toBe("Local fixture");
-    const browserSession = await context.browser()!.newBrowserCDPSession();
+    const browser = context.browser();
+    if (!browser) throw new Error("Persistent context has no browser");
+    const browserSession = await browser.newBrowserCDPSession();
     const { targetInfos } = await browserSession.send("Target.getTargets", { filter: [{ type: "tab", exclude: false }] });
     const target = targetInfos.find((info) => info.url === fixture.url());
     if (!target) throw new Error("Fixture tab target not found");
