@@ -4,6 +4,14 @@ import { capturePolicy } from "../policy.ts";
 export const resourceTokenPrefix = "onefile-resource-",
   missingResourceToken = "onefile-missing";
 
+const simpleDeclaration = /(^|[{};])(\s*(?:--)?[-_a-zA-Z][-_a-zA-Z0-9]*\s*:)([^;{}()"']*(?=[;}]))/gm;
+
+export function hoistSimpleDeclarationsToImportant(css: string): string {
+  return css.replace(simpleDeclaration, (match, prefix: string, name: string, value: string) =>
+    /!important/i.test(value) ? match : `${prefix}${name}${value.trimEnd()} !important`,
+  );
+}
+
 const maxFrameDepth = 3;
 
 const cssUrlPattern = /url\(\s*(?:"([^"]*)"|'([^']*)'|([^)"'\s][^)"']*))\s*\)/g,
@@ -284,6 +292,31 @@ function replaceCanvas(live: ParentNode, clone: ParentNode, shared: CaptureShare
   });
 }
 
+function applyNoscriptFallbacks(clone: Element | DocumentFragment, shared: CaptureShared): void {
+  for (const element of Array.from(clone.querySelectorAll("noscript"))) {
+    const holder = shared.ownerDoc.createElement("template"),
+      hasElementChildren = Array.from(element.childNodes).some((node) => node.nodeType === 1);
+    if (hasElementChildren) {
+      while (element.firstChild) holder.content.append(element.firstChild);
+    } else {
+      holder.innerHTML = element.textContent ?? "";
+    }
+    for (const script of Array.from(holder.content.querySelectorAll("script"))) script.remove();
+    for (const meta of Array.from(holder.content.querySelectorAll("meta"))) {
+      if ((meta.getAttribute("http-equiv") ?? "").trim().toLowerCase() === "refresh") meta.remove();
+    }
+    for (const node of Array.from(holder.content.querySelectorAll("*"))) {
+      for (const attribute of Array.from(node.attributes)) {
+        if (attribute.name.toLowerCase().startsWith("on")) node.removeAttribute(attribute.name);
+      }
+    }
+    for (const style of Array.from(holder.content.querySelectorAll("style"))) {
+      style.textContent = hoistSimpleDeclarationsToImportant(style.textContent ?? "");
+    }
+    element.replaceWith(holder.content);
+  }
+}
+
 async function captureScope(
   live: Document | ShadowRoot,
   clone: Element | DocumentFragment,
@@ -292,6 +325,7 @@ async function captureScope(
   depth: number,
 ): Promise<void> {
   clone.querySelectorAll("script").forEach((element) => element.remove());
+  applyNoscriptFallbacks(clone, shared);
   for (const element of Array.from(clone.querySelectorAll("link"))) {
     const rel = (element.getAttribute("rel") ?? "").toLowerCase();
     if (rel !== "stylesheet") {

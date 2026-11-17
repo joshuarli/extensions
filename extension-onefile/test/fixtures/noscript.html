@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en" data-native-visible="false">
+<head>
+<meta charset="utf-8">
+<title>noscript fallback</title>
+<style>
+[data-native-visible="false"] .reader { visibility: hidden; pointer-events: none; }
+.masthead { visibility: hidden; }
+.masthead[data-ready="true"] { visibility: visible; }
+</style>
+<noscript><style>html .reader { visibility: visible; pointer-events: auto }</style></noscript>
+</head>
+<body>
+<header class="masthead" data-ready="false">Stopped animation</header>
+<main class="reader"><p>Captured text renders without scripts.</p></main>
+<noscript><p class="no-js-note">Reader is shown without scripts.</p></noscript>
+<script>document.documentElement.dataset.nativeVisible = "false";</script>
+</body>
+</html>

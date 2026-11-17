@@ -36,6 +36,10 @@ The prefix carries `<script id="onefile-metadata" type="application/json">` with
 
 When the archive URL serves its own bytes over `http(s)`, the loader extracts each entry, mints a blob URL per MIME type, and swaps the `resources/` references in place. When byte access is blocked (clean `file://`), it shows the banner with source, timestamp, and missing-file count, and swaps images for placeholders. The banner element is `<div id="onefile-banner">`. Page scripts from the saved tab are stripped at capture, so the loader is the only script that runs.
 
+## No-JS fallbacks
+
+Because the archive never runs the page's scripts — not even on `http(s)` — the saved page is the no-JavaScript case. At capture, `<noscript>` content is unwrapped into the page in its place, and the captured stylesheet rules inside it are re-applied with `!important` on simple declarations (values without parens, quotes, or semicolons inside). This outranks the animation-gated rules the save froze into the markup, so the author's declared no-JS rendering is what the archive shows. Scripts, `<meta http-equiv="refresh">`, and `on*` handler attributes inside noscript are removed. A page saved mid-animation keeps the animation's intermediate layout; save again at rest for the revealed state.
+
 ## Limits
 
 Entry counts, sizes, and offsets must fit 32-bit ZIP fields; anything larger fails loudly before writing. The wrapper is the first of `<!--`, `script`, `style`, `noframes`, `noembed`, `iframe` whose terminator is absent from the ZIP bytes; if none fits, the build fails instead of emitting an unparseable file.

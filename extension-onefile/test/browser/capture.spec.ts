@@ -178,4 +178,15 @@ test.describe("capture corpus", () => {
     expect(payload.pageHtml).toContain(".adopted");
     expect(payload.pageHtml).toContain("onefile-resource-");
   });
+
+  test("noscript fallbacks apply when page scripts are stripped", async ({ page }) => {
+    const payload = await captureFixture(page, `${servers.mainOrigin}/noscript.html`);
+    expect(payload.pageHtml).not.toContain("<script");
+    expect(payload.pageHtml).not.toContain("<noscript");
+    expect(payload.pageHtml).toContain("visibility: visible !important");
+    expect(payload.pageHtml).toContain("Reader is shown without scripts.");
+    await page.setContent(payload.pageHtml);
+    await expect(page.locator(".reader")).toBeVisible();
+    await expect(page.locator(".no-js-note")).toBeVisible();
+  });
 });

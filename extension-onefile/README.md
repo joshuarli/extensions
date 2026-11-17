@@ -8,7 +8,9 @@ Onefile is one feature of the unified extension. For browser installation, follo
 
 Open the toolbar popup and choose **Save page**. The extension captures the tab, builds the archive, and downloads `Page Title (2026-10-27 15-30-00).u.zip.html`. The badge shows save progress as a percentage and the title shows the fetched file count, `!` with a count when files were missing, and both clear on success. Restricted pages (for example `chrome://`) fail loudly through the action title.
 
-Open the file over `http(s)` for full fidelity, or via `file://` for text and layout with image placeholders. `unzip -t` validates the embedded archive. See [FORMAT.md](FORMAT.md) for the layout and [PERFORMANCE.md](PERFORMANCE.md) for budgets.
+Open the file over `http(s)` served by a polyglot-aware server (such as `laputa-systems/srv`) for full fidelity — CSS-referenced resources resolve at their archive paths; a plain static server still shows the text and blob-swapped images. Via `file://` you get text and layout with image placeholders. `unzip -t` validates the embedded archive. See [FORMAT.md](FORMAT.md) for the layout and [PERFORMANCE.md](PERFORMANCE.md) for budgets.
+
+The archive never runs the saved page's scripts, so the page's `<noscript>` fallbacks are applied at capture instead: the archive shows the author's no-JS rendering. A page saved mid-animation keeps its intermediate layout; save again at rest for the revealed state.
 
 ## Permissions
 
