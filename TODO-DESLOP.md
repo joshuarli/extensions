@@ -32,6 +32,17 @@ SQLite page rollback and the suite's ownership of global Chrome listeners.
 Bounded Node Stryker evidence is available; broader Tests and browser
 qualification remain open. Ground does not qualify the Tests lane.
 
+The prior full filesystem-store/state selection had 117 identities: 114 killed, two equivalent reader guards and one optional-reader precheck survivor. The redundant precheck was removed under the best-effort cache contract; its three mutation identities disappeared. The complete current selection has 114 identities: 112 killed, two equivalent reader guards, zero unrun. Twenty-five focused Node tests and 253 full Node tests pass. Concurrent-writer guarantees remain out of scope. See [storage/state](docs/deslop-storage-state.md). This does not close DSLP-4.
+
+Extensions #15 merged the adopted type-aware lint rule and an installed
+Chromium job. Both checks passed on `1ad499ed4b3e8201eb54a09a8cdbae6493959b8a`.
+The installed test observes real MV3 service worker messages and an
+injected right-click toggle. The lint and installed browser case also
+passed locally after temporarily removing this backlog. Stuff still
+needs to register the retained guarantees. First-party coverage, the
+whole-change mutation gate, broader browser boundaries and test cost
+remain open.
+
 ## Tickets
 
 
@@ -41,9 +52,8 @@ qualification remain open. Ground does not qualify the Tests lane.
 
 - **Area:** deslop · tests
 - **Where:** test suites and CI
-- **Problem:** The Vitest/coverage version mismatch is repaired (DSLP-6), and Stryker/coverage tools are mirrored. Whole current first-party coverage, remaining boundary gaps and a qualified whole-change mutation lane remain unfinished. The filesystem-store/state component now has an accounted baseline (95 identities:37 killed,13 survivors,45 uncovered) and a repaired selection (117:80 killed,12 survivors,25 uncovered). At that repair, only the changed record reader's24 identities were qualified:22 killed,two equivalent. The remaining component leads were scan-state paths, empty saves, folder filtering, environment defaults and write-failure behavior. Focused V8 coverage is59/71 lines and14/23 branches; all237 Node tests and lint pass. Historical larger parser/storage/URL results do not qualify changed current inputs. Browser/extension runtime remains a separate boundary. See docs/deslop-filesystem-store.md.
-- **Component update:** The prior full filesystem-store/state selection had 117 identities: 114 killed, two equivalent reader guards and one optional-reader precheck survivor. The redundant precheck was removed under the best-effort cache contract; its three mutation identities disappeared. The complete current selection has 114 identities: 112 killed, two equivalent reader guards, zero unrun. Twenty-five focused Node tests and 253 full Node tests pass. Concurrent-writer guarantees remain out of scope. See [storage/state](docs/deslop-storage-state.md). This does not close DSLP-4.
-- **Recommendation:** Continue bounded current-version component Scenarios, dispositioning each critical survivor and unrun decision, with public-boundary fault controls. Keep Node and real-browser qualification distinct. Complete first-party coverage reporting and whole-change union/negative controls before relying on a mutation lane; CI changes require separate owner authorization. Accept only when critical survivors, suite-cost budget and supported lane requirements are met.
+- **Problem:** Linux Node checks run the adopted type-aware lint rule, and the separate installed Chromium job exercises the suite service worker and the injected right-click code. Both passed on 1ad499ed. The storage/state Scenario accounted for 114 identities (112 caught and two documented equivalents). The remaining Node work is first-party coverage and the bounded parser and archive decision inventory. Browser qualification still needs the already named Onefile capture and worker lifecycle boundaries.
+- **Recommendation:** Keep Node and real-browser results separate. Account for every remaining decision and disposition every survivor. Qualify the TypeScript whole-change union and hosted negative controls, then measure final test and CI costs and exercise the retained checks after removing TODO-DESLOP.md in an isolated checkout. Register qualified retained checks in Stuff.
 - **Fix with:** deslop
 - **Effort:** M
 

@@ -36,7 +36,7 @@ This repository builds one Chromium Manifest V3 extension from four feature pack
 - `make test` typechecks and runs all Node Vitest tests; `make lint` independently typechecks and runs type-aware Oxlint `no-unsafe-argument` over TypeScript. With one CPU and `TEST_ARGS=--maxWorkers=1`, current warm test/lint costs are 51.54/1.16s (226 tests); [Types](docs/deslop-types.md) records gates. Original cold/warm costs: [Ground](docs/deslop-ground.md).
 - `make test TEST_ARGS=--maxWorkers=1` bounds Vitest workers; browser tests are separate (`pnpm run test:browser`).
 - Suite manifest and bundle shape: `extension-allow-right-click/test/extension-contract.test.ts`; suite messages: `extension-suite/test/message-contract.test.ts`.
-- Right-click page behavior: `extension-allow-right-click/test/user-select-restoration.browser.test.ts` (excluded from Node suite); real extension runtime: none.
+- Right-click page behavior: `extension-allow-right-click/test/user-select-restoration.browser.test.ts`. The installed Chromium CI job tests the real service worker and the right-click toggle in `extension-onefile/test/browser/extension-runtime.spec.ts`.
 - YouTube messages: `extension-youtube-transcript/test/message-contract.test.ts`; HTTP and transcript parsing: `http.test.ts`, `transcript.test.ts` in that test directory.
 - Onefile capture messages: `extension-onefile/test/message-contract.test.ts`; ZIP and HTML formats: `zip.test.ts`, `polyglot.test.ts`, `archive-integrity.test.ts`; Chromium capture: `test/browser/capture.spec.ts`.
 - X GraphQL request and response handling: `extension-x-bookmarks/test/api.test.ts`, `parser.test.ts`, `capture.test.ts`; IndexedDB archive state: `storage.test.ts`, `likes.test.ts`, `profile.test.ts`.
