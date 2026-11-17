@@ -1,6 +1,6 @@
 # Development
 
-The root package owns dependencies and scripts for the unified extension. Node.js runs the build script; pnpm manages JavaScript dependencies and the lockfile. Requires Node.js 22.12 or newer.
+The root package owns dependencies and scripts for the unified extension. Node.js runs the build script; pnpm manages JavaScript dependencies and the lockfile. Supported Node.js versions are 22.12 through 22.x, 24.x, and 26 or newer.
 
 ## Setup and commands
 

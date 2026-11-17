@@ -5,7 +5,7 @@ This repository builds one Chromium Manifest V3 extension with four features:
 - **Allow Right-Click** toggles right-click, text selection, copy, paste, and drag support on the current tab.
 - **YouTube Transcript Copier** copies a video's transcript or SRT subtitles and supports a preferred transcript language. See the [YouTube user guide](extension-youtube-transcript/README.md).
 - **X Archive** exports X bookmarks and any profile's full post history (posts, reposts, replies, with media files) to a local cumulative archive. See the [X Archive guide](extension-x-bookmarks/README.md).
-- **x-archive-cli** archives the same data from the terminal — bookmarks, likes and profiles — to `~/Downloads` with one command. See the [CLI guide](x-archive-cli/README.md).
+- **x-archive-cli** archives the same data from the terminal — bookmarks, likes and profiles — to `~/.local/share/x/downloads` by default. See the [CLI guide](x-archive-cli/README.md).
 - **Onefile** saves the active tab as an offline-openable universal self-extracting ZIP (`.u.zip.html`). See the [Onefile guide](extension-onefile/README.md).
 
 The four `extension-*` packages remain separate source and test units; [extension-suite](extension-suite) composes them into one worker, manifest, popup, and options page.
