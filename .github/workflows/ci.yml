@@ -36,3 +36,32 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: typecheck and unit tests
         run: make test
+      - name: Type-aware lint
+        run: pnpm run lint
+
+  installed-browser:
+    name: Installed Chromium extension
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+        with:
+          version: 11.0.2
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Install pinned Chromium
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Exercise the installed extension
+        run: |
+          mkdir -p .work/tmp
+          export TMPDIR="$PWD/.work/tmp"
+          make build
+          pnpm run test:browser extension-onefile/test/browser/extension-runtime.spec.ts
