@@ -74,19 +74,39 @@ describe("filesystem archive stores", () => {
     expect(await store.allRecords()).toEqual([]);
     expect(await store.allFolders()).toEqual([]);
   });
+
+  it("merges folders and preserves corrupt folder files", async () => {
+    const dir = useTempStateRoot();
+    const store = new FsBookmarksStore("123");
+    await store.saveFolders([{ id: "one", name: "caf\u00e9" }, { id: "keep", name: "untouched" }]);
+    expect(await store.allFolders()).toEqual([
+      { id: "one", name: "caf\u00e9" }, { id: "keep", name: "untouched" },
+    ]);
+    await store.saveFolders([{ id: "two", name: "second" }, { id: "one", name: "renamed" }]);
+    expect(await store.allFolders()).toEqual([
+      { id: "one", name: "renamed" }, { id: "keep", name: "untouched" }, { id: "two", name: "second" },
+    ]);
+    const path = join(dir, "x-archive", "stores", "123", "folders.json");
+    writeFileSync(path, "{broken");
+    await expect(store.allFolders()).rejects.toThrow();
+    await expect(store.saveFolders([{ id: "three", name: "third" }])).rejects.toThrow();
+    expect(readFileSync(path, "utf8")).toBe("{broken");
+  });
 });
 
 describe.each([
   ["bookmarks", FsBookmarksStore],
   ["likes", FsLikesStore],
 ] as const)("%s archive safety", (kind, Store) => {
-  it("initializes a missing profile, merges valid records, and isolates accounts", async () => {
-    useTempStateRoot();
+  it("initializes missing profiles, merges Unicode records with a BOM, and isolates accounts", async () => {
+    const dir = useTempStateRoot();
     const first = new Store("123");
     const second = new Store("456");
-    const old = Schema.decodeUnknownSync(BookmarkSchema)(post("100", "old"));
+    const old = Schema.decodeUnknownSync(BookmarkSchema)(post("100", "caf\u00e9"));
     const incoming = Schema.decodeUnknownSync(BookmarkSchema)(post("200", "new"));
     await first.savePage([old]);
+    const path = join(dir, "x-archive", "stores", "123", `${kind}.json`);
+    writeFileSync(path, Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), readFileSync(path)]));
     await first.savePage([incoming]);
     expect(await first.allRecords()).toEqual([old, incoming]);
     expect(await second.allRecords()).toEqual([]);
@@ -106,8 +126,19 @@ describe.each([
     const path = join(dir, "x-archive", "stores", "123", `${kind}.json`);
     writeFileSync(path, bytes);
 
-    const result = await Promise.allSettled([store.savePage([incoming])]);
-    expect.soft(result[0]?.status).toBe("rejected");
+    const results = await Promise.allSettled([store.allRecords(), store.savePage([incoming])]);
+    for (const result of results) {
+      expect.soft(result.status).toBe("rejected");
+      if (result.status === "rejected") {
+        const failure: unknown = result.reason;
+        expect(failure).toBeInstanceOf(Error);
+        if (failure instanceof Error) {
+          expect(failure.message).toContain(path);
+          if (_description === "malformed JSON") expect(failure.cause).toBeInstanceOf(SyntaxError);
+          else expect(failure).toBeInstanceOf(TypeError);
+        }
+      }
+    }
     expect.soft(readFileSync(path, "utf8")).toBe(bytes);
   });
 
@@ -124,20 +155,52 @@ describe.each([
       expect(() => readFileSync(path)).toThrow(expect.objectContaining({ code: "EACCES" }));
       const result = await Promise.allSettled([store.savePage([incoming])]);
       expect.soft(result[0]?.status).toBe("rejected");
+      if (result[0]?.status === "rejected") {
+        const failure: unknown = result[0].reason;
+        expect(failure).toMatchObject({ code: "EACCES", path });
+      }
     } finally {
       chmodSync(path, 0o600);
     }
     expect(readFileSync(path)).toEqual(bytes);
   });
+
+  it("rejects invalid UTF-8 without rewriting existing record bytes", async () => {
+    const dir = useTempStateRoot();
+    const store = new Store("123");
+    const old = Schema.decodeUnknownSync(BookmarkSchema)(post("100", "old"));
+    const incoming = Schema.decodeUnknownSync(BookmarkSchema)(post("200", "new"));
+    await store.savePage([old]);
+    const path = join(dir, "x-archive", "stores", "123", `${kind}.json`);
+    const bytes = Buffer.from(JSON.stringify([{ ...old, full_text: "\u00ff" }]), "latin1");
+    writeFileSync(path, bytes);
+    const results = await Promise.allSettled([store.allRecords(), store.savePage([incoming])]);
+    for (const result of results) {
+      expect.soft(result.status).toBe("rejected");
+      if (result.status === "rejected") {
+        const failure: unknown = result.reason;
+        expect(failure).toBeInstanceOf(Error);
+        if (failure instanceof Error) {
+          expect(failure.message).toContain(path);
+          expect(failure.cause).toBeInstanceOf(TypeError);
+        }
+      }
+    }
+    expect.soft(readFileSync(path)).toEqual(bytes);
+  });
 });
 
 describe("state file helpers", () => {
-  it("writes JSON with a temp file and keeps the previous content on failure", async () => {
+  it("round-trips state and treats missing or malformed optional JSON as absent", () => {
     const dir = useTempStateRoot();
     const path = join(dir, "sample.json");
+    expect(readJsonFile(path)).toBeNull();
     writeJsonFile(path, { a: 1 });
     expect(readJsonFile(path)).toEqual({ a: 1 });
     writeJsonFile(path, { a: 2 });
     expect(readJsonFile(path)).toEqual({ a: 2 });
+    writeFileSync(path, "{");
+    expect(readJsonFile(path)).toBeNull();
+    expect(readFileSync(path, "utf8")).toBe("{");
   });
 });

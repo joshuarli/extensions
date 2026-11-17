@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { Schema } from "effect";
 import { BookmarkSchema, type Bookmark } from "../../x-archive-core/src/parser.ts";
@@ -15,8 +16,21 @@ import type {
 import { storeDir, stateDir, readJsonFile, writeJsonFile } from "./state.ts";
 
 function readRecords(path: string): unknown[] {
-  const value = readJsonFile(path);
-  return Array.isArray(value) ? value : [];
+  let bytes: Buffer;
+  try {
+    bytes = readFileSync(path);
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") return [];
+    throw error;
+  }
+  let value: unknown;
+  try {
+    value = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+  } catch (error) {
+    throw new Error(`Cannot parse archive ${path}`, { cause: error });
+  }
+  if (!Array.isArray(value)) throw new TypeError(`Archive ${path} must contain a JSON array`);
+  return value;
 }
 
 function writeRecords(path: string, records: unknown[]): void {
