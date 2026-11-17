@@ -2,9 +2,38 @@ import { describe, expect, it } from "vitest";
 import {
   absolutizeHttpUrl,
   collectCssResources,
+  collectModuleSpecifiers,
   resolveCssImports,
   splitSrcset,
 } from "../src/inject/capture.ts";
+
+describe("collectModuleSpecifiers", () => {
+  it("collects static, side-effect, re-export, dynamic, and worker specifiers", () => {
+    const source = [
+      'import x from "./a.js";',
+      'import "./b.js";',
+      'export { y } from "./c.js";',
+      'export * from "./d.js";',
+      'const m = import("./e.js");',
+      'new URL("./f.js", import.meta.url);',
+    ].join("\n");
+    expect(collectModuleSpecifiers(source).sort()).toEqual(
+      ["./a.js", "./b.js", "./c.js", "./d.js", "./e.js", "./f.js"].sort(),
+    );
+  });
+
+  it("collects minified module syntax", () => {
+    const source = 'import{a}from"./g.js";import"./h.js";export{i}from"./i.js";export*as ns from"./j.js";export*from"./k.js";';
+    expect(collectModuleSpecifiers(source).sort()).toEqual(
+      ["./g.js", "./h.js", "./i.js", "./j.js", "./k.js"].sort(),
+    );
+  });
+
+  it("does not mistake import.meta for an imported module", () => {
+    expect(collectModuleSpecifiers('const u = new URL("./k.js", import.meta.url);')).toEqual(["./k.js"]);
+    expect(collectModuleSpecifiers("const meta = import.meta;")).toEqual([]);
+  });
+});
 
 describe("absolutizeHttpUrl", () => {
   it("resolves relative urls and rejects non-http schemes", () => {
@@ -22,6 +51,35 @@ describe("splitSrcset", () => {
       { url: "b.png", descriptor: "2x" },
     ]);
     expect(splitSrcset("  ")).toEqual([]);
+  });
+});
+
+describe("collectCssResources fragment references", () => {
+  it("keeps same-document fragment references verbatim", () => {
+    const { rewritten, resources } = collectCssResources(
+      ".a{filter:url(#material-0)} .b{filter:url('#material-1')}",
+      "https://example.com/page",
+    );
+    expect(rewritten).toBe(".a{filter:url(#material-0)} .b{filter:url('#material-1')}");
+    expect(resources).toEqual([]);
+  });
+
+  it("normalizes absolute same-document fragment references to fragments", () => {
+    const { rewritten, resources } = collectCssResources(
+      '.a{filter:url("https://example.com/page#material-2")}',
+      "https://example.com/page",
+    );
+    expect(rewritten).toBe('.a{filter:url("#material-2")}');
+    expect(resources).toEqual([]);
+  });
+
+  it("keeps the fragment when the referenced file is foreign", () => {
+    const { rewritten, resources } = collectCssResources(
+      '.a{fill:url("https://example.com/icons.svg#dot")}',
+      "https://example.com/page",
+    );
+    expect(resources).toEqual([{ url: "https://example.com/icons.svg", kind: "image" }]);
+    expect(rewritten).toBe('.a{fill:url("https://example.com/icons.svg#dot")}');
   });
 });
 

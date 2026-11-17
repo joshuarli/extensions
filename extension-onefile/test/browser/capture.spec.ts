@@ -178,6 +178,20 @@ test.describe("capture corpus", () => {
     expect(payload.pageHtml).toContain("onefile-resource-");
   });
 
+  test("same-origin scripts reserve resource slots so tokens match payload indices", async ({ page }) => {
+    const payload = await captureFixture(page, `${servers.mainOrigin}/tokens.html`);
+    const scriptIndex = payload.resources.findIndex((resource) => resource.kind === "script"),
+      imageIndex = payload.resources.findIndex((resource) => resource.kind === "image");
+    expect(payload.resources[scriptIndex]?.url).toBe(`${servers.mainOrigin}/tokens-app.js`);
+    expect(scriptIndex).toBe(0);
+    expect(imageIndex).toBe(scriptIndex + 1);
+    expect(payload.pageHtml).toContain(`onefile-resource-${imageIndex}`);
+    expect(payload.pageHtml).not.toContain(`onefile-resource-${scriptIndex}`);
+    for (const match of payload.pageHtml.matchAll(/onefile-resource-(\d+)/g)) {
+      expect(Number(match[1])).toBeLessThan(payload.resources.length);
+    }
+  });
+
   test("noscript content is dropped because archives run their scripts", async ({ page }) => {
     const payload = await captureFixture(page, `${servers.mainOrigin}/noscript.html`);
     expect(payload.pageHtml).not.toContain("<noscript");
