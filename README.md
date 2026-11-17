@@ -6,7 +6,7 @@ This repository builds one Chromium Manifest V3 extension with four features:
 - **YouTube Transcript Copier** copies a video's transcript or SRT subtitles and supports a preferred transcript language. See the [YouTube user guide](extension-youtube-transcript/README.md).
 - **X Archive** exports X bookmarks and any profile's full post history (posts, reposts, replies, with media files) to a local cumulative archive. See the [X Archive guide](extension-x-bookmarks/README.md).
 - **x-archive-cli** archives the same data from the terminal — bookmarks, likes and profiles — to `~/.local/share/x/downloads` by default. See the [CLI guide](x-archive-cli/README.md).
-- **onefile-cli** saves web pages from the terminal. See the [CLI guide](onefile-cli/README.md).
+- **onefile-cli** saves a page from the terminal as the same `.u.zip.html` archive, to `~/.local/share/onefile` by default. See the [CLI guide](onefile-cli/README.md).
 - **Onefile** saves the active tab as an offline-openable universal self-extracting ZIP (`.u.zip.html`). See the [Onefile guide](extension-onefile/README.md).
 
 The four `extension-*` packages remain separate source and test units; [extension-suite](extension-suite) composes them into one worker, manifest, popup, and options page.
@@ -28,7 +28,6 @@ The unified extension has one extension ID. Storage, IndexedDB archives, and ext
 Click the toolbar icon to open the feature hub:
 
 - **Allow Right-Click** enables or disables right-click restoration for the active tab.
-- **onefile-cli** saves web pages from the terminal. See the [CLI guide](onefile-cli/README.md).
 - **Onefile** saves the active tab as a `.u.zip.html` file.
 - **YouTube Transcript** appears on YouTube pages and copies the transcript or SRT subtitles.
 - **X Archive** archives any profile's full post history or your bookmarks — download, progress, and stop all live in the popup.
