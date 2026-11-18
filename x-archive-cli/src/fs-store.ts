@@ -38,7 +38,8 @@ function writeRecords(path: string, records: unknown[]): void {
 }
 
 function readState<T>(path: string, decode: (value: unknown) => T | null): T | null {
-  return decode(readJsonFile(path));
+  const value = readJsonFile(path);
+  return decode(value);
 }
 
 export class FsBookmarksStore implements BookmarksStore {

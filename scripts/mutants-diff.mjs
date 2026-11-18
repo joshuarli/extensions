@@ -25,7 +25,7 @@ const EQUIVALENT = {
     decisions: [[319, 14, "BlockStatement", "{}"]],
   },
   [STORE]: {
-    digest: "f0cf89a9b0c99f695ef280704670a7e14ca4c986b4f819bb345c896c36b68642",
+    digest: "a605428416547123f8932d3010d79ffebc70c3ae08e60fd0a8f92284d1c9c585",
     decisions: [
       [23, 9, "ConditionalExpression", "true"],
       [23, 9, "LogicalOperator", 'error instanceof Error || "code" in error'],
