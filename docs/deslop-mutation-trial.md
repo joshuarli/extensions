@@ -27,7 +27,7 @@ three negative cases.
 | Remove the private file mode and newline test in `state.test.ts` | The mode-object and newline-string mutations in `state.ts:39` survived. All 24 remaining focused tests passed. |
 | Also split the existing optional state read and decode into two statements in `fs-store.ts` | The full changed file and the protected state file both ran. The known reader expressions are unchanged, so the control records the exact updated file digest for their equivalents. The same two state mutations survived while the changed read path's mutations were caught. All 24 focused tests passed. |
 | Add an early return in `writeJsonFile` for an untested `.unused` suffix | Two condition mutations survived at the new decision. All 25 focused tests passed. |
-| Append a blank line to this storage evidence | The full change was classified as documentation and selected no jobs. |
+| Append a blank line to `docs/deslop-storage-state.md` | The full change was classified as documentation and selected no jobs. |
 
 ## Run it
 
