@@ -39,9 +39,16 @@ Chromium job. Both checks passed on `1ad499ed4b3e8201eb54a09a8cdbae6493959b8a`.
 The installed test observes real MV3 service worker messages and an
 injected right-click toggle. The lint and installed browser case also
 passed locally after temporarily removing this backlog. Stuff still
-needs to register the retained guarantees. First-party coverage, the
-whole-change mutation gate, broader browser boundaries and test cost
-remain open.
+needs to register the retained guarantees. The whole-change mutation gate,
+broader browser boundaries and test cost remain open.
+
+At `6625922`, the first-party Node coverage target passed 273 tests
+with Vitest and V8 5.0.5 on macOS arm64 and Node 26.13.1. It records
+2,615 of 4,715 lines and 1,693 of 3,393 branches. The default discovery
+run had the same covered counts over 3,461 lines and 2,715 branches.
+The wider denominator includes unimported modules such as Onefile's
+browser background entry. Node coverage and installed Chromium results
+remain separate. The TypeScript mutation gate is open.
 
 ## Tickets
 
@@ -52,7 +59,7 @@ remain open.
 
 - **Area:** deslop · tests
 - **Where:** test suites and CI
-- **Problem:** Linux Node checks run the adopted type-aware lint rule, and the separate installed Chromium job exercises the suite service worker and the injected right-click code. Both passed on 1ad499ed. The storage/state Scenario accounted for 114 identities (112 caught and two documented equivalents). The remaining Node work is first-party coverage and the bounded parser and archive decision inventory. Browser qualification still needs the already named Onefile capture and worker lifecycle boundaries.
+- **Problem:** Linux Node checks run the adopted type-aware lint rule, and the installed Chromium job exercises the suite service worker and right-click injection. The Node coverage target includes unimported first-party modules. The storage/state scenario accounted for 114 identities, including two documented equivalents. The bounded parser and archive decision inventory, TypeScript whole-change gate, and Onefile capture and lifecycle browser boundaries remain open.
 - **Recommendation:** Keep Node and real-browser results separate. Account for every remaining decision and disposition every survivor. Qualify the TypeScript whole-change union and hosted negative controls, then measure final test and CI costs and exercise the retained checks after removing TODO-DESLOP.md in an isolated checkout. Register qualified retained checks in Stuff.
 - **Fix with:** deslop
 - **Effort:** M
