@@ -6,6 +6,7 @@ import {
   injectLoaderSlot,
   injectMetadataSlot,
   selectZipWrapper,
+  type PolyglotUnresolved,
 } from "../src/polyglot.ts";
 import { extractStoredEntry, readStoredArchive } from "../src/zip.ts";
 
@@ -39,15 +40,16 @@ describe("loader slot", () => {
 
 describe("polyglot archive", () => {
   const imageBytes = new Uint8Array([137, 80, 78, 71, 1, 2, 3]);
+  const unresolved = [{ url: "https://example.com/missing.png", reason: "HTTP 404" }];
 
-  function build() {
+  function build(missing: PolyglotUnresolved[] = unresolved) {
     return buildPolyglot({
       pageHtml: samplePage,
       loaderSource: "globalThis.onefileProbe = true;",
       resources: [{ name: "resources/0.png", mime: "image/png", data: imageBytes }],
       sourceUrl: "https://example.com/",
       capturedAtMs: 1_700_000_000_000,
-      unresolved: [{ url: "https://example.com/missing.png", reason: "HTTP 404" }],
+      unresolved: missing,
     });
   }
 
@@ -56,12 +58,40 @@ describe("polyglot archive", () => {
       directory = readStoredArchive(archive.fileBytes);
     expect(directory.entries.map((entry) => entry.name)).toEqual(["resources/0.png", "metadata.json"]);
     expect(extractStoredEntry(directory, "resources/0.png")).toEqual(imageBytes);
-    const metadata = JSON.parse(textDecoder.decode(extractStoredEntry(directory, "metadata.json"))) as {
-      prefixLength: number;
-      sourceUrl: string;
+    const expected = {
+      generator: "extension-onefile",
+      prefixLength: archive.prefixLength,
+      sourceUrl: "https://example.com/",
+      capturedAtMs: 1_700_000_000_000,
+      entries: [{ name: "resources/0.png", mime: "image/png", size: 7, crc32: 3348211467 }],
+      unresolved,
     };
-    expect(metadata.prefixLength).toBe(archive.prefixLength);
-    expect(metadata.sourceUrl).toBe("https://example.com/");
+    const storedMetadata: unknown = JSON.parse(textDecoder.decode(extractStoredEntry(directory, "metadata.json")));
+    expect(storedMetadata).toEqual(expected);
+    expect(archive.metadata).toEqual(expected);
+    expect(textDecoder.decode(archive.fileBytes.subarray(-3))).toBe("-->");
+  });
+
+  it("embeds a bounded unresolved sample and preserves the full archive index", () => {
+    const missing = Array.from({ length: 26 }, (_, index) => ({
+      url: `https://example.com/missing-${index}.png`,
+      reason: "HTTP 404",
+    }));
+    const archive = build(missing);
+    const prefixText = textDecoder.decode(archive.fileBytes.subarray(0, archive.prefixLength));
+    const match = /<script id="onefile-metadata" type="application\/json">([^]*?)<\/script>/.exec(prefixText);
+    expect(match).not.toBeNull();
+    const embedded: unknown = JSON.parse(match?.[1] ?? "");
+    expect(embedded).toEqual({
+      sourceUrl: "https://example.com/",
+      capturedAtMs: 1_700_000_000_000,
+      unresolvedTotal: 26,
+      unresolvedSample: missing.slice(0, 25),
+      entries: [{ name: "resources/0.png", mime: "image/png" }],
+    });
+    const directory = readStoredArchive(archive.fileBytes);
+    const storedMetadata: unknown = JSON.parse(textDecoder.decode(extractStoredEntry(directory, "metadata.json")));
+    expect(storedMetadata).toMatchObject({ unresolved: missing });
   });
 
   it("selects the comment wrapper for clean bytes and later wrappers for hostile bytes", () => {
