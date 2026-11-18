@@ -8,6 +8,9 @@ const entry = (result: unknown, id = "123") => ({
 const page = (entries: unknown[], key = "bookmark_timeline_v2") => ({
   data: { [key]: { timeline: { instructions: [{ type: "TimelineAddEntries", entries }] } } },
 });
+const folderPage = (slice: unknown) => ({
+  data: { viewer: { user_results: { result: { bookmark_collections_slice: slice } } } },
+});
 const cursor = { entryId: "cursor-bottom-0", content: { value: "next" } };
 
 describe("bookmark timelines", () => {
@@ -49,14 +52,46 @@ describe("bookmark timelines", () => {
   });
 
   it("reads folders and their next cursor", () => {
-    const result = parseFolders({ data: { viewer: { user_results: { result: {
-      bookmark_collections_slice: { items: [{ id: "f1", name: "Research" }],
-        slice_info: { next_cursor: "cursor" } },
-    } } } } });
+    const result = parseFolders(folderPage({
+      items: [{ id: "f1", name: "Research" }], slice_info: { next_cursor: "cursor" },
+    }));
     expect(result).toEqual({ valid: true, folders: [{ id: "f1", name: "Research" }], nextCursor: "cursor" });
-    expect(parseFolders({ data: { viewer: { user_results: { result: {
-      bookmark_collections_slice: { items: [null] },
-    } } } } }).valid).toBe(false);
+  });
+
+  it("reads the collection ID fallback and an explicit final cursor", () => {
+    expect(parseFolders(folderPage({
+      items: [{ collection_id: "f2", name: "Saved" }], slice_info: { next_cursor: null },
+    }))).toEqual({ valid: true, folders: [{ id: "f2", name: "Saved" }], nextCursor: null });
+  });
+
+  it.each([
+    { label: "missing slice", slice: undefined },
+    { label: "missing items", slice: {} },
+    { label: "non-string cursor", slice: { items: [], slice_info: { next_cursor: 1 } } },
+    { label: "missing ID", slice: { items: [{ name: "Unnamed" }] } },
+    { label: "missing name after a valid folder", slice: { items: [{ id: "f1", name: "Research" }, { id: "f2" }] } },
+    { label: "non-object item", slice: { items: [null] } },
+  ])("rejects a folder page with $label", ({ slice }) => {
+    expect(parseFolders(folderPage(slice))).toEqual({ valid: false, folders: [], nextCursor: null });
+  });
+
+  it("reads a replacement cursor from the older bookmark timeline", () => {
+    const instructions = [
+      { type: "TimelineAddEntries", entries: [cursor] },
+      { type: "TimelineReplaceEntry", entry: { entryId: "cursor-bottom-1", content: { value: "replacement" } } },
+    ];
+    const data = { data: { bookmark_timeline: { timeline: { instructions } } } };
+    expect(parseTimeline(data, now)).toEqual({
+      valid: true, bookmarks: [], nextCursor: "replacement", terminated: false,
+    });
+  });
+
+  it("rejects an instruction without entries after a valid cursor", () => {
+    const instructions = [{ type: "TimelineAddEntries", entries: [cursor] }, { type: "TimelineAddEntries" }];
+    const data = { data: { bookmark_timeline_v2: { timeline: { instructions } } } };
+    expect(parseTimeline(data, now)).toEqual({
+      valid: false, bookmarks: [], nextCursor: null, detail: '"TimelineAddEntries" instruction has no entries array',
+    });
   });
 });
 
