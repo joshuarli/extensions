@@ -64,4 +64,4 @@ jobs:
           mkdir -p .work/tmp
           export TMPDIR="$PWD/.work/tmp"
           make build
-          pnpm run test:browser extension-onefile/test/browser/extension-runtime.spec.ts
+          pnpm run test:browser extension-onefile/test/browser/extension-runtime.spec.ts extension-onefile/test/browser/capture.spec.ts --output="$PWD/.work/tmp/playwright-results"
