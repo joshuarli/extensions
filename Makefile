@@ -1,4 +1,4 @@
-.PHONY: build dist test check lint install
+.PHONY: build dist test coverage check lint install
 
 build:
 	pnpm run build
@@ -9,6 +9,9 @@ dist:
 test:
 	pnpm run typecheck
 	pnpm run test $(TEST_ARGS)
+
+coverage:
+	pnpm run test --coverage $(TEST_ARGS)
 
 check:
 	pnpm run check
