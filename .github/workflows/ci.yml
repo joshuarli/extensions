@@ -39,6 +39,44 @@ jobs:
       - name: Type-aware lint
         run: pnpm run lint
 
+  mutants:
+    name: Mutation trial (${{ matrix.scope }})
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-26.04-arm
+    timeout-minutes: 14
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        scope: [parser, storage]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+        with:
+          version: 11.0.2
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          cache: pnpm
+      - name: Install pinned tools
+        run: |
+          mkdir -p .work/tmp/stryker-tools
+          printf '%s\n' '.work/' >> "$(git rev-parse --git-path info/exclude)"
+          export TMPDIR="$PWD/.work/tmp"
+          pnpm install --frozen-lockfile --ignore-scripts
+          npm install --prefix .work/tmp/stryker-tools --ignore-scripts --no-audit --no-fund --save-exact \
+            --registry https://npm.17166969.xyz/current/ @stryker-mutator/core@10.1.1 \
+            @stryker-mutator/vitest-runner@10.1.1 typescript@6.0.3 vitest@5.1.0
+      - name: Exercise the selected branch
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          MUTANTS_SCOPE: --shard=${{ matrix.scope }}
+        run: BASE="origin/$BASE_REF" make mutants-diff
+
   installed-browser:
     name: Installed Chromium extension
     runs-on: ubuntu-26.04

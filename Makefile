@@ -1,4 +1,4 @@
-.PHONY: build dist test coverage check lint install
+.PHONY: build dist test coverage check lint install mutants-diff
 
 build:
 	pnpm run build
@@ -12,6 +12,9 @@ test:
 
 coverage:
 	pnpm run test --coverage $(TEST_ARGS)
+
+mutants-diff:
+	node scripts/mutants-diff.mjs "$${BASE:-origin/main}" "$${MUTANTS_SCOPE:-}"
 
 check:
 	pnpm run check
