@@ -5,9 +5,10 @@ const now = "2026-10-30T00:00:00.000Z";
 const entry = (result: unknown, id = "123") => ({
   entryId: "tweet-" + id, sortIndex: "999", content: { itemContent: { tweet_results: { result } } },
 });
-const page = (entries: unknown[], key = "bookmark_timeline_v2") => ({
-  data: { [key]: { timeline: { instructions: [{ type: "TimelineAddEntries", entries }] } } },
+const timeline = (instructions: unknown, key = "bookmark_timeline_v2") => ({
+  data: { [key]: { timeline: { instructions } } },
 });
+const page = (entries: unknown[], key?: string) => timeline([{ type: "TimelineAddEntries", entries }], key);
 const folderPage = (slice: unknown) => ({
   data: { viewer: { user_results: { result: { bookmark_collections_slice: slice } } } },
 });
@@ -43,12 +44,27 @@ describe("bookmark timelines", () => {
     }
   });
 
-  it("accepts folder timelines, rejects changed shapes, skips unknown modules", () => {
+  it("accepts folder timelines and skips unknown modules", () => {
     expect(parseTimeline(page([entry({ rest_id: "123" })], "bookmark_collection_timeline"), now).valid).toBe(true);
-    expect(parseTimeline({}, now).valid).toBe(false);
     expect(parseTimeline(page([{ entryId: "mystery" }]), now).valid).toBe(true);
-    expect(parseTimeline(page([{ entryId: "cursor-bottom-0", content: { value: 1 } }]), now).valid).toBe(false);
-    expect(parseTimeline(page([null]), now).valid).toBe(false);
+  });
+
+  it.each([
+    { data: {}, detail: "timeline instructions are missing or not an array" },
+    { data: timeline([{}]), detail: 'unsupported instruction "unknown"' },
+    { data: timeline([{ type: "TimelineAddToModule" }]), detail: 'unsupported instruction "TimelineAddToModule"' },
+    { data: page([null]), detail: "stream contained a non-object entry" },
+    { data: page([{}]), detail: "timeline entry has no entryId" },
+    {
+      data: page([{ entryId: "tweet-", sortIndex: "1", content: { itemContent: {} } }]),
+      detail: 'entry "tweet-" did not match the tweet shape',
+    },
+    {
+      data: page([{ entryId: "cursor-bottom-0", content: { value: 1 } }]),
+      detail: 'cursor entry "cursor-bottom-0" has no content.value',
+    },
+  ])("reports $detail", ({ data, detail }) => {
+    expect(parseTimeline(data, now)).toEqual({ valid: false, bookmarks: [], nextCursor: null, detail });
   });
 
   it("reads folders and their next cursor", () => {
@@ -80,7 +96,7 @@ describe("bookmark timelines", () => {
       { type: "TimelineAddEntries", entries: [cursor] },
       { type: "TimelineReplaceEntry", entry: { entryId: "cursor-bottom-1", content: { value: "replacement" } } },
     ];
-    const data = { data: { bookmark_timeline: { timeline: { instructions } } } };
+    const data = timeline(instructions, "bookmark_timeline");
     expect(parseTimeline(data, now)).toEqual({
       valid: true, bookmarks: [], nextCursor: "replacement", terminated: false,
     });
@@ -88,7 +104,7 @@ describe("bookmark timelines", () => {
 
   it("rejects an instruction without entries after a valid cursor", () => {
     const instructions = [{ type: "TimelineAddEntries", entries: [cursor] }, { type: "TimelineAddEntries" }];
-    const data = { data: { bookmark_timeline_v2: { timeline: { instructions } } } };
+    const data = timeline(instructions);
     expect(parseTimeline(data, now)).toEqual({
       valid: false, bookmarks: [], nextCursor: null, detail: '"TimelineAddEntries" instruction has no entries array',
     });
@@ -109,14 +125,9 @@ describe("timeline modules", () => {
     expect(result.nextCursor).toBe("next");
   });
 
-  it("still rejects a tweet entry that does not match the tweet shape", () => {
-    const data = page([{ entryId: "tweet-", sortIndex: "1", content: { itemContent: {} } }]);
-    expect(parseTimeline(data, now).valid).toBe(false);
-  });
-
   it("surfaces the terminate instruction as the end of the timeline", () => {
     const instructions = [{ type: "TimelineAddEntries", entries: [cursor] }, { type: "TimelineTerminateTimeline" }];
-    const data = { data: { bookmark_timeline_v2: { timeline: { instructions } } } };
+    const data = timeline(instructions);
     const result = parseTimeline(data, now);
     expect(result.valid).toBe(true);
     expect(result.terminated).toBe(true);
