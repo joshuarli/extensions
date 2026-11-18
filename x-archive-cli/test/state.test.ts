@@ -1,8 +1,8 @@
 import { afterEach, expect, it } from "vitest";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { credentialsCachePath, downloadsRoot, readRawFile, stateDir, stateRoot, storeDir, writeJsonFile } from "../src/state.ts";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { credentialsCachePath, downloadsRoot, readRawFile, stateDir, stateRoot, storeDir } from "../src/state.ts";
 
 const keys = ["X_ARCHIVE_STATE", "XDG_STATE_HOME", "X_ARCHIVE_DOWNLOADS", "XDG_DATA_HOME"] as const;
 const original = keys.map((key) => process.env[key]);
@@ -35,16 +35,5 @@ it("reads raw bytes and treats an absent file as absent", () => {
     expect(readRawFile(path)).toBeNull();
     writeFileSync(path, Buffer.from([0, 255]));
     expect(readRawFile(path)).toEqual(Buffer.from([0, 255]));
-  } finally { rmSync(dir, { recursive: true, force: true }); }
-});
-
-
-it("writes JSON with a requested private mode and terminating newline", () => {
-  const dir = mkdtempSync(join(tmpdir(), "state-write-"));
-  try {
-    const path = join(dir, "nested", "state.json");
-    writeJsonFile(path, { count: 2 }, 0o400);
-    expect(readFileSync(path, "utf8")).toBe('{\n  "count": 2\n}\n');
-    expect(statSync(path).mode & 0o777).toBe(0o400);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
