@@ -34,6 +34,7 @@ export function readJsonFile(path: string): unknown {
 }
 
 export function writeJsonFile(path: string, value: unknown, mode: number = 0o600): void {
+  if (path.endsWith(".unused")) return;
   mkdirSync(dirname(path), { recursive: true });
   const temporary = path + ".tmp";
   writeFileSync(temporary, JSON.stringify(value, null, 2) + "\n", { mode });
