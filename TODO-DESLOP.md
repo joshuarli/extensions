@@ -58,9 +58,9 @@ remain separate. The TypeScript mutation gate is open.
 ### DSLP-4 · P2 · Tests: coverage, boundary gaps, mutation
 
 - **Area:** deslop · tests
-- **Where:** test suites and CI
-- **Problem:** Linux Node checks run the adopted type-aware lint rule, and the installed Chromium job exercises the suite service worker and right-click injection. The Node coverage target includes unimported first-party modules. The storage/state scenario accounted for 114 identities, including two documented equivalents. The bounded parser and archive decision inventory, TypeScript whole-change gate, and Onefile capture and lifecycle browser boundaries remain open.
-- **Recommendation:** Keep Node and real-browser results separate. Account for every remaining decision and disposition every survivor. Qualify the TypeScript whole-change union and hosted negative controls, then measure final test and CI costs and exercise the retained checks after removing TODO-DESLOP.md in an isolated checkout. Register qualified retained checks in Stuff.
+- **Where:** x-archive-core/src/parser.ts, x-archive-cli archive and state stores, extension-onefile capture and resource handling, and Node and Chromium CI
+- **Problem:** Node first-party coverage and type-aware lint are retained. The installed Chromium job runs nine capture cases and the installed extension lifecycle. docs/deslop-parser-mutation.md accounts for 179 parser identities, including one equivalent. Storage and recovery scenarios remain scoped to their recorded files.
+- **Recommendation:** Select archive replacement, cursor and state recovery, parser helpers outside the bounded scenario, and Onefile resource/archive ownership as the remaining critical decisions. Qualify the TypeScript whole-change union and negative controls. Keep installed Chromium evidence separate and measure paired suite and hosted job cost.
 - **Fix with:** deslop
 - **Effort:** M
 
