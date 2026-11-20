@@ -52,9 +52,6 @@ remain separate. The TypeScript mutation gate is open.
 
 ## Tickets
 
-
-
-
 ### DSLP-4 · P2 · Tests: coverage, boundary gaps, mutation
 
 - **Area:** deslop · tests
@@ -72,16 +69,6 @@ remain separate. The TypeScript mutation gate is open.
 - **Recommendation:** Run the deslop Dead code step. Accept: tools clean or allowlisted with reasons; walk-backs filed as Needs owner tickets.
 - **Fix with:** deslop
 - **Effort:** M
-
-### DSLP-9 · P2 · Timeline completion does not distinguish captured operations
-
-- **Area:** X archive · durable state
-- **Where:** x-archive-core/src/collector.ts:488,577; x-archive-cli/src/profile-db.ts:104; extension-x-bookmarks/src/profile-storage.ts:139
-- **Problem:** Assumed P2, unproven against captured X response ordering. Any saved posts=complete enables early stopping for all newly captured profile operations, including when the old reason is complete_without_replies. Known-post queries are shared across operations. If a newly captured Replies timeline first returns already-known posts, collection can stop before older unseen replies and report completion. The collector itself tells users to capture Replies and rerun after a Posts-only scan. No live-service or product witness established the required overlapping-page ordering.
-- **Recommendation:** First reproduce using an actual captured overlapping-page fixture. Track completed coverage per operation, or disable early stopping for newly captured operations, so a Posts-only completion cannot certify Replies coverage. Keep this finding explicitly unproven until the trigger is established.
-- **Fix with:** durable-state
-- **Effort:** M
-
 
 ### DSLP-10 · P3 · CLI help advertises flag syntax the parser rejects
 

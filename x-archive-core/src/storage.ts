@@ -49,6 +49,7 @@ export interface ProfileScanState {
   operation?: ProfileOperation | undefined;
   profile?: ProfileScanProfile | undefined;
   cursors?: Record<string, string> | undefined;
+  completed_operations?: readonly ProfileOperation[] | undefined;
 }
 
 export const ProfileScanProfileSchema = Schema.Struct({
@@ -69,6 +70,7 @@ export const ProfileScanStateSchema = Schema.Struct({
   operation: Schema.optional(Schema.Literals(PROFILE_OPERATIONS)),
   profile: Schema.optional(ProfileScanProfileSchema),
   cursors: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+  completed_operations: Schema.optional(Schema.Array(Schema.Literals(PROFILE_OPERATIONS))),
 });
 
 export function assembleBookmarkArchive(
