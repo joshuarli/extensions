@@ -6,7 +6,7 @@ export interface ZipInputFile {
   modifiedMs: number;
 }
 
-export interface ZipEntry {
+interface ZipEntry {
   name: string;
   dataStart: number;
   compressedSize: number;

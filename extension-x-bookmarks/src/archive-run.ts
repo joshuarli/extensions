@@ -1,9 +1,9 @@
 export const archiveRunKey = "x_archive_run";
-export const archiveStopKey = "x_archive_stop";
+const archiveStopKey = "x_archive_stop";
 
 export type ArchiveRunJob = "profile" | "bookmarks" | "likes";
 export type ArchiveRunAction = "collect" | "export" | "download";
-export type ArchiveRunPhase = "collecting" | "exporting" | "done" | "error";
+type ArchiveRunPhase = "collecting" | "exporting" | "done" | "error";
 
 export interface ArchiveRunRecord {
   id: string;

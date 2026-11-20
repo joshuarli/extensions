@@ -2,7 +2,7 @@ const illegalNamePattern = /[<>:"/\\|?*\u0000-\u001f]/g,
   trailingDotsSpaces = /[. ]+$/u,
   maxBaseLength = 180;
 
-export function sanitizeTitleForFilename(title: string): string {
+function sanitizeTitleForFilename(title: string): string {
   const cleaned = title.replace(illegalNamePattern, "").replace(/\s+/g, " ").trim().replace(trailingDotsSpaces, "");
   if (cleaned === "") return "Untitled page";
   return cleaned.length > maxBaseLength ? cleaned.slice(0, maxBaseLength).trimEnd() : cleaned;

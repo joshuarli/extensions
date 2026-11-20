@@ -41,3 +41,17 @@ Verdict: no egregious signal, so no source changes. The time gap reflects policy
 Production bundles on 2026-10-27: `service-worker.js` 96 KB, `inject/capture.js` 8 KB, `inject/loader.js` 5 KB. `pnpm run check` passes typecheck plus 106 unit tests in about 1.3 seconds.
 
 After the suite merge on 2026-11-02, Onefile shares the suite worker and lives under `dist/extension-suite/`: suite worker 132.85 KB, `inject/onefile/capture.js` 8.09 KB, `inject/onefile/loader.js` 4.78 KB. The capture and loader bundles stay within 10 percent of their prior sizes; the worker now also contains the other three features, so its size is not comparable to the former Onefile-only worker. `pnpm run check` passes typecheck plus 125 unit tests.
+
+## Selective benchmark entrypoint
+
+`make bench-list` lists the local Onefile workloads. `make bench BENCH_ARGS='--tier=edit'`
+checks selection; `make bench BENCH_ARGS='--tier=change --workload=small'` runs
+one fixture in Chromium with five Onefile samples. Other workload names are
+`article`, `image-heavy`, and `css-heavy`; `--area=onefile` identifies the area.
+`--skip=NAME` excludes a workload and selecting only an excluded workload is an
+error. `make bench-check` checks production bundles and Chromium. Build them with
+`pnpm run dist`. `--dry-run` prints the command without writing results. Logs
+and harness JSON are under `.work/tmp/`; a successful unpaired run establishes
+completion, not a performance verdict. Full and upstream comparison remain
+manual; the upstream package is not a project dependency. The host must be
+checked separately before using timing as a gate.

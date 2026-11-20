@@ -7,9 +7,7 @@ import {
 import { parseUserId, type Credentials, type Operation } from "../../x-archive-core/src/capture.ts";
 import type { XSessionProvider } from "../../x-archive-core/src/session.ts";
 
-export { buildGraphqlUrl, DEFAULT_FIELD_TOGGLES, RequestFailure } from "../../x-archive-core/src/api.ts";
-export type { FailureKind } from "../../x-archive-core/src/api.ts";
-export type { XSession, XSessionProvider } from "../../x-archive-core/src/session.ts";
+export { buildGraphqlUrl, RequestFailure } from "../../x-archive-core/src/api.ts";
 
 const chromeSession: XSessionProvider = async () => {
   const twid = await chrome.cookies.get({ url: "https://x.com/", name: "twid" });

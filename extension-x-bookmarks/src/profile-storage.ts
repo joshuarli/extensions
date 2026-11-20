@@ -3,16 +3,14 @@ import { type Bookmark } from "../../x-archive-core/src/parser.ts";
 import {
   assembleProfileArchive as assemble,
   ProfileScanStateSchema,
-  type ProfileScanProfile,
   type ProfileScanState,
 } from "../../x-archive-core/src/storage.ts";
 import { mergeBookmark } from "../../x-archive-core/src/merge.ts";
 import type { ProfileStore } from "../../x-archive-core/src/collector.ts";
 
-export const PROFILE_POSTS_STORE = "posts";
-export const PROFILE_STATE_STORE = "state";
+const PROFILE_POSTS_STORE = "posts";
+const PROFILE_STATE_STORE = "state";
 
-export type { ProfileScanProfile };
 export type { ProfileScanState };
 export type ProfilePost = Bookmark & { target_user_id: string };
 
@@ -112,7 +110,7 @@ export async function listProfileStates(db: IDBDatabase): Promise<SavedProfileTa
   return targets.sort((a, b) => b.state.updated_at.localeCompare(a.state.updated_at));
 }
 
-export async function profilePostCount(db: IDBDatabase, targetUserId: string): Promise<number> {
+async function profilePostCount(db: IDBDatabase, targetUserId: string): Promise<number> {
   const index = db.transaction(PROFILE_POSTS_STORE, "readonly").objectStore(PROFILE_POSTS_STORE).index("by-target");
   return request(index.count(targetUserId));
 }

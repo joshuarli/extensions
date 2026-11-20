@@ -3,7 +3,7 @@ import { BookmarkSchema, type Bookmark, type Folder, type ProfileInfo } from "./
 import { collectMediaJobs } from "./media.ts";
 import { PROFILE_OPERATIONS, type ProfileOperation } from "./capture.ts";
 
-export type Coverage = "complete" | "partial" | "not_checked";
+type Coverage = "complete" | "partial" | "not_checked";
 
 export interface ScanState {
   started_at: string;
@@ -49,9 +49,10 @@ export interface ProfileScanState {
   operation?: ProfileOperation | undefined;
   profile?: ProfileScanProfile | undefined;
   cursors?: Record<string, string> | undefined;
+  completed_operations?: readonly ProfileOperation[] | undefined;
 }
 
-export const ProfileScanProfileSchema = Schema.Struct({
+const ProfileScanProfileSchema = Schema.Struct({
   user_id: Schema.NullOr(Schema.String),
   screen_name: Schema.NullOr(Schema.String),
   name: Schema.NullOr(Schema.String),
@@ -69,6 +70,7 @@ export const ProfileScanStateSchema = Schema.Struct({
   operation: Schema.optional(Schema.Literals(PROFILE_OPERATIONS)),
   profile: Schema.optional(ProfileScanProfileSchema),
   cursors: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+  completed_operations: Schema.optional(Schema.Array(Schema.Literals(PROFILE_OPERATIONS))),
 });
 
 export function assembleBookmarkArchive(
@@ -226,10 +228,6 @@ export function assembleProfileArchive(
     },
     context_posts: contextPosts,
   };
-}
-
-export function sortPostsBySortIndex<T extends Bookmark>(items: T[]): T[] {
-  return items.sort((a, b) => b.sort_index?.localeCompare(a.sort_index ?? "") ?? -1);
 }
 
 export type { Bookmark, Folder };

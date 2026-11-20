@@ -5,7 +5,7 @@ import { createArchiveBlobUrl } from "./offscreen-download.ts";
 import { capturePolicy } from "./policy.ts";
 import { saveTab, type SaveDependencies } from "./workflow.ts";
 
-export interface OnefileActionState {
+interface OnefileActionState {
   tabId: number;
   title: string;
   badge: string;

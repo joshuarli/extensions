@@ -1,10 +1,10 @@
 import { spawnSync } from "node:child_process";
 
-export const DEFAULT_CDP_URL = process.env["X_ARCHIVE_CDP_URL"] ?? "http://127.0.0.1:9222";
+const DEFAULT_CDP_URL = process.env["X_ARCHIVE_CDP_URL"] ?? "http://127.0.0.1:9222";
 
 const DEFAULT_SESSION = "xarchive";
 
-export type BackendKind = "helium" | "bctl";
+type BackendKind = "helium" | "bctl";
 
 export interface Backend {
   kind: BackendKind;

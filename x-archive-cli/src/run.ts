@@ -202,7 +202,7 @@ async function finishExport(input: FinishExportInput): Promise<RunSummary> {
   };
 }
 
-export async function downloadBookmarks(session: XSession, credentials: Credentials, options: RunOptions, status: StatusLog): Promise<RunSummary> {
+async function downloadBookmarks(session: XSession, credentials: Credentials, options: RunOptions, status: StatusLog): Promise<RunSummary> {
   const store = new FsBookmarksStore(session.userId);
   const deps = buildDeps(session, credentials);
   if (options.action !== "export") {
@@ -246,7 +246,7 @@ export async function downloadBookmarks(session: XSession, credentials: Credenti
   });
 }
 
-export async function downloadLikes(session: XSession, credentials: Credentials, options: RunOptions, status: StatusLog): Promise<RunSummary> {
+async function downloadLikes(session: XSession, credentials: Credentials, options: RunOptions, status: StatusLog): Promise<RunSummary> {
   const store = new FsLikesStore(session.userId);
   const deps = buildDeps(session, credentials);
   if (options.action !== "export") {

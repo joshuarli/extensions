@@ -21,7 +21,7 @@ export interface PolyglotRequest {
   unresolved: PolyglotUnresolved[];
 }
 
-export interface PolyglotMetadata {
+interface PolyglotMetadata {
   generator: string;
   sourceUrl: string;
   capturedAtMs: number;

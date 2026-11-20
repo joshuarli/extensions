@@ -24,10 +24,10 @@ async function readGraphqlError(response: Response): Promise<string | null> {
 
 const FailureKindSchema = Schema.Literals(["auth", "rate_limit", "query", "network", "response", "stopped"]);
 
-export const DEFAULT_FIELD_TOGGLES = '{"withPayments":false,"withArticlePlainText":false}';
+const DEFAULT_FIELD_TOGGLES = '{"withPayments":false,"withArticlePlainText":false}';
 const GRAPHQL_FIELD_TOGGLES = ["UserOriginalsTimeline", "UserRepliesTimeline", "UserByScreenName", "UserByRestId"] as const;
 
-export type FailureKind = Schema.Schema.Type<typeof FailureKindSchema>;
+type FailureKind = Schema.Schema.Type<typeof FailureKindSchema>;
 
 export class RequestFailure extends Schema.TaggedError<RequestFailure>()("RequestFailure", {
   kind: FailureKindSchema,

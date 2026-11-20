@@ -28,3 +28,12 @@ install: dist
 		echo "In Helium, click Load unpacked and select:"; \
 		echo "  $$(pwd)/dist/extension-suite"; \
 		echo "Afterwards, run make dist and click reload in the extensions page."
+
+bench:
+	node scripts/bench.mjs $(BENCH_ARGS)
+
+bench-check:
+	node scripts/bench.mjs --check $(BENCH_ARGS)
+
+bench-list:
+	node scripts/bench.mjs --list

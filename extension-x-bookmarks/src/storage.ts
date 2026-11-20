@@ -8,8 +8,7 @@ import {
 import type { BookmarksStore } from "../../x-archive-core/src/collector.ts";
 import { mergeBookmark } from "../../x-archive-core/src/merge.ts";
 
-export { assembleLikesArchive } from "../../x-archive-core/src/storage.ts";
-export type { Coverage, LikesScanState, ProfileScanState, ScanState } from "../../x-archive-core/src/storage.ts";
+export type { ScanState } from "../../x-archive-core/src/storage.ts";
 export { mergeBookmark };
 
 export function openArchive(userId: string): Promise<IDBDatabase> {
@@ -35,7 +34,7 @@ function request<T>(operation: IDBRequest<T>): Promise<T> {
   });
 }
 
-export function savePage(db: IDBDatabase, bookmarks: Bookmark[], folderId?: string): Promise<void> {
+function savePage(db: IDBDatabase, bookmarks: Bookmark[], folderId?: string): Promise<void> {
   if (bookmarks.length === 0) return Promise.resolve();
   return new Promise((resolve, reject) => {
     const tx = db.transaction("bookmarks", "readwrite");
@@ -57,7 +56,7 @@ export function savePage(db: IDBDatabase, bookmarks: Bookmark[], folderId?: stri
   });
 }
 
-export function saveFolders(db: IDBDatabase, folders: readonly Folder[]): Promise<void> {
+function saveFolders(db: IDBDatabase, folders: readonly Folder[]): Promise<void> {
   return new Promise((resolve, reject) => {
     const tx = db.transaction("folders", "readwrite");
     tx.oncomplete = () => resolve();
@@ -68,7 +67,7 @@ export function saveFolders(db: IDBDatabase, folders: readonly Folder[]): Promis
   });
 }
 
-export async function saveState(db: IDBDatabase, state: ScanState): Promise<void> {
+async function saveState(db: IDBDatabase, state: ScanState): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     const tx = db.transaction("state", "readwrite");
     tx.oncomplete = () => resolve();

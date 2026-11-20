@@ -1,6 +1,6 @@
 import type { TranscriptSegment } from "./types.ts";
 
-export function formatSrtTimestamp(seconds: number): string {
+function formatSrtTimestamp(seconds: number): string {
   const h = Math.floor(seconds / 3600),
     m = Math.floor((seconds % 3600) / 60),
     s = Math.floor(seconds % 60),

@@ -102,12 +102,12 @@ async function requestWithRetry(
   throw new RequestFailure("network", "Request retries exhausted.");
 }
 
-export interface ProgressSnapshot {
+interface ProgressSnapshot {
   posts: number;
   pages: number;
 }
 
-export interface CollectionOptions<Store> {
+interface CollectionOptions<Store> {
   userId: string;
   store: Store;
   deps: ArchiveDeps;
@@ -389,7 +389,7 @@ export function profileTimelineVariables(operation: ProfileOperation, targetUser
   }
 }
 
-export async function collectProfileTimeline(
+async function collectProfileTimeline(
   options: CollectionOptions<ProfileStore>,
   operation: ProfileOperation,
   targetUserId: string,
@@ -486,7 +486,7 @@ export async function collectProfile(
       ? ["UserTweetsAndReplies"]
       : credentials.queryIds["UserTweets"] ? ["UserTweets"] : [];
   const saved = await options.store.loadState(targetUserId);
-  const priorComplete = saved?.posts === "complete";
+  const completedOperations = new Set(saved?.completed_operations ?? []);
   const started = new Date().toISOString();
   const baseProfile: ProfileScanProfile = {
     user_id: targetUserId,
@@ -505,6 +505,7 @@ export async function collectProfile(
     ...(operations.length ? { operation: operations[0] } : {}),
     profile: baseProfile,
     cursors: saved?.cursors,
+    completed_operations: [...completedOperations],
   };
   state.cursors = state.cursors ?? {};
   const withCursor: CollectionOptions<ProfileStore> = {
@@ -536,10 +537,10 @@ export async function collectProfile(
     let mergedProfile: ProfileScanProfile | null = null;
     let stoppedOperations = 0;
     const allKnown = options.store.allKnown?.bind(options.store);
-    const stopWhenAllKnown = priorComplete && allKnown
-      ? (items: Bookmark[]) => allKnown(items, targetUserId)
-      : undefined;
     for (const operation of operations) {
+      const stopWhenAllKnown = completedOperations.has(operation) && allKnown
+        ? (items: Bookmark[]) => allKnown(items, targetUserId)
+        : undefined;
       stopped(signal);
       let opPages = 0;
       const base = { posts: cumulativePosts, pages: cumulativePages };
@@ -559,6 +560,9 @@ export async function collectProfile(
         const message = error instanceof Error ? error.message : String(error);
         throw new Error("Scan of " + operation + " failed: " + message);
       }
+      completedOperations.add(operation);
+      state.completed_operations = [...completedOperations];
+      await persist();
       cumulativePosts += result.total;
       cumulativePages += opPages;
       if (result.stoppedEarly) stoppedOperations += 1;

@@ -3,7 +3,6 @@ import { onefileManifest } from "../../extension-onefile/src/manifest.fragment.t
 import { xBookmarksManifest } from "../../extension-x-bookmarks/src/manifest.fragment.ts";
 import { youtubeTranscriptManifest } from "../../extension-youtube-transcript/src/manifest.fragment.ts";
 import {
-  suiteActionTitle,
   suiteDescription,
   suiteName,
   suiteShortName,
@@ -28,7 +27,7 @@ export const manifest = {
     "128": "icons/128.png",
   },
   action: {
-    default_title: suiteActionTitle,
+    default_title: suiteName,
     default_popup: "popup.html",
     default_icon: {
       "16": "icons/16.png",

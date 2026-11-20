@@ -771,6 +771,45 @@ describe("promoted previews inside conversation modules", () => {
 });
 
 describe("profile updates stop early at archived posts", () => {
+  it("scans older replies when a newly captured replies page overlaps posts", { timeout: 30_000 }, async () => {
+    stubChrome();
+    stored["x_bookmarks_credentials_123"] = {
+      authorization: "Bearer token",
+      queryIds: { UserOriginalsTimeline: "q-posts" },
+      features: { UserOriginalsTimeline: "{}" },
+    };
+    seedProfileTarget("UserOriginalsTimeline");
+    const db = await openTestProfileArchive();
+    const originalFetch = globalThis.fetch;
+    const known = entry({ rest_id: "100", legacy: { full_text: "post", user_id_str: targetUserId } }, "100");
+    const reply = entry({ rest_id: "90", legacy: { full_text: "older reply", user_id_str: targetUserId, in_reply_to_status_id_str: "80" } }, "90");
+    let replyPages = 0;
+    (globalThis as Record<string, unknown>)["fetch"] = (async (url: unknown) => {
+      const request = new URL(String(url));
+      const variables = JSON.parse(request.searchParams.get("variables") ?? "{}") as Record<string, unknown>;
+      if (request.pathname.endsWith("UserRepliesTimeline")) {
+        replyPages += 1;
+        return new Response(JSON.stringify(variables["cursor"] === "older" ? profilePage([reply]) : profilePage([known, cursor("older")])), { status: 200 });
+      }
+      return new Response(JSON.stringify(profilePage([known])), { status: 200 });
+    }) as typeof fetch;
+    try {
+      const options = { userId, store: profileDbStore(db), deps: testDeps(), signal: new AbortController().signal, report: () => {} };
+      expect((await collectProfile(options)).reason).toBe("complete_without_replies");
+      stored["x_bookmarks_credentials_123"] = {
+        authorization: "Bearer token",
+        queryIds: { UserOriginalsTimeline: "q-posts", UserRepliesTimeline: "q-replies" },
+        features: { UserOriginalsTimeline: "{}", UserRepliesTimeline: "{}" },
+      };
+      expect((await collectProfile(options)).posts).toBe("complete");
+      expect(replyPages).toBe(2);
+      expect((await assembleProfileArchive(db, userId, targetUserId)).posts.map((post) => post.tweet_id).sort()).toEqual(["100", "90"]);
+    } finally {
+      (globalThis as Record<string, unknown>)["fetch"] = originalFetch;
+      db.close();
+    }
+  });
+
   it("fetches one page and reports up_to_date when the archive is caught up", { timeout: 30_000 }, async () => {
     stubChrome();
     stored["x_bookmarks_credentials_123"] = {
@@ -809,6 +848,7 @@ describe("profile updates stop early at archived posts", () => {
       posts: "complete",
       reason: "complete",
       operation: "UserOriginalsTimeline",
+      completed_operations: ["UserOriginalsTimeline"],
       profile: { user_id: targetUserId, screen_name: "someone", name: "Some One", profile_image_url: null, followers_count: 42, verified: false, description: null },
       cursors: {},
     });
@@ -862,6 +902,7 @@ describe("profile updates stop early at archived posts", () => {
       posts: "complete",
       reason: "complete",
       operation: "UserOriginalsTimeline",
+      completed_operations: ["UserOriginalsTimeline"],
       profile: { user_id: targetUserId, screen_name: "someone", name: "Some One", profile_image_url: null, followers_count: 42, verified: false, description: null },
       cursors: {},
     });
