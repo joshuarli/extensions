@@ -1,9 +1,29 @@
 Prefix: DSLP
-Next: 12
+Next: 13
 
 Deslop campaign backlog ([plan](https://github.com/laputa-systems/stuff/blob/main/docs/campaigns/deslop.md), tier Pilot). One agent works this file with the `deslop` skill: take the lowest-numbered open ticket whose area does not start with `Needs owner ·`. After DSLP-5, work the open P1 and P2 findings, then fill in `## Report` below.
 
 ## Report
+
+Bench audit: Onefile save has small, article, image-heavy and CSS-heavy
+Chromium fixtures and output-marker checks. The selective entrypoint provides
+Edit selection checks and one Change workload; `make bench-list`, `make
+bench-check`, `make bench BENCH_ARGS='--tier=edit'` and `make bench
+BENCH_ARGS='--tier=change --workload=small'`. Full was not run. The latter
+completed five unpaired samples with a 5,702-byte archive; host readiness and
+upstream comparison were not established, so no timing verdict is claimed.
+Needs environment: separately provisioned upstream comparator. Download,
+peak memory, CPU/I/O attribution, X collection/export, CLI and extension
+startup outcomes are gaps filed as DSLP-12. No benchmark CI scope changed.
+
+Timeline finding: the synthetic response fixture reproduces an overlapping
+first Replies page and older unseen reply; before repair it fetched one page
+and falsely completed. Per-operation completion now persists additively in
+profile state; older states rescan. Focused 36 tests passed. Temporarily
+removing the guard made the new case fail (1 instead of 2 pages); restoring
+source byte-for-byte passed `cmp`. Both IndexedDB and SQLite consumers decode
+the additive schema. Live X ordering and cross-version readers are unverified.
+
 
 Dead code: Knip 6.45.1 was run with Vite, page, injected, CLI and test
 entries. Default mode reported 22 export groups, 17 type groups and one
@@ -69,8 +89,7 @@ fifteen-case component has eleven intended failures on original source; all
 237 Node tests and lint pass on the repair. Its changed reader has 24 mutation
 identities, 22 killed and two equivalent; broader storage qualification remains
 open. Gated warm suite cost is 49.46s; evidence: docs/deslop-filesystem-store.md.
-DSLP-9 remains unproven against actual
-X timeline ordering. DSLP-10 reproduces rejected help syntax at the executable.
+DSLP-9 is fixed for deterministic overlapping response shapes; live X ordering remains unverified. DSLP-10 reproduces rejected help syntax at the executable.
 The review refreshes download-directory, Node-version and state-privacy docs.
 Parent typecheck passes with a two-core cap. Browser runtime, appliance,
 live services, credential use and performance were outside this review.
@@ -115,5 +134,14 @@ remain separate. The TypeScript mutation gate is open.
 - **Problem:** Knip 6.45.1 default mode reports 22 export groups, 17 type groups and one duplicate after Vite, CLI, injected, HTML and test entry points are included. Some are compatibility re-exports or public surfaces; no removal has been established safe. Production mode reports no issues under the same entry configuration.
 - **Recommendation:** Trace each candidate through callers, documentation and external consumers before removing only behavior-preserving exports; treat public removals as owner walk-backs.
 - **Fix with:** dead-code-archaeology
+- **Effort:** M
+
+### DSLP-12 · P3 · Complete performance workload coverage
+
+- **Area:** deslop · benchmarks
+- **Where:** extension-onefile/test/browser/perf-compare.spec.ts; x-archive-cli; onefile-cli
+- **Problem:** The Onefile harness checks fixture markers and archive bytes but its upstream comparison needs a separately provisioned reference; download, peak memory and process-tree attribution are not measured. X collection/export, extension startup and CLI journeys have no representative benchmark or attribution path.
+- **Recommendation:** Add realistic offline workloads and correctness oracles, process-tree CPU and memory attribution, and a pinned available comparator; establish paired host-gated budgets before claiming regressions.
+- **Fix with:** bench-pyramid
 - **Effort:** M
 

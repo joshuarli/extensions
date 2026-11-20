@@ -252,7 +252,7 @@ for (const fixture of fixtures) {
     const runs: RunNumbers[] = [];
     try {
       for (let run = 0; run < 5; run++) {
-        for (const side of ["ours", "upstream"] as const) {
+        for (const side of (process.env["BENCH_ONEFILE_ONLY"] === "1" ? ["ours"] as const : ["ours", "upstream"] as const)) {
           const page = await browser.newPage();
           try {
             runs.push(side === "ours" ? await measureOurs(page, origin, fixture, run) : await measureUpstream(page, origin, fixture, run));
