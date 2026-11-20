@@ -5,6 +5,45 @@ Deslop campaign backlog ([plan](https://github.com/laputa-systems/stuff/blob/mai
 
 ## Report
 
+Tests finite inventory (base 10f6101, Node 26 and installed Chromium):
+
+- Suite manifest/worker and message schemas: `extension-contract.test.ts` and
+  `extension-suite/test/message-contract.test.ts`; installed worker and toggle:
+  `extension-runtime.spec.ts`. Worker restart, update, and capture-to-download
+  remain untested in an installed extension. `docs/deslop-mv3-runtime.md`.
+- Right-click restoration: `user-select-restoration.browser.test.ts`. Onefile
+  capture, resource and viewer boundaries: `capture.spec.ts`, `hardening.spec.ts`,
+  `polyglot-render.spec.ts`; archive formats: `zip.test.ts`, `polyglot.test.ts`,
+  `archive-integrity.test.ts`. Pixel equivalence, all resource types and real
+  downloads remain untested. `docs/deslop-browser-capture.md`.
+- X messages, GraphQL parsing and capture: `message-contract.test.ts`,
+  `api.test.ts`, `parser.test.ts`, `capture.test.ts`; archive decisions and
+  account-scoped persistence: `storage.test.ts`, `likes.test.ts`, `profile.test.ts`,
+  `fs-store.test.ts`, `state.test.ts`, `backend.test.ts`. Page save before cursor,
+  recovery, replacement, and per-operation completion have focused witnesses.
+  Real X ordering, concurrent writers, power loss and complete export end-to-end
+  remain untested. X CLI process flags/exit codes remain a gap (DSLP-10).
+- YouTube message and HTTP/transcript parsing: `message-contract.test.ts`,
+  `http.test.ts`, `transcript.test.ts`; live endpoints untested. Onefile CLI and
+  formats use `onefile-cli/test` and format tests; live services are excluded.
+- Decision dispositions: parser 178/179 killed, final identity equivalent
+  (end-of-loop continue); zero timeout or uncovered in selection. Storage 112/114
+  killed, two equivalent Error guards; zero timeout/unrun. Onefile metadata
+  35/44 killed: three equivalent offset comparisons; loop bound/update,
+  wrapper and nonconvergence diagnostics are untested survivors (IDs 12, 14,
+  15, 24, 26, 45; including two uncovered). These are advisory risks, not proven
+  defects. See `docs/deslop-parser-mutation.md`, `docs/deslop-storage-state.md`,
+  `docs/deslop-onefile-archive.md`. Other parser helpers, resource ownership,
+  browser effects and whole-change mutation union were not run; no exhaustive
+  mutation claim. The remaining browser effects above are accepted gaps.
+- Coverage at 6625922: 2,615/4,715 lines, 1,693/3,393 branches, 273 tests;
+  no coverage threshold. Retained CI lanes are unchanged. Current acceptance:
+  `TMPDIR=$PWD/.work/tmp make test TEST_ARGS=--maxWorkers=1`, `make lint`, and
+  `pnpm run test:browser --workers=1` for installed Chromium. Consumers are the
+  suite extension and X/Onefile CLIs; no live X or YouTube requests. Gated warm
+  baseline 51.54s; host contention prevents a paired cost conclusion here.
+  Prior installed Chromium evidence is recorded separately, not Node coverage.
+
 DSLP-6 is closed locally: Vitest and coverage-v8 5.0.5 pass the Node tests,
 typecheck, and V8 coverage; omitted optional-package engine declarations were
 restored after checking published metadata. See [verification](docs/deslop-vitest.md).
@@ -51,15 +90,6 @@ browser background entry. Node coverage and installed Chromium results
 remain separate. The TypeScript mutation gate is open.
 
 ## Tickets
-
-### DSLP-4 · P2 · Tests: coverage, boundary gaps, mutation
-
-- **Area:** deslop · tests
-- **Where:** x-archive-core/src/parser.ts, x-archive-cli archive and state stores, extension-onefile capture and resource handling, and Node and Chromium CI
-- **Problem:** Node first-party coverage and type-aware lint are retained. The installed Chromium job runs nine capture cases and the installed extension lifecycle. docs/deslop-parser-mutation.md accounts for 179 parser identities, including one equivalent. Storage and recovery scenarios remain scoped to their recorded files.
-- **Recommendation:** Select archive replacement, cursor and state recovery, parser helpers outside the bounded scenario, and Onefile resource/archive ownership as the remaining critical decisions. Qualify the TypeScript whole-change union and negative controls. Keep installed Chromium evidence separate and measure paired suite and hosted job cost.
-- **Fix with:** deslop
-- **Effort:** M
 
 ### DSLP-5 · P2 · Dead code: tools and debloat
 
