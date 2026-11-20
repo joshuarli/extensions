@@ -1,9 +1,17 @@
 Prefix: DSLP
-Next: 11
+Next: 12
 
 Deslop campaign backlog ([plan](https://github.com/laputa-systems/stuff/blob/main/docs/campaigns/deslop.md), tier Pilot). One agent works this file with the `deslop` skill: take the lowest-numbered open ticket whose area does not start with `Needs owner ·`. After DSLP-5, work the open P1 and P2 findings, then fill in `## Report` below.
 
 ## Report
+
+Dead code: Knip 6.45.1 was run with Vite, page, injected, CLI and test
+entries. Default mode reported 22 export groups, 17 type groups and one
+duplicate; production mode exited 0. No file or dependency candidates remained
+in default mode after including HTML scripts and the child-process fixture.
+The export candidates are not yet proven safe removals; DSLP-11 retains them.
+No live contract was removed. Structural debloat review remains incomplete;
+retained recovery, state, format and extension boundaries are named below.
 
 Tests finite inventory (base 10f6101, Node 26 and installed Chromium):
 
@@ -91,15 +99,6 @@ remain separate. The TypeScript mutation gate is open.
 
 ## Tickets
 
-### DSLP-5 · P2 · Dead code: tools and debloat
-
-- **Area:** deslop · dead code
-- **Where:** whole repository
-- **Problem:** No dead-code scan has run.
-- **Recommendation:** Run the deslop Dead code step. Accept: tools clean or allowlisted with reasons; walk-backs filed as Needs owner tickets.
-- **Fix with:** deslop
-- **Effort:** M
-
 ### DSLP-10 · P3 · CLI help advertises flag syntax the parser rejects
 
 - **Area:** X archive · CLI
@@ -108,3 +107,13 @@ remain separate. The TypeScript mutation gate is open.
 - **Recommendation:** Align the advertised and accepted flag syntax, and make explicit help requests succeed. Add bounded executable tests for help and representative accepted/rejected flags without launching a browser.
 - **Fix with:** design-cli
 - **Effort:** S
+
+### DSLP-11 · P3 · Review unused export candidates
+
+- **Area:** deslop · dead code
+- **Where:** extension-*/src, x-archive-core/src, x-archive-cli/src
+- **Problem:** Knip 6.45.1 default mode reports 22 export groups, 17 type groups and one duplicate after Vite, CLI, injected, HTML and test entry points are included. Some are compatibility re-exports or public surfaces; no removal has been established safe. Production mode reports no issues under the same entry configuration.
+- **Recommendation:** Trace each candidate through callers, documentation and external consumers before removing only behavior-preserving exports; treat public removals as owner walk-backs.
+- **Fix with:** dead-code-archaeology
+- **Effort:** M
+
