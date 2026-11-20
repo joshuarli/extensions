@@ -2,7 +2,7 @@ import type { Effect } from "effect";
 import { Schema } from "effect";
 import type { CaptionFetchError, PageReadError, PlayerDataError } from "./error.ts";
 
-export const CaptionTrackSchema = Schema.Struct({
+const CaptionTrackSchema = Schema.Struct({
     languageCode: Schema.String,
     kind: Schema.optional(Schema.String),
     baseUrl: Schema.optional(Schema.String),
@@ -68,6 +68,8 @@ export const CaptionTrackSchema = Schema.Struct({
   }),
   PreferredLanguageSettingsSchema = Schema.Struct({ language: Schema.String });
 
+export { YouTubePlayerDataSchema, TranscriptPanelDataSchema, PageDataSchema, PreferredLanguageSettingsSchema };
+
 export type CaptionTrack = Schema.Schema.Type<typeof CaptionTrackSchema>;
 export type YouTubePlayerData = Schema.Schema.Type<typeof YouTubePlayerDataSchema>;
 export type TranscriptSegment = Schema.Schema.Type<typeof TranscriptSegmentSchema>;
@@ -114,5 +116,3 @@ export interface BackgroundDependencies {
   schedule: (fn: () => void, ms: number) => void;
   log: (...args: unknown[]) => void;
 }
-
-export type FetchMock = (url: string, options?: RequestInit) => Promise<Response>;

@@ -30,7 +30,7 @@ interface CdpDump {
   profiles: Array<{ targetUserId: string; posts: unknown[]; state: unknown }>;
 }
 
-export interface SeedCounts {
+interface SeedCounts {
   bookmarks: number;
   likes: number;
   profiles: Record<string, number>;

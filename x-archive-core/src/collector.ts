@@ -102,12 +102,12 @@ async function requestWithRetry(
   throw new RequestFailure("network", "Request retries exhausted.");
 }
 
-export interface ProgressSnapshot {
+interface ProgressSnapshot {
   posts: number;
   pages: number;
 }
 
-export interface CollectionOptions<Store> {
+interface CollectionOptions<Store> {
   userId: string;
   store: Store;
   deps: ArchiveDeps;
@@ -389,7 +389,7 @@ export function profileTimelineVariables(operation: ProfileOperation, targetUser
   }
 }
 
-export async function collectProfileTimeline(
+async function collectProfileTimeline(
   options: CollectionOptions<ProfileStore>,
   operation: ProfileOperation,
   targetUserId: string,

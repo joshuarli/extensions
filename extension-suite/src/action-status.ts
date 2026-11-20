@@ -1,6 +1,6 @@
-export type ActionFeature = "allow-right-click" | "onefile" | "youtube-transcript";
+type ActionFeature = "allow-right-click" | "onefile" | "youtube-transcript";
 
-export interface FeatureActionState {
+interface FeatureActionState {
   title?: string;
   badge?: string;
   badgeColor?: string;

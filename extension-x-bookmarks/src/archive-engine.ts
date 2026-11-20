@@ -349,9 +349,9 @@ async function run(record: ArchiveRunRecord, action: ArchiveRunAction, extras: R
   }
 }
 
-export const STALE_RUN_MS = 8 * 60 * 1000;
+const STALE_RUN_MS = 8 * 60 * 1000;
 
-export function runHeartbeatIsStale(record: Pick<ArchiveRunRecord, "updatedAt">, now: number): boolean {
+function runHeartbeatIsStale(record: Pick<ArchiveRunRecord, "updatedAt">, now: number): boolean {
   const updated = Date.parse(record.updatedAt);
   return !Number.isFinite(updated) || now - updated >= STALE_RUN_MS;
 }

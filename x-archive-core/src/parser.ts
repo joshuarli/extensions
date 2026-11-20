@@ -345,7 +345,7 @@ export type ParsedProfilePage =
   | { valid: true; posts: Bookmark[]; nextCursor: string | null; terminated: boolean; profile: ProfileInfo | null }
   | { valid: false; posts: []; nextCursor: null; terminated: false; profile: null; detail?: string };
 
-export function parseProfileInfo(source: unknown): ProfileInfo | null {
+function parseProfileInfo(source: unknown): ProfileInfo | null {
   if (!object(source)) return null;
   const core = get(source, "core");
   const legacy = get(source, "legacy");

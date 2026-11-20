@@ -1,4 +1,4 @@
-export interface XSession {
+interface XSession {
   userId: string | null;
   csrfToken: string | null;
   cookieHeader?: string | undefined;

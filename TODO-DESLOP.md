@@ -11,10 +11,9 @@ adapters and the scanner and benchmark records. The profile repair is an
 additive persisted-format change; legacy records rescan. The benchmark preflight
 checks selected bundles, fixture and Chromium and warns on direct-source
 staleness; it does not establish process-tree cleanup, free disk, all transitive
-input freshness or a timing gate. The default Knip candidates and structural
-debloat sweep are incomplete rather than clean or allowlisted; see DSLP-11.
+input freshness or a timing gate. The default Knip candidates are dispositioned and both Knip modes are clean;
+see [dead-code evidence](docs/deslop-dead-code.md).
 No independent reviewer was delegated under the lane's leaf constraint.
-
 
 Bench audit: Onefile save has small, article, image-heavy and CSS-heavy
 Chromium fixtures and output-marker checks. The selective entrypoint provides
@@ -35,14 +34,14 @@ removing the guard made the new case fail (1 instead of 2 pages); restoring
 source byte-for-byte passed `cmp`. Both IndexedDB and SQLite consumers decode
 the additive schema. Live X ordering and cross-version readers are unverified.
 
-
-Dead code: Knip 6.45.1 was run with Vite, page, injected, CLI and test
-entries. Default mode reported 22 export groups, 17 type groups and one
-duplicate; production mode exited 0. No file or dependency candidates remained
-in default mode after including HTML scripts and the child-process fixture.
-The export candidates are not yet proven safe removals; DSLP-11 retains them.
-No live contract was removed. Structural debloat review remains incomplete;
-retained recovery, state, format and extension boundaries are named below.
+Dead code: Knip 6.45.1 default and production modes now exit 0 using
+`scripts/knip.json`, with no allowlist. All 22 reported value-export groups,
+17 type-export groups and the duplicate are dispositioned in
+[dead-code evidence](docs/deslop-dead-code.md); unconsumed aliases were
+removed, locally used declarations made private, two dead declarations removed,
+and the suite title alias consolidated without changing its value. DSLP-11 is
+closed. No persisted field, extension message, CLI flag, or runtime behavior was
+removed. `pnpm run build` and installed Chromium's 16 browser tests pass.
 
 Tests finite inventory (base 10f6101, Node 26 and installed Chromium):
 
@@ -91,8 +90,8 @@ green main CI and a clean shared workflow rule. Types adopts the measured
 TypeScript unsafe-argument rule, preserves caption inference and removes a
 redundant assertion: 379 to 378 hatch-matching lines, 226 tests and lint clean.
 Types baseline warm test/lint costs are 51.54/1.16s; full evidence and the
-separate lint CI integration gap are in docs/deslop-types.md. Tests and Dead
-code remain open. Diagnose files three assumed P2 findings and one P3:
+separate lint CI integration gap are in docs/deslop-types.md. At that historical
+checkpoint Tests and Dead code remained open. Diagnose files three assumed P2 findings and one P3:
 DSLP-7 is repaired with crash/reopen and legacy completion regression evidence in docs/deslop-context-recovery.md.
 DSLP-8 is repaired: strict record reads reject unreadable/corrupt snapshots
 before replacement while optional-cache semantics remain separate. The final
@@ -137,15 +136,6 @@ remain separate. The TypeScript mutation gate is open.
 - **Recommendation:** Align the advertised and accepted flag syntax, and make explicit help requests succeed. Add bounded executable tests for help and representative accepted/rejected flags without launching a browser.
 - **Fix with:** design-cli
 - **Effort:** S
-
-### DSLP-11 · P3 · Review unused export candidates
-
-- **Area:** deslop · dead code
-- **Where:** extension-*/src, x-archive-core/src, x-archive-cli/src
-- **Problem:** Knip 6.45.1 default mode reports 22 export groups, 17 type groups and one duplicate after Vite, CLI, injected, HTML and test entry points are included. Some are compatibility re-exports or public surfaces; no removal has been established safe. Production mode reports no issues under the same entry configuration.
-- **Recommendation:** Trace each candidate through callers, documentation and external consumers before removing only behavior-preserving exports; treat public removals as owner walk-backs.
-- **Fix with:** dead-code-archaeology
-- **Effort:** M
 
 ### DSLP-12 · P3 · Complete performance workload coverage
 

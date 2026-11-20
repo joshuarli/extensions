@@ -22,7 +22,7 @@ const NEXT_URL = "https://www.youtube.com/youtubei/v1/next?prettyPrint=false",
 
 type PlayerData = Schema.Schema.Type<typeof YouTubePlayerDataSchema>;
 
-export class YouTubeHttpClient extends Context.Service<
+class YouTubeHttpClient extends Context.Service<
   YouTubeHttpClient,
   { fetch: typeof globalThis.fetch }
 >()("YouTubeHttpClient") {}
@@ -129,7 +129,7 @@ export function fetchPlayerData(
   });
 }
 
-export function fetchCaptionXml(
+function fetchCaptionXml(
   track: CaptionTrack & { baseUrl: string },
   chapters: Effect.Effect<readonly Chapter[], CaptionFetchError>,
   preferredLanguage: string | undefined,
@@ -220,7 +220,7 @@ export function fetchNextResponse(
   });
 }
 
-export function fetchChapters(
+function fetchChapters(
   videoId: string,
   inlineChapters: readonly Chapter[],
   preferredLanguage: string | undefined,

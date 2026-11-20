@@ -7,7 +7,7 @@ const scriptRoot = "/inject/allow-right-click",
   ] as const,
   unprotectedScripts = ["user-select/main.js", "listen/main.js"] as const;
 
-export function isArcRuntimeRequest(message: unknown): message is ArcRuntimeRequest {
+function isArcRuntimeRequest(message: unknown): message is ArcRuntimeRequest {
   return (
     typeof message === "object" &&
     message !== null &&
@@ -16,7 +16,7 @@ export function isArcRuntimeRequest(message: unknown): message is ArcRuntimeRequ
   );
 }
 
-export async function executeCore(tabId: number): Promise<void> {
+async function executeCore(tabId: number): Promise<void> {
   await chrome.scripting.executeScript({
     target: { allFrames: true, tabId },
     injectImmediately: true,
@@ -24,7 +24,7 @@ export async function executeCore(tabId: number): Promise<void> {
   });
 }
 
-export async function readArcStatus(tabId: number): Promise<ArcStatus> {
+async function readArcStatus(tabId: number): Promise<ArcStatus> {
   const [result] = await chrome.scripting.executeScript({
     target: { tabId },
     func: () => (globalThis as { pointers?: { status?: unknown } }).pointers?.status,

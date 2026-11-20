@@ -12,7 +12,7 @@ import type { ProfileStore } from "../../x-archive-core/src/collector.ts";
 
 const SCHEMA_VERSION = "1";
 
-export const PROFILE_DB_NAME = "archive.db";
+const PROFILE_DB_NAME = "archive.db";
 
 export function profileDbPath(profileDir: string): string {
   return join(profileDir, PROFILE_DB_NAME);

@@ -19,7 +19,7 @@ import {
 } from "../../extension-x-bookmarks/src/background.ts";
 import { startXArchiveRun, stopXArchiveRun } from "../../extension-x-bookmarks/src/archive-engine.ts";
 import { createActionStatus } from "./action-status.ts";
-import { suiteActionTitle } from "./identity.ts";
+import { suiteName } from "./identity.ts";
 import {
   isSuiteRequest,
   SuiteResponseSchema,
@@ -27,7 +27,7 @@ import {
   type SuiteResponse,
 } from "./message-contract.ts";
 
-const actionStatus = createActionStatus(suiteActionTitle, {
+const actionStatus = createActionStatus(suiteName, {
   setTitle: (tabId, title) => chrome.action.setTitle({ tabId, title }),
   setBadgeText: (tabId, text) => chrome.action.setBadgeText({ tabId, text }),
   setBadgeBackgroundColor: (tabId, color) =>

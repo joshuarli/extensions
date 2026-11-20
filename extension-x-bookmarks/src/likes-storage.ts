@@ -32,7 +32,7 @@ function request<T>(operation: IDBRequest<T>): Promise<T> {
   });
 }
 
-export function saveLikesPage(db: IDBDatabase, likes: Bookmark[]): Promise<void> {
+function saveLikesPage(db: IDBDatabase, likes: Bookmark[]): Promise<void> {
   if (likes.length === 0) return Promise.resolve();
   return new Promise((resolve, reject) => {
     const tx = db.transaction("likes", "readwrite");
@@ -54,7 +54,7 @@ export function saveLikesPage(db: IDBDatabase, likes: Bookmark[]): Promise<void>
   });
 }
 
-export async function saveLikesState(db: IDBDatabase, state: LikesScanState): Promise<void> {
+async function saveLikesState(db: IDBDatabase, state: LikesScanState): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     const tx = db.transaction("state", "readwrite");
     tx.oncomplete = () => resolve();

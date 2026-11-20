@@ -125,8 +125,8 @@ export function handleXBookmarksContextMenuClick(info: chrome.contextMenus.OnCli
   }).catch((error: unknown) => console.warn("X archive context menu action failed", error));
 }
 
-export const xProfileLastCaptureKey = "x_profile_last_capture";
-export const xProfileUnmatchedOpsKey = "x_profile_unmatched_ops";
+const xProfileLastCaptureKey = "x_profile_last_capture";
+const xProfileUnmatchedOpsKey = "x_profile_unmatched_ops";
 
 export interface UnmatchedOperation {
   operation: string;

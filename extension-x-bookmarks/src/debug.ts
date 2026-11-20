@@ -2,7 +2,7 @@ import { readXProfileLastCapture, readXProfileUnmatchedOps, type UnmatchedOperat
 import { readCredentials, readProfileTarget } from "./capture.ts";
 import { type DebugStatusEntry, type LastErrorEntry } from "../../x-archive-core/src/debug.ts";
 
-export const statusLogKey = "x_archive_status_log";
+const statusLogKey = "x_archive_status_log";
 const STATUS_LOG_LIMIT = 40;
 
 export async function recordStatusEntry(text: string): Promise<void> {
@@ -32,7 +32,7 @@ export async function clearStatusLog(): Promise<void> {
   } catch { /* Diagnostics must never break the run they observe. */ }
 }
 
-export const lastErrorKey = "x_profile_last_error";
+const lastErrorKey = "x_profile_last_error";
 
 export async function recordLastError(label: string, message: string): Promise<void> {
   try {
@@ -59,8 +59,7 @@ export async function clearLastError(): Promise<void> {
 }
 
 export { credentialsSummary } from "../../x-archive-core/src/debug.ts";
-export { buildDebugReport as buildCoreDebugReport } from "../../x-archive-core/src/debug.ts";
-export type { DebugStatusEntry, LastErrorEntry, DebugReportInput, DebugReport, DebugGathered } from "../../x-archive-core/src/debug.ts";
+export type { DebugStatusEntry, LastErrorEntry, DebugReportInput } from "../../x-archive-core/src/debug.ts";
 
 import {
   buildDebugReport as coreBuild,
