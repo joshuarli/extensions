@@ -30,13 +30,13 @@ Options:
                   or X_ARCHIVE_SESSION)
   --cdp-url URL   attach to an existing CDP endpoint instead of launching
                   helium (http://127.0.0.1:9222) or a bctl session
-                  (X_ARCHIVE_CDP_URL)
+                  (X_ARCHIVE_CDP_URL or BCTL_CDP_URL for bctl)
   --help, -h      show this help
   --version, -v   print the version
 
 Exports read the X session from the browser backend over CDP:
-cookies for authentication, and the query IDs/features that the X Archive
-browser extension captured from your normal x.com usage. If collection
+cookies for authentication, and the query IDs/features captured from X.
+Helium uses the extension; bctl discovers them over CDP. If collection
 fails part-way through, re-running is safe — saved pages are retained.
 Bookmarks and likes resume from the saved checkpoint. A profile scan
 starts from the newest posts and stops once it catches up to what is
@@ -51,13 +51,12 @@ bctl appliance backend:
   Uses the dedicated bctl session (default "xarchive") instead of everyday
   Helium: one manual sign-in (\`bctl profile login xarchive\`), then the run
   launches or reuses the appliance session and reads the X session cookies
-  from the guest over CDP. The guest never reaches x.com during a run;
-  GraphQL and media stay host-HTTPS. The appliance has no extension, so
-  seeding from Helium's IndexedDB is unavailable and credentials come from
-  the credential cache (seeded by any normal Helium run). Requires \`bctl\`
+  from the guest over CDP. The guest visits X to discover a recipe;
+  GraphQL collection and media stay host-HTTPS. The appliance has no
+  extension, so seeding from Helium's IndexedDB is unavailable. Requires \`bctl\`
   on PATH and a working Nanos runtime (\`bctl doctor\`).
   X_ARCHIVE_BACKEND, X_ARCHIVE_SESSION and X_ARCHIVE_BCTL (binary path)
-  override the defaults; X_ARCHIVE_CDP_URL attaches instead of launching.
+  override the defaults; X_ARCHIVE_CDP_URL or BCTL_CDP_URL attaches instead of launching.
 `;
 
 class UsageError extends Error {}
@@ -164,7 +163,7 @@ async function main(argv: string[]): Promise<number> {
     if (target === "self") {
       const summaries = await downloadSelf(runOptions);
       for (const summary of summaries) printSummary("self", summary);
-      return 0;
+      return options.action === "export" || summaries.every((summary) => summary.collectionReason === "complete") ? 0 : 1;
     }
     const summary = await downloadProfile(target, runOptions);
     printSummary(target, summary);

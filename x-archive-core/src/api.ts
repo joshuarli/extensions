@@ -2,24 +2,18 @@ import { Effect, Schema } from "effect";
 import { type Credentials, type Operation } from "./capture.ts";
 import { type XSessionProvider } from "./session.ts";
 
-function graphqlErrorMessage(errors: unknown[]): string | null {
-  const messages = errors.flatMap((error) => {
-    if (error === null || typeof error !== "object") return [];
-    const message = (error as Record<string, unknown>)["message"];
-    return typeof message === "string" ? [message] : [];
-  });
-  return messages.length > 0 ? messages.join("; ").slice(0, 500) : null;
-}
-
-async function readGraphqlError(response: Response): Promise<string | null> {
+async function missingVariable(response: Response): Promise<string | null> {
   try {
     const body: unknown = await response.json();
-    if (body === null || typeof body !== "object") return null;
+    if (!body || typeof body !== "object") return null;
     const errors = (body as Record<string, unknown>)["errors"];
-    return Array.isArray(errors) ? graphqlErrorMessage(errors) : null;
-  } catch {
-    return null;
-  }
+    if (!Array.isArray(errors)) return null;
+    for (const error of errors) {
+      const message: unknown = error && typeof error === "object" ? (error as Record<string, unknown>)["message"] : null;
+      if (message === "Variable $withQuickPromoteEligibilityTweetFields of required type Boolean! was not provided.") return message;
+    }
+  } catch { return null; }
+  return null;
 }
 
 const FailureKindSchema = Schema.Literals(["auth", "rate_limit", "query", "network", "response", "stopped"]);
@@ -105,24 +99,23 @@ export function graphqlRequest(
           headers,
           signal: AbortSignal.any([signal, AbortSignal.timeout(30_000)]),
         });
-      } catch (cause) {
+      } catch {
         if (signal.aborted) throw new RequestFailure("stopped", "Stopped by user.");
-        throw new RequestFailure("network", "X request failed: " + String(cause));
+        throw new RequestFailure("network", "X request failed.");
       }
 
       if (process.env["X_ARCHIVE_DEBUG"]) {
         const names = Object.keys(headers).map((name) => name + "=" + String(headers[name]).length).join(",");
-        console.error("x-debug: operation=" + operation + " status=" + response.status + " header-lengths=" + names + " url=" + url);
+        console.error("x-debug: operation=" + operation + " status=" + response.status + " header-lengths=" + names);
       }
       if (response.status === 429) throw new RequestFailure("rate_limit", "X rate limit reached (HTTP 429).");
       if (response.status === 401 || response.status === 403) {
         throw new RequestFailure("auth", "X rejected the session (HTTP " + response.status + "). Revisit X and try again.");
       }
       if ([400, 404, 422].includes(response.status)) {
-        const graphqlMessage = await readGraphqlError(response);
+        const variable = await missingVariable(response);
         throw new RequestFailure("query",
-          "X rejected the captured query (HTTP " + response.status + ")"
-          + (graphqlMessage ? ": " + graphqlMessage : "") + ".");
+          "X rejected the captured query (HTTP " + response.status + ")" + (variable ? ": " + variable : "."));
       }
       if (!response.ok) throw new RequestFailure("network", "X returned HTTP " + response.status + ".");
       let data: unknown;
@@ -138,11 +131,10 @@ export function graphqlRequest(
       if (Array.isArray(body["errors"]) && body["errors"].length > 0) {
         const rateLimited = body["errors"].some((error: unknown) =>
           error !== null && typeof error === "object" && (error as Record<string, unknown>)["code"] === 88);
-        const message = graphqlErrorMessage(body["errors"]);
         throw new RequestFailure(rateLimited ? "rate_limit" : "query",
           rateLimited
             ? "X GraphQL rate limit reached."
-            : "X GraphQL returned an error" + (message ? ": " + message : "; the private API may have changed."));
+            : "X GraphQL returned an error; the private API may have changed.");
       }
       if ((await session()).userId !== userId) {
         throw new RequestFailure("auth", "X account switched during the request. The response was discarded.");

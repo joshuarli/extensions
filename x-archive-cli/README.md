@@ -49,15 +49,15 @@ retained either way.
   browser on `127.0.0.1:9222` by default (override with `--cdp-url` or
   `X_ARCHIVE_CDP_URL`), or a dedicated bctl appliance with
   `--backend=bctl` (see [bctl](#bctl)). It reads
-  your x.com cookies (including HttpOnly ones) and, from the X Archive
-  extension's storage, the query IDs/features X's web app uses for the
-  GraphQL API. If Helium is not reachable, the CLI falls back to
+  your x.com cookies (including HttpOnly ones). Helium reads the query
+  IDs and features from X Archive extension storage; bctl observes X
+  requests to discover them. If Helium is not reachable, the CLI falls back to
   `~/usr/dotfiles/darwin/.local/bin/export-cookies.py`
   to decrypt the x.com cookies from Helium's cookie store
   (`X_ARCHIVE_COOKIES_HELPER` overrides the path). That fallback needs
   one interactive Keychain approval on this machine before it can run
-  unattended; until then it fails with a clear message. Cached
-  credentials are used as a last resort.
+  unattended; until then it fails with a clear message. A reachable
+  extension is needed to obtain authorization for new Helium runs.
 - **Store**: a profile archive is a SQLite database,
   `~/.local/share/x/downloads/<handle>/archive.db`, holding every observed
   post (merged by tweet id), the per-timeline scan state, and the learned
@@ -113,23 +113,23 @@ One manual sign-in is all; `x` launches or reuses the session (profile
 and session both default to `xarchive`, `--session=NAME` or
 `X_ARCHIVE_SESSION` to override), reads the X session cookies from the
 guest over CDP and collects exactly as on the Helium path. The appliance
-holds the signed-in session between runs and never needs x.com access
-during a collection; GraphQL and media stay host-HTTPS. Stop the session
+holds the signed-in session between runs. It visits X to discover the
+GraphQL recipe; collection and media stay host-HTTPS. Stop the session
 when you are done with `bctl down xarchive`.
 
 The appliance has no extension and no access to your Helium profile, so:
 
 - seeding from Helium's IndexedDB is skipped (the local store is used),
-- credentials come from the credential cache seeded by any normal Helium
-  run (seeded by `x download self` on the Helium backend; reused for 30
-  days). Without a cache the run fails with the remedy; the appliance
-  cannot capture fresh ones,
+- query IDs and feature settings are discovered from browser network
+  requests and stored per account as a reusable recipe without auth headers
+  or cookies; a rejected query triggers at most one rediscovery per run,
 - the export-cookies.py fallback is disabled on this path; a signed-out
   or unreachable appliance fails fast with the sign-in instruction.
 
 Prerequisites: `bctl` on PATH (or `X_ARCHIVE_BCTL=/path/to/bctl`), a
 working Nanos runtime (`bctl doctor` passes), and the one-time sign-in.
-X may treat the appliance as a new device and ask for verification; do
+An exec job can provide `BCTL_CDP_URL` when using the bctl backend. X may
+treat the appliance as a new device and ask for verification; do
 the sign-in by hand and confirm it sticks before relying on overnight
 runs. `X_ARCHIVE_BACKEND=bctl` and `X_ARCHIVE_CDP_URL=URL` (attach to an
 already-minted endpoint instead of launching) are supported.
@@ -143,8 +143,10 @@ already-minted endpoint instead of launching) are supported.
   Profile stores written before the per-folder SQLite store landed live
   under `~/.local/state/x-archive/stores/<account>/profile/<target>/` and
   are no longer read.
-- `X_ARCHIVE_DEBUG=1` prints the URL (no secrets) and HTTP status of
+- `X_ARCHIVE_DEBUG=1` prints the operation and HTTP status of
   each GraphQL call for API-drift debugging.
-- The state dir holds the credential cache and cumulative bookmarks and
-  likes, which may be private. It does not hold your cookies: those stay
+- The state dir holds recipes and cumulative bookmarks and likes, which
+  may be private. New recipes contain no authorization or cookies; a legacy
+  credential cache from an older version may still contain authorization.
+  Cookies stay
   in the browser or pass through memory via the cookie helper.

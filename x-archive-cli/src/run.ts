@@ -401,6 +401,8 @@ export async function downloadSelf(options: RunOptions): Promise<RunSummary[]> {
   if (summaries.length === 0) {
     throw new Error("Nothing captured yet. Open https://x.com/i/history and https://x.com/i/history/likes in Helium once with the extension loaded.");
   }
+  if (summaries.length !== 2) throw new Error("Collection is partial: missing "
+    + ["Bookmarks", "Likes"].filter((operation) => !credentials.queryIds[operation]).join(", ") + ".");
   return summaries;
 }
 

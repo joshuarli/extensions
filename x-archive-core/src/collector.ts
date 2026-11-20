@@ -19,6 +19,7 @@ const PAGE_DELAY_MS = 2500;
 
 export interface ArchiveDeps {
   credentials(userId: string): Promise<Credentials>;
+  refreshCredentials?(operation: Operation): Promise<void>;
   currentUserId(): Promise<string | null>;
   readProfileTarget(userId: string): Promise<ProfileTarget | null>;
   writeProfileTarget(userId: string, target: ProfileTarget): Promise<void>;
@@ -75,6 +76,7 @@ async function requestWithRetry(
   report: (message: string) => void,
 ): Promise<unknown> {
   let consecutiveLimits = 0;
+  let refreshed = false;
   for (let attempt = 0; attempt < 5; attempt++) {
     stopped(signal);
     const credentials = await deps.credentials(userId);
@@ -84,7 +86,15 @@ async function requestWithRetry(
     ));
     if (outcome.ok) return outcome.data;
     const failure = outcome.error;
-    if (failure.kind === "stopped" || failure.kind === "auth" || failure.kind === "query" ||
+    if (failure.kind === "query" && !refreshed && deps.refreshCredentials) {
+      refreshed = true;
+      report("X rejected " + operation + "; rediscovering its recipe once.");
+      await deps.refreshCredentials(operation);
+      attempt--;
+      continue;
+    }
+    if (failure.kind === "query") throw new RequestFailure("query", operation + ": " + failure.message);
+    if (failure.kind === "stopped" || failure.kind === "auth" ||
         failure.kind === "response") throw failure;
     if (failure.kind === "rate_limit") {
       consecutiveLimits++;
@@ -263,7 +273,7 @@ export async function collect(options: CollectionOptions<BookmarksStore>): Promi
     state.reason = "main_timeline_complete";
     await persist();
 
-    const credentials = await options.deps.credentials(userId);
+    let credentials = await options.deps.credentials(userId);
     if (!credentials.queryIds["BookmarkFoldersSlice"]) {
       state.reason = "folder_query_not_captured";
       report("Main bookmarks complete. Open the X bookmarks page to capture the folder-list request.");
@@ -273,6 +283,10 @@ export async function collect(options: CollectionOptions<BookmarksStore>): Promi
     state.folders = "partial";
     await persist();
     const folders = await collectFolderList(options);
+    if (folders.length && !credentials.queryIds["BookmarkFolderTimeline"] && options.deps.refreshCredentials) {
+      await options.deps.refreshCredentials("BookmarkFolderTimeline");
+      credentials = await options.deps.credentials(userId);
+    }
     if (folders.length && !credentials.queryIds["BookmarkFolderTimeline"]) {
       state.reason = "folder_timeline_query_not_captured";
       report("Folder names saved; open a bookmark folder on X to capture folder timeline requests.");

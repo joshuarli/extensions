@@ -32,7 +32,7 @@ export function planBackend(input: BackendInput, env: NodeJS.ProcessEnv = proces
     throw new Error(`Unknown backend "${backend}" (expected "helium" or "bctl").`);
   }
   const session = input.session ?? env["X_ARCHIVE_SESSION"] ?? DEFAULT_SESSION;
-  const cdpUrl = input.cdpUrl ?? env["X_ARCHIVE_CDP_URL"] ?? null;
+  const cdpUrl = input.cdpUrl ?? env["X_ARCHIVE_CDP_URL"] ?? (backend === "bctl" ? env["BCTL_CDP_URL"] : undefined) ?? null;
   return { kind: backend, session, explicitCdpUrl: cdpUrl };
 }
 

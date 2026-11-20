@@ -34,6 +34,12 @@ describe("planBackend", () => {
     expect(planBackend({ cdpUrl: "http://127.0.0.1:9922" }, cleanEnv)).toEqual({ kind: "helium", session: "xarchive", explicitCdpUrl: "http://127.0.0.1:9922" });
   });
 
+  it("attaches an exec job's CDP capability only on the bctl backend", () => {
+    const env = { BCTL_CDP_URL: "http://localhost:1234" } as NodeJS.ProcessEnv;
+    expect(planBackend({ backend: "bctl" }, env).explicitCdpUrl).toBe("http://localhost:1234");
+    expect(planBackend({}, env).explicitCdpUrl).toBeNull();
+  });
+
   it("rejects an unknown backend with a clear error", () => {
     expect(() => planBackend({ backend: "smolvm" }, cleanEnv)).toThrow('Unknown backend "smolvm"');
   });
