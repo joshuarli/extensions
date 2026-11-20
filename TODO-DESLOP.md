@@ -5,6 +5,17 @@ Deslop campaign backlog ([plan](https://github.com/laputa-systems/stuff/blob/mai
 
 ## Report
 
+Completion review: reviewed the cumulative diff from 10f6101 through the
+local benchmark change, including profile state schema, both persistence
+adapters and the scanner and benchmark records. The profile repair is an
+additive persisted-format change; legacy records rescan. The benchmark preflight
+checks selected bundles, fixture and Chromium and warns on direct-source
+staleness; it does not establish process-tree cleanup, free disk, all transitive
+input freshness or a timing gate. The default Knip candidates and structural
+debloat sweep are incomplete rather than clean or allowlisted; see DSLP-11.
+No independent reviewer was delegated under the lane's leaf constraint.
+
+
 Bench audit: Onefile save has small, article, image-heavy and CSS-heavy
 Chromium fixtures and output-marker checks. The selective entrypoint provides
 Edit selection checks and one Change workload; `make bench-list`, `make
