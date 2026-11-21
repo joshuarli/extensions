@@ -1,30 +1,33 @@
-import { TriageError } from "./errors.ts";
+import { failureOf, mayHaveApplied, TriageError } from "./errors.ts";
 import {
-  buildJobs,
+  applyToInventory,
+  buildBackup,
   clamp,
-  toMarkdown,
+  describeConversation,
+  isIncomplete,
+  isRunActive,
+  jobOf,
+  listedSatisfies,
+  satisfies,
+  type BackupEntry,
+  type BuiltBackup,
   type Chat,
-  type Conversation,
   type ConversationProbe,
   type Job,
   type Journal,
+  type Mark,
   type Result,
   type Run,
+  type RunStatus,
+  type SavedBackup,
 } from "./model.ts";
 import { CONFIG, scaled, type Config } from "./api.ts";
 
 export interface QueueTransport {
-  getConversation(id: string): Promise<Conversation>;
-  writeChange(job: Job): Promise<void>;
+  fetchRecord(id: string): Promise<unknown>;
+  writeChange(run: Run, job: Job): Promise<void>;
   listActive(): Promise<Chat[]>;
   probe(id: string): Promise<ConversationProbe>;
-}
-
-export interface BackedUpConversation {
-  id: string;
-  title: string;
-  createdMs: number;
-  messages: Conversation["messages"];
 }
 
 export interface QueueEvent {
@@ -38,34 +41,55 @@ export interface QueueDeps {
   chats: Chat[];
   now: () => number;
   sleep: (ms: number, signal?: AbortSignal) => Promise<void>;
-  persist: () => void | Promise<void>;
+  persist: () => Promise<void>;
   config?: Config;
   scale?: number;
-  owner: string;
   onEvent?: (event: QueueEvent) => void;
 }
 
-const ACTIVE = new Set(["backup", "saving", "running", "waiting", "verifying"]);
-
-function markFor(job: Job, nowMs: number): Journal["marks"][string] {
-  if (job.action === "move") {
-    return { action: "move", title: job.title, newTitle: null, project: job.project, projectName: job.projectName, at: nowMs };
-  }
-  if (job.action === "rename") {
-    return { action: "rename", title: job.title, newTitle: job.newTitle, project: "", projectName: "", at: nowMs };
-  }
-  return { action: job.action, title: job.title, newTitle: null, project: "", projectName: "", at: nowMs };
+export interface StartOptions {
+  runId: string;
+  backup: boolean;
+  acceptIncomplete: boolean;
 }
+
+export interface PendingBackup extends BuiltBackup {
+  runId: string;
+}
+
+export interface BackupProof {
+  file: string;
+  sha256: string;
+  verification: SavedBackup["verification"];
+}
+
+type Settled = "applied" | "not-applied" | "gone" | "unknown";
+
+function markFor(job: Job, nowMs: number): Mark {
+  return {
+    action: job.action,
+    title: job.title,
+    newTitle: job.action === "rename" ? job.newTitle : null,
+    project: job.action === "move" ? job.project : "",
+    projectName: job.action === "move" ? job.projectName : "",
+    at: nowMs,
+  };
+}
+
+function plural(count: number, one: string, many = `${one}s`): string {
+  return `${count} ${count === 1 ? one : many}`;
+}
+
+const aborted = (): TriageError => new TriageError("aborted", "Stopped.");
 
 export class QueueRunner {
   private readonly deps: QueueDeps;
   private readonly config: Config;
   private readonly scale: number;
   private wake: AbortController | null = null;
-  private looping = false;
+  private looping: Promise<void> | null = null;
   private resumeAfter = false;
-  private backup: BackedUpConversation[] = [];
-  private backupRun: string | null = null;
+  private pending: PendingBackup | null = null;
 
   constructor(deps: QueueDeps) {
     this.deps = deps;
@@ -78,123 +102,172 @@ export class QueueRunner {
   }
 
   isActive(): boolean {
-    const run = this.run;
-    return Boolean(run && ACTIVE.has(run.status));
+    return isRunActive(this.run);
   }
 
   async waitUntilIdle(): Promise<void> {
-    while (this.looping) {
-      await new Promise<void>((resolve) => setTimeout(resolve, 0));
-    }
+    while (this.looping) await this.looping;
   }
 
-  backupText(): string {
-    return toMarkdown(this.backup);
+  pendingBackup(): PendingBackup | null {
+    return this.pending && this.pending.runId === this.run?.id ? this.pending : null;
   }
 
   private emit(event: QueueEvent): void {
     this.deps.onEvent?.(event);
   }
 
+  private changed(): void {
+    this.emit({ type: "change" });
+  }
+
   private note(message: string): void {
     this.emit({ type: "note", message });
   }
 
-  private buildJobs(): Job[] {
-    return buildJobs(this.deps.journal, this.deps.chats);
+  // A failed write leaves the journal unable to describe what is sent next, so the run
+  // stops before sending anything more.
+  private async save(): Promise<boolean> {
+    try {
+      await this.deps.persist();
+      return true;
+    } catch (error) {
+      const run = this.run;
+      if (run && isRunActive(run)) {
+        run.status = "paused";
+        run.note = `Couldn't save progress, so nothing more will be sent. ${failureOf(error).message}`;
+        run.nextAt = 0;
+      }
+      this.wake?.abort();
+      this.note("Couldn't save progress. The run is paused.");
+      this.changed();
+      return false;
+    }
   }
 
-  start(options: { backup: boolean; runId?: string }): void {
-    const jobs = this.buildJobs();
+  async start(jobs: readonly Job[], options: StartOptions): Promise<void> {
     if (!jobs.length) return;
-    const wantBackup = options.backup && jobs.some((job) => job.action === "delete");
+    const existing = this.run;
+    if (existing && (isRunActive(existing) || existing.status === "paused")) return;
+    const required = options.backup && jobs.some((job) => job.action === "delete");
     const nowMs = this.deps.now();
     this.deps.journal.run = {
-      id: options.runId ?? nowMs.toString(36),
-      status: wantBackup ? "backup" : "running",
-      phase: wantBackup ? "backup" : "write",
-      jobs,
+      id: options.runId,
+      accountId: this.deps.journal.accountId,
+      status: required ? "backup" : "running",
+      phase: required ? "backup" : "write",
+      jobs: jobs.map((job) => ({ ...job, tries: 0 })),
       i: 0,
       results: [],
       startedAt: nowMs,
-      owner: this.deps.owner,
-      beat: nowMs,
       lastWriteAt: 0,
       nextAt: 0,
       fails: 0,
       note: "",
-      current: null,
+      inflight: null,
       held: {},
-      backupCount: 0,
-      backupFile: null,
-      backupDownloaded: null,
+      backup: { required, acceptIncomplete: options.acceptIncomplete, saved: null },
       finishedAt: null,
     };
-    this.backup = [];
-    this.backupRun = null;
-    void this.deps.persist();
-    this.note(`Started: ${jobs.length} ${jobs.length === 1 ? "change" : "changes"}.`);
-    void this.loop();
+    this.pending = null;
+    this.note(`Started: ${plural(jobs.length, "change")}.`);
+    if (!(await this.save())) return;
+    this.kick();
   }
 
-  resume(): void {
+  async resume(): Promise<void> {
     const run = this.run;
     if (!run || run.status !== "paused") return;
     if (this.looping) {
       this.resumeAfter = true;
       return;
     }
-    run.owner = this.deps.owner;
-    run.status = run.phase === "backup" ? "backup" : "running";
     run.note = "";
     run.fails = 0;
-    void this.deps.persist();
+    if (run.phase === "save") {
+      if (this.pendingBackup()) {
+        run.status = "saving";
+        await this.save();
+        this.changed();
+        return;
+      }
+      // The collected backup lived only in memory; collect it again before any deletion.
+      run.phase = "backup";
+    }
+    run.status = run.phase === "backup" ? "backup" : run.phase === "verify" ? "verifying" : "running";
     this.note("Resumed.");
-    void this.loop();
+    if (!(await this.save())) return;
+    this.kick();
   }
 
-  pause(reason: string): void {
+  async pause(reason: string): Promise<void> {
     const run = this.run;
-    if (!run || !ACTIVE.has(run.status)) return;
+    if (!run || !isRunActive(run)) return;
     run.status = "paused";
     run.note = reason;
     run.nextAt = 0;
-    void this.deps.persist();
     this.wake?.abort();
     this.note(reason ? `Paused: ${reason}` : "Paused.");
-    this.emit({ type: "change" });
+    this.changed();
+    await this.save();
   }
 
-  stop(): void {
+  async stop(): Promise<void> {
     const run = this.run;
-    if (!run) return;
+    if (!run || run.status === "done" || run.status === "stopped") return;
     this.resumeAfter = false;
     run.status = "stopped";
-    run.note = "";
+    run.note = run.inflight ? "Stopped while a change was in flight; check that chat in ChatGPT." : "";
     run.nextAt = 0;
     run.finishedAt = this.deps.now();
-    void this.deps.persist();
+    this.pending = null;
     this.wake?.abort();
     this.note("Stopped. Chats that weren't reached keep their marks.");
-    this.emit({ type: "change" });
+    this.changed();
+    await this.save();
   }
 
-  dismiss(): void {
+  async dismiss(): Promise<void> {
+    if (this.isActive()) return;
     this.deps.journal.run = null;
-    void this.deps.persist();
-    this.emit({ type: "change" });
+    this.pending = null;
+    this.changed();
+    await this.save();
   }
 
-  acknowledgeBackupSaved(filename: string): void {
+  async acknowledgeBackupSaved(proof: BackupProof): Promise<boolean> {
     const run = this.run;
-    if (!run || run.status !== "saving" || this.backupRun !== run.id || !this.backup.length) return;
-    run.backupFile = filename;
-    this.note(`Saved the backup of ${this.backup.length} ${this.backup.length === 1 ? "chat" : "chats"} as ${filename}.`);
+    const pending = this.pendingBackup();
+    if (!run || run.status !== "saving" || !pending || proof.sha256 !== pending.sha256) return false;
+    run.backup.saved = {
+      file: proof.file,
+      sha256: proof.sha256,
+      ids: [...pending.ids],
+      verification: proof.verification,
+      at: this.deps.now(),
+    };
     run.phase = "write";
     run.status = "running";
-    run.owner = this.deps.owner;
-    void this.deps.persist();
-    void this.loop();
+    this.note(`Saved the backup of ${plural(pending.ids.length, "chat")} as ${proof.file}.`);
+    if (!(await this.save())) return false;
+    this.pending = null;
+    this.kick();
+    return true;
+  }
+
+  private kick(): void {
+    if (this.looping) return;
+    const wake = new AbortController();
+    this.wake = wake;
+    this.looping = this.loop(wake.signal).finally(() => {
+      this.looping = null;
+      if (this.wake === wake) this.wake = null;
+      this.changed();
+      if (this.resumeAfter) {
+        this.resumeAfter = false;
+        void this.resume();
+      }
+    });
   }
 
   private record(run: Run, job: Job, status: Result["status"], detail = ""): void {
@@ -211,58 +284,47 @@ export class QueueRunner {
     });
   }
 
-  private satisfied(job: Job, probe: ConversationProbe): boolean {
-    switch (job.action) {
-      case "delete": return !probe.visible;
-      case "archive": return probe.archived;
-      case "unarchive": return !probe.archived;
-      case "rename": return probe.title === job.newTitle;
-      case "move": return (probe.projectId ?? "") === job.project;
-    }
-  }
-
-  // Before repeating an in-flight destructive change after an interruption, ask ChatGPT
-  // whether it already took effect. If it did, reconcile instead of sending it again.
-  private async reconcileInFlight(run: Run, signal: AbortSignal): Promise<void> {
-    const job = run.jobs[run.i];
-    if (!job || run.current !== job.id) return;
-    let probe: ConversationProbe;
+  private async settle(job: Job): Promise<Settled> {
     try {
-      probe = await this.deps.transport.probe(job.id);
+      return satisfies(job, await this.deps.transport.probe(job.id)) ? "applied" : "not-applied";
     } catch (error) {
-      if (error instanceof TriageError && error.kind === "aborted") throw error;
-      if (error instanceof TriageError && error.kind === "notfound" && job.action === "delete") {
-        probe = { archived: false, visible: false, projectId: null, title: null };
-      } else {
-        throw new TriageError("http", "Couldn't check an interrupted change. Verify it in ChatGPT, then resume.");
-      }
+      const failure = failureOf(error);
+      if (failure.kind === "aborted") throw failure;
+      if (failure.kind === "notfound") return job.action === "delete" ? "applied" : "gone";
+      return "unknown";
     }
-    if (signal.aborted) throw new TriageError("aborted", "Stopped.");
-    if (!this.satisfied(job, probe)) return;
-    delete this.deps.journal.marks[job.id];
-    this.record(run, job, "done", "Reconciled after an interruption; it was not sent again.");
-    run.i += 1;
-    run.current = null;
-    this.applyLocally(job);
-    void this.deps.persist();
   }
 
-  private applyLocally(job: Job): void {
+  private complete(run: Run, job: Job, detail: string): void {
+    applyToInventory(this.deps.chats, job, this.deps.now());
     delete this.deps.journal.marks[job.id];
-    const chats = this.deps.chats;
-    const index = chats.findIndex((chat) => chat.id === job.id);
-    const chat = index >= 0 ? chats[index] : undefined;
-    if (!chat) return;
-    if (job.action === "delete" || job.action === "archive") {
-      chats.splice(index, 1);
-    } else if (job.action === "unarchive") {
-      chats.splice(index, 1);
-    } else if (job.action === "rename") {
-      chat.title = job.newTitle ?? chat.title;
-    } else if (job.action === "move") {
-      chat.projectId = job.project || null;
-      chat.updatedMs = this.deps.now();
+    this.record(run, job, "done", detail);
+    run.i += 1;
+    run.fails = 0;
+    run.inflight = null;
+  }
+
+  // Decides the outcome of a write that may have been sent. Returns true when the job
+  // is settled and the queue may move on, false when it must be sent (again).
+  private async reconcile(run: Run, job: Job, detail: string): Promise<boolean | "halt"> {
+    const settled = await this.settle(job);
+    if (settled === "applied") {
+      this.complete(run, job, detail);
+      return (await this.save()) ? true : "halt";
     }
+    if (settled === "gone") {
+      this.record(run, job, "failed", "Chat not found.");
+      run.i += 1;
+      run.inflight = null;
+      return (await this.save()) ? true : "halt";
+    }
+    if (settled === "unknown") {
+      if (run.inflight) run.inflight.outcome = "unknown";
+      await this.pause(`Couldn't confirm whether the change to “${job.title}” went through. Check it in ChatGPT, then resume.`);
+      return "halt";
+    }
+    run.inflight = null;
+    return (await this.save()) ? false : "halt";
   }
 
   private async waitForCooldown(signal: AbortSignal): Promise<void> {
@@ -272,268 +334,269 @@ export class QueueRunner {
     }
   }
 
-  private async loop(): Promise<void> {
-    if (this.looping) return;
-    this.looping = true;
-    const wake = new AbortController();
-    this.wake = wake;
+  private async loop(signal: AbortSignal): Promise<void> {
     const run = this.run;
-    if (!run) {
-      this.looping = false;
-      this.wake = null;
-      return;
-    }
-    const set = (status: Run["status"]) => {
-      if (!wake.signal.aborted) run.status = status;
+    if (!run) return;
+    const live = () => !signal.aborted && this.run === run;
+    const set = (status: RunStatus) => {
+      if (live()) run.status = status;
     };
     try {
-      if (run.current) {
-        await this.reconcileInFlight(run, wake.signal);
-      }
-      if (run.phase === "backup") {
-        await this.doBackup(run, wake.signal);
-        if (this.backup.length) {
-          run.phase = "save";
-          set("saving");
-          void this.deps.persist();
+      if (run.inflight) {
+        const job = run.jobs[run.i];
+        if (!job || job.id !== run.inflight.id) {
+          await this.pause("The saved run doesn't match its in-flight change. Check ChatGPT before continuing.");
           return;
         }
-        run.phase = "write";
-        set("running");
-        void this.deps.persist();
+        const settled = await this.reconcile(run, job, "Reconciled after an interruption; it was not sent again.");
+        if (settled === "halt") return;
       }
-      while (run.i < run.jobs.length) {
-        if (wake.signal.aborted) return;
-        const job = run.jobs[run.i];
-        if (!job) break;
-        run.current = job.id;
-
-        const held = run.held[job.id];
-        if (held && job.action === "delete") {
-          this.record(run, job, "held", `Not deleted: it couldn't be backed up. ${held} It's still marked.`);
-          run.i += 1;
-          void this.deps.persist();
-          this.emit({ type: "change" });
-          continue;
-        }
-
-        while (this.deps.journal.cooldownUntil > this.deps.now()) {
-          set("waiting");
-          run.nextAt = 0;
-          this.emit({ type: "change" });
-          await this.waitForCooldown(wake.signal);
-        }
-
-        const gap = run.lastWriteAt + scaled(this.deps.journal.settings.gap * 1000, this.scale) - this.deps.now();
-        if (gap > 0) {
-          set("running");
-          run.nextAt = this.deps.now() + gap;
-          this.emit({ type: "change" });
-          await this.deps.sleep(gap, wake.signal);
-        }
-        set("running");
-        run.nextAt = 0;
-        run.current = job.id;
-        this.emit({ type: "change" });
-        try {
-          await this.deps.transport.writeChange(job);
-          run.lastWriteAt = this.deps.now();
-          this.applyLocally(job);
-          this.record(run, job, "done");
-          run.i += 1;
-          run.fails = 0;
-          job.tries = 0;
-          run.current = null;
-          // Cooldown/strikes are owned by the API client; the transport signals them by throwing.
-        } catch (error) {
-          run.lastWriteAt = this.deps.now();
-          const failure = error instanceof TriageError ? error : null;
-          const kind = failure?.kind ?? "http";
-          if (kind === "ratelimit" || kind === "cooldown") {
-            if (failure && failure.until > 0) {
-              this.deps.journal.cooldownUntil = Math.max(this.deps.journal.cooldownUntil, failure.until);
-              void this.deps.persist();
-            }
-            continue;
-          }
-          if (kind === "notfound") {
-            if (job.action === "delete" || job.action === "archive") {
-              this.applyLocally(job);
-              this.record(run, job, "done", "It was already gone.");
-            } else {
-              this.record(run, job, "failed", "Chat not found.");
-            }
-            run.i += 1;
-            run.current = null;
-            continue;
-          }
-          if (kind === "auth") {
-            this.pause(failure?.message ?? "Sign-in expired.");
-            return;
-          }
-          job.tries += 1;
-          if (kind === "transient" && job.tries <= this.config.transientBackoff.length) {
-            run.note = `${failure?.message ?? "Server error."} Trying again shortly.`;
-            this.emit({ type: "change" });
-            await this.deps.sleep(scaled(this.config.transientBackoff[job.tries - 1] ?? 0, this.scale), wake.signal);
-            run.note = "";
-            continue;
-          }
-          this.record(run, job, "failed", failure?.message ?? "Change failed.");
-          run.i += 1;
-          run.current = null;
-          run.fails += 1;
-          if (run.fails >= 3) {
-            this.pause("Three changes in a row failed. Check ChatGPT, then resume.");
-            return;
-          }
-        } finally {
-          void this.deps.persist();
-          this.emit({ type: "change" });
-        }
+      if (run.phase === "backup") {
+        const next = await this.collectBackup(run, signal, set);
+        if (next !== "write" || !live()) return;
       }
-      if (wake.signal.aborted) return;
-      set("verifying");
-      run.current = null;
-      this.emit({ type: "change" });
-      await this.verify(run);
+      if (run.phase === "write") {
+        if (!(await this.writeAll(run, signal, set))) return;
+        run.phase = "verify";
+        set("verifying");
+        if (!(await this.save())) return;
+      }
+      if (!live()) return;
+      this.changed();
+      await this.verify(run, live);
+      if (!live()) return;
       run.status = "done";
+      run.note = "";
       run.finishedAt = this.deps.now();
-      void this.deps.persist();
       const failed = run.results.filter((result) => result.status !== "done").length;
-      this.note(`Finished. ${run.results.length - failed} ${run.results.length - failed === 1 ? "change" : "changes"} made${failed ? `, ${failed} need attention` : ""}.`);
+      this.note(`Finished. ${plural(run.results.length - failed, "change")} made${failed ? `, ${failed} need attention` : ""}.`);
+      await this.save();
     } catch (error) {
-      const failure = error instanceof TriageError ? error : null;
-      if (failure?.kind !== "aborted") this.pause(failure?.message ?? String(error));
-    } finally {
-      this.looping = false;
-      if (this.wake === wake) this.wake = null;
-      void this.deps.persist();
-      this.emit({ type: "change" });
-      if (this.resumeAfter) {
-        this.resumeAfter = false;
-        queueMicrotask(() => this.resume());
-      }
+      const failure = failureOf(error);
+      if (failure.kind !== "aborted" && live()) await this.pause(failure.message);
     }
   }
 
-  private async doBackup(run: Run, signal: AbortSignal): Promise<void> {
+  private async writeAll(run: Run, signal: AbortSignal, set: (status: RunStatus) => void): Promise<boolean> {
+    const live = () => !signal.aborted && this.run === run;
+    while (run.i < run.jobs.length) {
+      if (!live()) return false;
+      const job = run.jobs[run.i];
+      if (!job) break;
+
+      if (job.action === "delete" && run.backup.required) {
+        const held = run.held[job.id];
+        if (held) {
+          this.record(run, job, "held", `Not deleted: it wasn't backed up. ${held} It's still marked.`);
+          run.i += 1;
+          if (!(await this.save())) return false;
+          this.changed();
+          continue;
+        }
+        if (!run.backup.saved?.ids.includes(job.id)) {
+          await this.pause(`No saved backup includes “${job.title}”, so it wasn't deleted.`);
+          return false;
+        }
+      }
+
+      while (this.deps.journal.cooldownUntil > this.deps.now()) {
+        set("waiting");
+        run.nextAt = 0;
+        this.changed();
+        await this.waitForCooldown(signal);
+      }
+      const gap = run.lastWriteAt + scaled(this.deps.journal.settings.gap * 1000, this.scale) - this.deps.now();
+      if (gap > 0) {
+        set("running");
+        run.nextAt = this.deps.now() + gap;
+        this.changed();
+        await this.deps.sleep(gap, signal);
+      }
+      if (!live()) return false;
+      set("running");
+      run.nextAt = 0;
+      run.inflight = { id: job.id, sentAt: this.deps.now(), outcome: "sent" };
+      if (!(await this.save())) {
+        run.inflight = null;
+        return false;
+      }
+      if (!live()) {
+        run.inflight = null;
+        await this.save();
+        return false;
+      }
+      this.changed();
+
+      let failure: TriageError | null = null;
+      try {
+        await this.deps.transport.writeChange(run, job);
+      } catch (error) {
+        failure = failureOf(error);
+      }
+      run.lastWriteAt = this.deps.now();
+
+      if (!failure) {
+        this.complete(run, job, "");
+        job.tries = 0;
+        if (!(await this.save())) return false;
+        this.changed();
+        continue;
+      }
+
+      if (mayHaveApplied(failure)) {
+        const settled = await this.reconcile(run, job, "Confirmed with ChatGPT after an uncertain response; it was not sent again.");
+        if (settled === "halt") return false;
+        if (settled) {
+          this.changed();
+          continue;
+        }
+        job.tries += 1;
+        if (job.tries <= this.config.transientBackoff.length) {
+          run.note = `${failure.message} ChatGPT shows it didn't apply; trying again shortly.`;
+          this.changed();
+          await this.deps.sleep(scaled(this.config.transientBackoff[job.tries - 1] ?? 0, this.scale), signal);
+          run.note = "";
+          continue;
+        }
+      } else {
+        run.inflight = null;
+      }
+
+      if (failure.kind === "ratelimit" || failure.kind === "cooldown") {
+        if (failure.until > 0) this.deps.journal.cooldownUntil = Math.max(this.deps.journal.cooldownUntil, failure.until);
+        if (!(await this.save())) return false;
+        continue;
+      }
+      if (failure.kind === "auth") {
+        await this.pause(failure.message);
+        return false;
+      }
+      if (failure.kind === "notfound" && job.action === "delete") {
+        this.complete(run, job, "It was already gone.");
+        if (!(await this.save())) return false;
+        continue;
+      }
+      this.record(run, job, "failed", failure.kind === "notfound" ? "Chat not found." : failure.message);
+      run.i += 1;
+      run.fails += 1;
+      if (!(await this.save())) return false;
+      this.changed();
+      if (run.fails >= 3) {
+        await this.pause("Three changes in a row failed. Check ChatGPT, then resume.");
+        return false;
+      }
+    }
+    return live();
+  }
+
+  private async collectBackup(
+    run: Run,
+    signal: AbortSignal,
+    set: (status: RunStatus) => void,
+  ): Promise<"saving" | "write" | "halt"> {
     const targets = run.jobs.filter((job) => job.action === "delete");
-    const out: BackedUpConversation[] = [];
+    const entries: BackupEntry[] = [];
     const held: Record<string, string> = {};
     let tries = 0;
-    for (let index = 0; index < targets.length; index += 1) {
-      if (signal.aborted) throw new TriageError("aborted", "Stopped.");
+    for (let index = 0; index < targets.length;) {
+      if (signal.aborted) throw aborted();
       const job = targets[index];
-      if (!job) continue;
-      run.status = "backup";
-      run.current = job.id;
+      if (!job) break;
+      set("backup");
       run.note = `Backing up chat ${index + 1} of ${targets.length} before deleting anything.`;
-      this.emit({ type: "change" });
+      this.changed();
       try {
-        const conversation = await this.deps.transport.getConversation(job.id);
-        const createdMs = this.deps.chats.find((chat) => chat.id === job.id)?.createdMs ?? 0;
-        out.push({ id: job.id, title: job.title, createdMs, messages: conversation.messages });
+        const record = await this.deps.transport.fetchRecord(job.id);
+        const coverage = describeConversation(record);
+        if (isIncomplete(coverage) && !run.backup.acceptIncomplete) {
+          held[job.id] = `It has ${plural(coverage.images + coverage.attachments, "attachment or image file", "attachment or image files")} the backup can't include.`;
+        } else {
+          const createdMs = this.deps.chats.find((chat) => chat.id === job.id)?.createdMs ?? 0;
+          entries.push({ id: job.id, title: job.title, createdMs, record, coverage });
+        }
         tries = 0;
-        if (index < targets.length - 1) await this.deps.sleep(scaled(this.config.backupGap, this.scale), signal);
+        index += 1;
+        if (index < targets.length) await this.deps.sleep(scaled(this.config.backupGap, this.scale), signal);
       } catch (error) {
-        const failure = error instanceof TriageError ? error : null;
-        if (failure?.kind === "aborted") throw error;
-        if (failure && (failure.kind === "ratelimit" || failure.kind === "cooldown")) {
+        const failure = failureOf(error);
+        if (failure.kind === "aborted" || failure.kind === "auth") throw failure;
+        if (failure.kind === "ratelimit" || failure.kind === "cooldown") {
           if (failure.until > 0) this.deps.journal.cooldownUntil = Math.max(this.deps.journal.cooldownUntil, failure.until);
-          run.status = "waiting";
-          this.emit({ type: "change" });
+          set("waiting");
+          this.changed();
           await this.waitForCooldown(signal);
-          index -= 1;
           continue;
         }
-        if (failure?.kind === "transient" && tries < this.config.transientBackoff.length) {
+        if (failure.kind === "transient" && tries < this.config.transientBackoff.length) {
           await this.deps.sleep(scaled(this.config.transientBackoff[tries] ?? 0, this.scale), signal);
           tries += 1;
-          index -= 1;
           continue;
         }
-        if (failure?.kind === "auth") throw error;
+        held[job.id] = failure.kind === "notfound" ? "ChatGPT couldn't find it." : failure.message;
         tries = 0;
-        if (failure?.kind === "notfound") continue;
-        held[job.id] = failure?.message ?? "unknown error";
+        index += 1;
       }
     }
-    this.backup = out;
-    this.backupRun = run.id;
+    if (signal.aborted) throw aborted();
     run.held = held;
     run.note = "";
-    run.backupCount = out.length;
     const kept = Object.keys(held).length;
-    if (kept) this.note(`Couldn't back up ${kept} ${kept === 1 ? "chat" : "chats"}, so ${kept === 1 ? "it won't" : "they won't"} be deleted.`);
+    if (kept) this.note(`Couldn't back up ${plural(kept, "chat")}, so ${kept === 1 ? "it won't" : "they won't"} be deleted.`);
+    if (!entries.length) {
+      run.phase = "write";
+      set("running");
+      return (await this.save()) ? "write" : "halt";
+    }
+    const built = await buildBackup({ accountId: run.accountId, runId: run.id, createdMs: run.startedAt }, entries);
+    if (signal.aborted) throw aborted();
+    this.pending = { ...built, runId: run.id };
+    run.phase = "save";
+    set("saving");
+    this.note(`Collected a backup of ${plural(entries.length, "chat")}. Save it to continue; nothing is deleted until it is saved.`);
+    return (await this.save()) ? "saving" : "halt";
   }
 
-  private async verify(run: Run): Promise<void> {
-    const gone = run.results.filter((result) => result.status === "done" && (result.action === "delete" || result.action === "archive"));
-    const moved = run.results.filter((result) => result.status === "done" && result.action === "move");
-    if (!gone.length && !moved.length) return;
+  private async verify(run: Run, live: () => boolean): Promise<void> {
+    const done = run.results.filter((result) => result.status === "done");
+    if (!done.length) return;
     run.note = "Double-checking with ChatGPT.";
-    this.emit({ type: "change" });
+    this.changed();
     let fresh: Chat[];
     try {
       fresh = await this.deps.transport.listActive();
     } catch (error) {
-      run.note = `Couldn't double-check: ${error instanceof Error ? error.message : String(error)}`;
+      const failure = failureOf(error);
+      if (failure.kind === "aborted") throw failure;
+      run.note = `Couldn't double-check: ${failure.message}`;
       return;
     }
     const listed = new Map(fresh.map((chat) => [chat.id, chat]));
-    const suspects = [
-      ...gone.filter((result) => listed.has(result.id)),
-      ...moved.filter((result) => listed.has(result.id) && (listed.get(result.id)?.projectId ?? "") !== result.project),
-    ];
-    const stuck = new Set<string>();
-    for (const result of suspects) {
-      const probe = await this.probeChange(result);
-      if (probe) {
-        stuck.add(result.id);
+    const confirmed: Result[] = [];
+    for (const result of done) {
+      if (!live()) throw aborted();
+      const job = jobOf(result);
+      if (listedSatisfies(job, listed.get(result.id))) {
+        confirmed.push(result);
+        continue;
+      }
+      const settled = await this.settle(job);
+      if (settled === "applied") {
+        confirmed.push(result);
         continue;
       }
       result.status = "unconfirmed";
+      if (settled === "unknown") {
+        result.note = "Couldn't re-check this change with ChatGPT. Check it there.";
+        continue;
+      }
       result.note = "ChatGPT still shows this chat unchanged. It's marked again so you can retry.";
-      this.deps.journal.marks[result.id] = markFor(
-        {
-          id: result.id,
-          action: result.action,
-          newTitle: result.newTitle,
-          title: result.title,
-          project: result.project,
-          projectName: result.projectName,
-          tries: 0,
-        },
-        this.deps.now(),
-      );
+      this.deps.journal.marks[result.id] = markFor(job, this.deps.now());
     }
-    const movedTo = new Map(moved.map((result) => [result.id, result.project || null]));
-    this.deps.chats.splice(0, this.deps.chats.length, ...fresh.filter((chat) => !(stuck.has(chat.id) && !movedTo.has(chat.id))));
-    for (const chat of this.deps.chats) {
-      if (stuck.has(chat.id) && movedTo.has(chat.id)) chat.projectId = movedTo.get(chat.id) ?? null;
-    }
+    const keep = this.deps.chats.filter((chat) => !listed.has(chat.id) && (chat.archived || confirmed.some((result) => result.id === chat.id)));
+    const merged = [...fresh, ...keep];
+    for (const result of confirmed) applyToInventory(merged, jobOf(result), this.deps.now());
+    this.deps.chats.splice(0, this.deps.chats.length, ...merged);
     run.note = "";
-    void this.deps.persist();
-  }
-
-  // Returns true only when the change really stuck. GPT's list can lag, so a listed chat is probed directly.
-  private async probeChange(result: Result): Promise<boolean> {
-    const job: Job = {
-      id: result.id,
-      action: result.action,
-      newTitle: result.newTitle,
-      title: result.title,
-      project: result.project,
-      projectName: result.projectName,
-      tries: 0,
-    };
-    try {
-      const probe = await this.deps.transport.probe(result.id);
-      return this.satisfied(job, probe);
-    } catch (error) {
-      return error instanceof TriageError && error.kind === "notfound" && result.action === "delete";
-    }
   }
 }
 

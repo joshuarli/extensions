@@ -1,97 +1,24 @@
-import { expect, test, chromium, type BrowserContext } from "playwright/test";
+import { expect, test, chromium, type BrowserContext, type Page } from "playwright/test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { resolve } from "node:path";
+import { FakeChatgpt } from "./fake-chatgpt.ts";
 
 const extensionPath = resolve("build/extension-chatgpt");
 
-const conversations = {
-  items: [
-    {
-      id: "c1",
-      title: "Sourdough starter",
-      create_time: "2024-01-01T00:00:00Z",
-      update_time: "2024-01-01T00:00:00Z",
-      conversation_template_id: null,
-      gizmo_id: null,
-      is_archived: false,
-      pinned_time: null,
-      is_starred: null,
-    },
-    {
-      id: "c2",
-      title: "Kubernetes basics",
-      create_time: "2024-01-02T00:00:00Z",
-      update_time: "2024-01-02T00:00:00Z",
-      conversation_template_id: null,
-      gizmo_id: null,
-      is_archived: false,
-      pinned_time: null,
-      is_starred: null,
-    },
-  ],
-  total: 2,
-  limit: 100,
-  offset: 0,
-  has_missing_conversations: false,
-};
-
-const detail = {
-  title: "Sourdough starter",
-  create_time: "2024-01-01T00:00:00Z",
-  update_time: "2024-01-01T00:00:00Z",
-  is_archived: false,
-  gizmo_id: null,
-  conversation_template_id: null,
-  current_node: "a1",
-  mapping: {
-    root: { id: "root", message: null, parent: null },
-    u1: {
-      id: "u1", parent: "root",
-      message: { author: { role: "user" }, create_time: "2024-01-01T00:00:00Z", content: { content_type: "text", parts: ["How do I start a starter?"] }, metadata: {} },
-    },
-    a1: {
-      id: "a1", parent: "u1",
-      message: { author: { role: "assistant" }, create_time: "2024-01-01T00:00:05Z", content: { content_type: "text", parts: ["Mix flour and water and wait."] }, metadata: {} },
-    },
-  },
-};
-
-async function routeChatgpt(context: BrowserContext, deletedIds: string[]): Promise<void> {
-  await context.route("https://chatgpt.com/**", async (route) => {
-    const url = new URL(route.request().url());
-    const send = (body: unknown) => route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify(body),
-      headers: { "access-control-allow-origin": "*" },
-    });
-    if (url.pathname === "/api/auth/session") {
-      return send({ user: { id: "u-e2e", name: "Fixture" }, accessToken: "fixture-token", expires: "2030-01-01T00:00:00Z" });
-    }
-    if (url.pathname === "/backend-api/conversations") {
-      const offset = Number(url.searchParams.get("offset") ?? 0);
-      return send({ ...conversations, items: offset === 0 ? conversations.items : [], offset });
-    }
-    if (url.pathname === "/backend-api/gizmos/snorlax/sidebar") {
-      return send({
-        items: [{ gizmo: { gizmo: { id: "g-p-work", gizmo_type: "snorlax", display: { name: "Work", description: "" } }, tools: [], files: [] }, conversations: { items: [] } }],
-        cursor: null,
-      });
-    }
-    if (url.pathname.startsWith("/backend-api/conversation/")) {
-      if (route.request().method() === "PATCH") {
-        deletedIds.push(decodeURIComponent(url.pathname.split("/").pop() ?? ""));
-        return send({ success: true });
-      }
-      return send(detail);
-    }
-    return route.fulfill({ status: 200, contentType: "text/html", body: "<!doctype html><title>ChatGPT fixture</title><main>fixture</main>" });
-  });
+interface Saved {
+  name: string;
+  text: string;
 }
 
-test("installed extension loads conversations through its isolated content script", async () => {
+interface Harness {
+  context: BrowserContext;
+  extensionId: string;
+  chatgpt: Page;
+  openDashboard(): Promise<Page>;
+}
+
+async function withExtension(server: FakeChatgpt, body: (harness: Harness) => Promise<void>): Promise<void> {
   const profile = await mkdtemp(resolve(".work/tmp/mv3-chatgpt-profile-"));
-  const deletedIds: string[] = [];
   let context: BrowserContext | undefined;
   try {
     context = await chromium.launchPersistentContext(profile, {
@@ -99,73 +26,296 @@ test("installed extension loads conversations through its isolated content scrip
       headless: true,
       args: [`--disable-extensions-except=${extensionPath}`, `--load-extension=${extensionPath}`],
     });
-    await routeChatgpt(context, deletedIds);
-
+    // A file picker that records what the dashboard writes, standing in for the native dialog.
+    await context.addInitScript(() => {
+      const target = window as unknown as {
+        __saved: { name: string; text: string }[];
+        __cancelSave: boolean;
+        showSaveFilePicker: (options: { suggestedName: string }) => Promise<unknown>;
+      };
+      target.__saved = [];
+      target.__cancelSave = false;
+      target.showSaveFilePicker = async (options) => {
+        if (target.__cancelSave) throw new DOMException("The user aborted a request.", "AbortError");
+        const chunks: string[] = [];
+        const name = options.suggestedName;
+        return {
+          name,
+          async createWritable() {
+            return {
+              async write(data: string) { chunks.push(data); },
+              async close() { target.__saved.push({ name, text: chunks.join("") }); },
+            };
+          },
+          async getFile() { return new File(chunks, name); },
+        };
+      };
+    });
+    await server.install(context);
     const worker = context.serviceWorkers()[0] ?? await context.waitForEvent("serviceworker");
     const extensionId = new URL(worker.url()).host;
-    expect(worker.url()).toBe(`chrome-extension://${extensionId}/service-worker.js`);
-
+    const welcome = context.pages().find((page) => page.url().startsWith("chrome-extension://"))
+      ?? await context.waitForEvent("page", { predicate: (page) => page.url().startsWith("chrome-extension://"), timeout: 10_000 });
+    await welcome.close();
     const chatgpt = await context.newPage();
     await chatgpt.goto("https://chatgpt.com/");
     await expect(chatgpt).toHaveTitle("ChatGPT fixture");
-
-    const dashboard = await context.newPage();
-    await dashboard.goto(`chrome-extension://${extensionId}/dashboard.html`);
-    await expect(dashboard.locator(".brand")).toContainText("ChatGPT Organizer");
-    await expect(dashboard.locator(".row")).toHaveCount(2, { timeout: 20_000 });
-    await expect(dashboard.locator(".row").first()).toContainText("Sourdough starter");
-    await expect(dashboard.locator(".row").nth(1)).toContainText("Kubernetes basics");
-    await expect(dashboard.getByRole("button", { name: "Run queue" })).toBeDisabled();
-
-    const chatgptTabId = await dashboard.evaluate(async () => {
-      const tabs = await chrome.tabs.query({ url: "https://chatgpt.com/*" });
-      const id = tabs[0]?.id;
-      if (id === undefined) throw new Error("No ChatGPT tab");
-      return id;
+    const opened = context;
+    await body({
+      context: opened,
+      extensionId,
+      chatgpt,
+      async openDashboard() {
+        const page = await opened.newPage();
+        await page.goto(`chrome-extension://${extensionId}/dashboard.html`);
+        return page;
+      },
     });
-
-    const unarmed = await dashboard.evaluate(async (tabId) => new Promise<{
-      ok: boolean;
-      error?: { kind: string; message: string };
-    }>((resolve) => {
-      chrome.tabs.sendMessage(tabId, {
-        kind: "chatgpt/api",
-        requestId: "unarmed",
-        op: "change",
-        id: "c2",
-        runId: "not-armed",
-        action: "delete",
-        body: { is_visible: false },
-      }, (response: unknown) => resolve(response as { ok: boolean; error?: { kind: string; message: string } }));
-    }), chatgptTabId);
-    expect(unarmed.ok).toBe(false);
-    expect(unarmed.error?.kind).toBe("auth");
-    expect(deletedIds).toEqual([]);
-
-    const arm = await dashboard.evaluate(async (tabId) => new Promise<{ ok: boolean }>((resolve) => {
-      chrome.tabs.sendMessage(tabId, {
-        kind: "chatgpt/api", requestId: "arm-e2e", op: "arm", runId: "run-e2e",
-        jobs: [{ id: "c2", action: "delete" }],
-      }, (response: unknown) => resolve(response as { ok: boolean }));
-    }), chatgptTabId);
-    expect(arm.ok).toBe(true);
-
-    const sendChange = (id: string, runId: string): Promise<{ ok: boolean; error?: { kind: string } }> =>
-      dashboard.evaluate(async ({ tabId, chatId, authorizedRun }) => new Promise<{ ok: boolean; error?: { kind: string } }>((resolve) => {
-        chrome.tabs.sendMessage(tabId, {
-          kind: "chatgpt/api", requestId: `change-${chatId}`, op: "change", id: chatId,
-          runId: authorizedRun, action: "delete", body: { is_visible: false },
-        }, (response: unknown) => resolve(response as { ok: boolean; error?: { kind: string } }));
-      }), { tabId: chatgptTabId, chatId: id, authorizedRun: runId });
-
-    expect((await sendChange("c1", "run-e2e")).ok).toBe(false);
-    expect(deletedIds).toEqual([]);
-    expect((await sendChange("c2", "run-e2e")).ok).toBe(true);
-    await expect.poll(() => deletedIds).toEqual(["c2"]);
-    expect((await sendChange("c1", "run-e2e")).ok).toBe(false);
-    expect(deletedIds).toEqual(["c2"]);
   } finally {
     await context?.close();
     await rm(profile, { recursive: true, force: true });
   }
+}
+
+function row(page: Page, title: string) {
+  return page.locator(".row", { hasText: title });
+}
+
+async function savedFiles(page: Page): Promise<Saved[]> {
+  return page.evaluate(() => (window as unknown as { __saved: Saved[] }).__saved);
+}
+
+async function reviewAndRun(page: Page, expectRows: string[]): Promise<void> {
+  await page.keyboard.press("q");
+  const dialog = page.getByRole("dialog", { name: "Review and run" });
+  await expect(dialog).toBeVisible();
+  const reviewed = await dialog.locator("tbody tr").allInnerTexts();
+  expect(reviewed.map((text) => text.replace(/\s+/gu, " ").trim())).toEqual(expectRows);
+  await dialog.getByLabel("Seconds between changes").fill("3");
+  await dialog.getByRole("button", { name: /^Run / }).click();
+}
+
+async function sendRaw(page: Page, message: Record<string, unknown>): Promise<{ ok: boolean; error: { kind: string } | null }> {
+  return page.evaluate(async (body) => {
+    const tabs = await chrome.tabs.query({ url: "https://chatgpt.com/*" });
+    const id = tabs[0]?.id;
+    if (id === undefined) throw new Error("No ChatGPT tab");
+    return new Promise((done) => {
+      chrome.tabs.sendMessage(id, { kind: "chatgpt/api", requestId: "raw", ...body }, done);
+    });
+  }, message);
+}
+
+const fixture = () => new FakeChatgpt([
+  { id: "c1", title: "Sourdough starter" },
+  { id: "c2", title: "Kubernetes basics" },
+  { id: "c3", title: "Tax questions", projectId: "g-p-work" },
+  { id: "c4", title: "Trip to Lisbon" },
+  { id: "c5", title: "Old archived chat", archived: true },
+]);
+
+test("deletes only after a verified backup is saved, and only the reviewed changes", async () => {
+  const server = fixture();
+  await withExtension(server, async ({ openDashboard }) => {
+    const page = await openDashboard();
+    await expect(page.locator(".row")).toHaveCount(4, { timeout: 20_000 });
+    await row(page, "Sourdough starter").click();
+    await page.keyboard.press("d");
+    await expect(row(page, "Sourdough starter")).toContainText("Delete");
+    await row(page, "Kubernetes basics").click();
+    await page.keyboard.press("a");
+    await reviewAndRun(page, ["1 Sourdough starter Deleted permanently", "2 Kubernetes basics Moved to Archived"]);
+
+    await expect(page.getByRole("button", { name: "Save backup & continue" })).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByRole("button", { name: "Pause" })).toHaveCount(0);
+    expect(server.patches).toEqual([]);
+
+    await page.getByRole("button", { name: "Save backup & continue" }).click();
+    await expect(page.locator(".status")).toContainText("done", { timeout: 40_000 });
+    expect(server.patches).toEqual([
+      { id: "c1", body: { is_visible: false }, status: 200 },
+      { id: "c2", body: { is_archived: true }, status: 200 },
+    ]);
+    const [backup] = await savedFiles(page);
+    const parsed = JSON.parse(backup?.text ?? "{}") as { conversations: { id: string; record: { mapping: object } }[] };
+    expect(parsed.conversations.map((entry) => entry.id)).toEqual(["c1"]);
+    expect(Object.keys(parsed.conversations[0]?.record.mapping ?? {})).toEqual(["a1", "root", "u1"]);
+
+    const after = await sendRaw(page, { op: "change", runId: "anything", accountId: "u-e2e", id: "c3" });
+    expect(after.ok).toBe(false);
+    expect(after.error?.kind).toBe("auth");
+    const armed = await sendRaw(page, { op: "arm", runId: "sneaky", accountId: "u-e2e", commands: [{ action: "delete", id: "c3" }] });
+    expect(armed.ok).toBe(false);
+    expect(server.applied("c3")?.visible).toBe(true);
+  });
+});
+
+test("a backup that was cancelled or lost to a reload never lets deletion through", async () => {
+  const server = fixture();
+  await withExtension(server, async ({ openDashboard }) => {
+    const page = await openDashboard();
+    await expect(page.locator(".row")).toHaveCount(4, { timeout: 20_000 });
+    await row(page, "Trip to Lisbon").click();
+    await page.keyboard.press("d");
+    await reviewAndRun(page, ["1 Trip to Lisbon Deleted permanently"]);
+    const save = page.getByRole("button", { name: "Save backup & continue" });
+    await expect(save).toBeVisible({ timeout: 20_000 });
+
+    await page.evaluate(() => { (window as unknown as { __cancelSave: boolean }).__cancelSave = true; });
+    await save.click();
+    await expect(page.locator(".footer")).toContainText("wasn't saved");
+    await expect(save).toBeVisible();
+
+    await page.reload();
+    await expect(page.getByRole("button", { name: "Resume" })).toBeVisible({ timeout: 20_000 });
+    await expect(page.locator(".status")).toContainText("Interrupted");
+    expect(server.patches).toEqual([]);
+
+    await page.getByRole("button", { name: "Resume" }).click();
+    await expect(save).toBeVisible({ timeout: 20_000 });
+    expect(server.patches).toEqual([]);
+    await save.click();
+    await expect(page.locator(".status")).toContainText("done", { timeout: 30_000 });
+    expect(server.patches).toEqual([{ id: "c4", body: { is_visible: false }, status: 200 }]);
+  });
+});
+
+test("an uncertain or rate-limited write is reconciled instead of repeated", async () => {
+  const server = fixture();
+  server.loseResponseFor.add("c1");
+  server.rateLimitPatches = 1;
+  await withExtension(server, async ({ openDashboard }) => {
+    const page = await openDashboard();
+    await expect(page.locator(".row")).toHaveCount(4, { timeout: 20_000 });
+    await row(page, "Sourdough starter").click();
+    await page.keyboard.press("a");
+    await row(page, "Kubernetes basics").click();
+    await page.keyboard.press("a");
+    await reviewAndRun(page, ["1 Sourdough starter Moved to Archived", "2 Kubernetes basics Moved to Archived"]);
+    await expect(page.locator(".status")).toContainText("done", { timeout: 60_000 });
+    expect(server.patches.map((patch) => `${patch.id}:${patch.status}`)).toEqual(["c1:429", "c1:500", "c2:200"]);
+    await expect(page.locator(".queued-body")).toContainText("uncertain response");
+    expect(server.applied("c1")?.archived).toBe(true);
+  });
+});
+
+test("a ChatGPT tab reload mid-run switches changes off until a deliberate resume", async () => {
+  const server = fixture();
+  await withExtension(server, async ({ openDashboard, chatgpt }) => {
+    const page = await openDashboard();
+    await expect(page.locator(".row")).toHaveCount(4, { timeout: 20_000 });
+    for (const title of ["Sourdough starter", "Kubernetes basics", "Trip to Lisbon"]) {
+      await row(page, title).click();
+      await page.keyboard.press("a");
+    }
+    await reviewAndRun(page, ["1 Sourdough starter Moved to Archived", "2 Kubernetes basics Moved to Archived", "3 Trip to Lisbon Moved to Archived"]);
+    await expect.poll(() => server.patches.length, { timeout: 20_000 }).toBe(1);
+    await chatgpt.reload();
+    await expect(page.getByRole("button", { name: "Resume" })).toBeVisible({ timeout: 20_000 });
+    await expect(page.locator(".status")).toContainText("closed or reloaded");
+    const paused = server.patches.length;
+    await page.waitForTimeout(4000);
+    expect(server.patches.length).toBe(paused);
+    await page.getByRole("button", { name: "Resume" }).click();
+    await expect(page.locator(".status")).toContainText("done", { timeout: 40_000 });
+    expect(server.patches.map((patch) => patch.id)).toEqual(["c1", "c2", "c4"]);
+  });
+});
+
+test("only one dashboard runs at a time; a second takes over when the first closes", async () => {
+  const server = fixture();
+  await withExtension(server, async ({ openDashboard }) => {
+    const first = await openDashboard();
+    await expect(first.locator(".row")).toHaveCount(4, { timeout: 20_000 });
+    const second = await openDashboard();
+    await expect(second.getByText("open in another tab")).toBeVisible();
+    await expect(second.getByRole("button", { name: "Run queue" })).toHaveCount(0);
+    await first.close();
+    await expect(second.locator(".row")).toHaveCount(4, { timeout: 20_000 });
+  });
+});
+
+test("typing, selecting and filtering keep focus, the preview and the selection honest", async () => {
+  const server = fixture();
+  await withExtension(server, async ({ openDashboard }) => {
+    const page = await openDashboard();
+    await expect(page.locator(".row")).toHaveCount(4, { timeout: 20_000 });
+
+    await page.keyboard.press("/");
+    await page.keyboard.type("sour", { delay: 30 });
+    await expect(page.locator(".search")).toBeFocused();
+    await expect(page.locator(".search")).toHaveValue("sour");
+    await expect(page.locator(".row")).toHaveCount(1);
+    await page.locator(".search").fill("");
+    await page.keyboard.press("Escape");
+
+    await row(page, "Kubernetes basics").click();
+    await expect(page.locator("#preview")).toContainText("Notes on Kubernetes basics.", { timeout: 10_000 });
+    await page.keyboard.press("x");
+    await expect(page.locator(".counts")).toContainText("1 selected");
+    await expect(page.locator("#preview")).toContainText("Notes on Kubernetes basics.");
+
+    await page.getByRole("button", { name: "Select all" }).click();
+    await expect(page.locator(".counts")).toContainText("4 selected");
+    await page.getByRole("button", { name: /^In projects/ }).click();
+    await expect(page.locator(".counts")).toContainText("1 selected");
+    await expect(page.locator(".footer")).toContainText("3 selected chats are hidden by this view and were deselected");
+    await page.getByRole("button", { name: "Archived" }).click();
+    await expect(page.locator(".counts")).toContainText("0 selected");
+  });
+});
+
+test("an imported plan that names an unknown or renamed chat is rejected whole", async () => {
+  const server = fixture();
+  await withExtension(server, async ({ openDashboard }) => {
+    const page = await openDashboard();
+    await expect(page.locator(".row")).toHaveCount(4, { timeout: 20_000 });
+    const plan = {
+      version: 2,
+      accountId: "u-e2e",
+      protect: {},
+      marks: {
+        c1: { action: "delete", title: "Sourdough starter", newTitle: null, project: "", projectName: "", at: 0 },
+        c2: { action: "delete", title: "Kubernetes (old title)", newTitle: null, project: "", projectName: "", at: 0 },
+        "not-a-chat": { action: "delete", title: "Ghost", newTitle: null, project: "", projectName: "", at: 0 },
+      },
+    };
+    const chooser = page.waitForEvent("filechooser");
+    await page.getByRole("button", { name: "Import plan" }).click();
+    await (await chooser).setFiles({ name: "plan.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(plan)) });
+    const dialog = page.getByRole("dialog", { name: "Plan rejected" });
+    await expect(dialog).toContainText("isn't in the loaded list");
+    await expect(dialog).toContainText("stale");
+    await dialog.getByRole("button", { name: "Close" }).click();
+    await expect(page.locator(".counts")).toContainText("0 queued");
+  });
+});
+
+test("a 3,200-chat account loads completely and stays responsive", async () => {
+  test.setTimeout(180_000);
+  const server = FakeChatgpt.generated(3200);
+  const active = [...server.chats.values()].filter((chat) => !chat.archived).length;
+  await withExtension(server, async ({ openDashboard }) => {
+    const page = await openDashboard();
+    await expect(page.locator(".row")).toHaveCount(active, { timeout: 150_000 });
+    await expect(page.locator(".status")).not.toContainText("only loaded chats");
+    await page.locator(".row").first().click();
+    const timing = await page.evaluate(async () => {
+      const step = async (key: string) => {
+        document.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
+        await new Promise((done) => setTimeout(done, 0));
+      };
+      const started = performance.now();
+      for (let index = 0; index < 50; index += 1) await step("j");
+      const moved = performance.now() - started;
+      const marking = performance.now();
+      await step("x");
+      await step("d");
+      return { perMove: moved / 50, mark: performance.now() - marking };
+    });
+    console.log(`3200 chats: ${timing.perMove.toFixed(1)} ms per focus move, ${timing.mark.toFixed(1)} ms to select and mark`);
+    expect(timing.perMove).toBeLessThan(50);
+    await expect(page.locator(".row.focus")).toContainText("Generated chat");
+    await expect(page.locator(".counts")).toContainText("1 queued");
+  });
 });

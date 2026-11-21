@@ -1,37 +1,43 @@
 import { Schema } from "effect";
 import { CONFIG } from "./api.ts";
-import { TriageError } from "./errors.ts";
+import { failureOf, isFailureKind, TriageError } from "./errors.ts";
 import {
   ACTION_LABELS,
+  BACKUP_EXCLUDES,
   buildJobs,
-  createJournal,
+  commandOf,
   fileStamp,
+  isRunActive,
   isUntitled,
-  probeFromDetail,
-  requestBodyFor,
+  recoverInterrupted,
+  runControls,
+  sha256Hex,
+  validatePlan,
   whyNot,
   type Action,
   type Chat,
   type Conversation,
   type Job,
   type Journal,
+  type Mark,
   type Project,
-  type RunStatus,
+  type Run,
 } from "./model.ts";
 import {
   ChatListSchema,
   ConversationProbeSchema,
   ConversationSchema,
+  LEASE_PORT_PREFIX,
   ProjectListSchema,
   SessionSchema,
   decodeApiResponse,
+  decodeListProgress,
   decodeValue,
   type ApiRequest,
-  type FailurePayload,
 } from "./messages.ts";
 import { QueueRunner, clampGap, type QueueTransport } from "./queue.ts";
 import { requiresTypedConfirmation } from "./safety.ts";
-import { createChromeJournalStore } from "./storage.ts";
+import { createChromeJournalStore, createSerialPersist } from "./storage.ts";
 
 type Props = Record<string, string | number | boolean | ((event: Event) => void) | null | undefined>;
 
@@ -62,11 +68,11 @@ const foundApp = document.querySelector<HTMLDivElement>("#app");
 if (!foundApp) throw new Error("Missing #app element");
 const app: HTMLDivElement = foundApp;
 
+const LOCK_NAME = "chatgpt-organizer:dashboard";
 const store = createChromeJournalStore(chrome.storage);
-const owner = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 
-let journal: Journal = createJournal();
-let chats: Chat[] = [];
+let journal: Journal | null = null;
+const chats: Chat[] = [];
 let projects: Project[] = [];
 let tabId: number | null = null;
 let scope: "active" | "archived" = "active";
@@ -75,22 +81,146 @@ let projectFilter: string | null = null;
 let search = "";
 let focusId: string | null = null;
 let selected = new Set<string>();
-let compatOk = true;
+let compatOk = false;
 let progress = "";
-let activity: string[] = [];
-let runner: QueueRunner | undefined;
-let previewToken = 0;
-let booting = true;
+let inventoryNote = "";
+let blocked = "";
+const activity: string[] = [];
+let runner: QueueRunner | null = null;
+let lease: { runId: string; port: chrome.runtime.Port } | null = null;
 const previewCache = new Map<string, Conversation>();
+const previewErrors = new Map<string, string>();
+let previewTimer: ReturnType<typeof setTimeout> | null = null;
 
-const ACTIVE_STATUSES = new Set<RunStatus>(["backup", "saving", "running", "waiting", "verifying"]);
-const FAILURE_KINDS: string[] = ["aborted", "offline", "auth", "cooldown", "ratelimit", "transient", "notfound", "http", "compat"];
+const persistJournal = createSerialPersist(store, () => {
+  if (!journal) throw new TriageError("compat", "No journal is loaded.");
+  return journal;
+});
+
+function persistQuietly(): void {
+  void persistJournal().catch((error: unknown) => {
+    toast(`Couldn't save your marks: ${failureOf(error).message}`);
+  });
+}
+
+// ---------- layout (built once; regions update in place) ----------
+
+const ui = {
+  counts: h("span", { class: "counts" }),
+  status: h("span", { class: "status", role: "status" }),
+  actions: h("span", { class: "actions" }),
+  scopes: h("div", { class: "tools" }),
+  search: h("input", {
+    class: "search",
+    type: "search",
+    placeholder: "Search titles ( / )",
+    "aria-label": "Search conversations",
+  }) as HTMLInputElement,
+  filters: h("div", { class: "filters" }),
+  projects: h("div", { class: "filters" }),
+  listTitle: h("div", { class: "col-title" }),
+  list: h("div", { class: "list", role: "listbox", "aria-multiselectable": "true" }),
+  preview: h("div", { class: "preview", id: "preview" }),
+  queue: h("div", { class: "queued-body" }),
+  footer: h("footer", { class: "footer" }),
+};
+
+type Region = "toolbar" | "filters" | "list" | "preview" | "queue" | "footer";
+const dirty = new Set<Region>();
+let flushQueued = false;
+
+function invalidate(...regions: Region[]): void {
+  for (const region of regions) dirty.add(region);
+  if (flushQueued) return;
+  flushQueued = true;
+  queueMicrotask(flush);
+}
+
+function invalidateAll(): void {
+  invalidate("toolbar", "filters", "list", "preview", "queue", "footer");
+}
+
+function flush(): void {
+  flushQueued = false;
+  const regions = new Set(dirty);
+  dirty.clear();
+  if (regions.has("toolbar")) renderToolbar();
+  if (regions.has("filters")) renderFilters();
+  if (regions.has("list")) renderList();
+  if (regions.has("preview")) renderPreview();
+  if (regions.has("queue")) renderQueue();
+  if (regions.has("footer")) renderFooter();
+}
+
+function buildLayout(): void {
+  ui.search.addEventListener("input", () => {
+    search = ui.search.value;
+    viewChanged();
+  });
+  const markButtons = (["delete", "archive", "unarchive", "rename", "move", "protect"] as const).map((action) =>
+    h("button", { onclick: () => markSelection(action), text: ACTION_LABELS[action] }));
+  app.replaceChildren(
+    h("div", { class: "app" },
+      h("div", { class: "topbar" },
+        h("span", { class: "brand" }, h("span", { class: "mark", text: "◈" }), " ChatGPT Organizer"),
+        ui.counts,
+        ui.status,
+        h("span", { class: "spacer" }),
+        ui.actions,
+      ),
+      h("div", { class: "columns" },
+        h("aside", { class: "col" },
+          h("div", { class: "col-head" }, h("div", { class: "col-title", text: "Filters" }), ui.scopes, ui.search),
+          h("div", { class: "side" },
+            ui.filters,
+            h("div", { class: "projects" }, h("div", { class: "label", text: "Projects" }), ui.projects),
+            h("div", { class: "projects" },
+              h("div", { class: "label", text: "Selection" }),
+              h("div", { class: "tools" },
+                h("button", { onclick: selectAll, text: "Select all" }),
+                h("button", { onclick: invertSelection, text: "Invert" }),
+                h("button", { onclick: clearSelection, text: "Clear" }),
+              ),
+            ),
+          ),
+        ),
+        h("section", { class: "col list-col" },
+          h("div", { class: "col-head" },
+            ui.listTitle,
+            h("div", { class: "tools" }, ...markButtons, h("button", { onclick: clearMarks, text: "Clear marks" })),
+          ),
+          ui.list,
+        ),
+        h("section", { class: "col" },
+          h("div", { class: "col-head" }, h("div", { class: "col-title", text: "Preview & review" })),
+          ui.preview,
+          h("div", { class: "preview" },
+            h("div", { class: "queued" }, h("h3", { text: "Queue" }), ui.queue),
+            h("div", { class: "queued" },
+              h("h3", { text: "Keyboard" }),
+              h("div", { class: "note" },
+                h("span", { class: "kbd", text: "↑↓ j k" }), " move · ",
+                h("span", { class: "kbd", text: "X" }), " select · ",
+                h("span", { class: "kbd", text: "D A U R M P C" }), " mark · ",
+                h("span", { class: "kbd", text: "/" }), " search · ",
+                h("span", { class: "kbd", text: "Q" }), " review & run, or pause",
+              ),
+            ),
+          ),
+        ),
+      ),
+      ui.footer,
+    ),
+  );
+}
 
 function toast(message: string): void {
   activity.unshift(message);
   if (activity.length > 100) activity.pop();
-  renderTopbar();
+  invalidate("toolbar", "footer");
 }
+
+// ---------- transport to the content script ----------
 
 function nextRequestId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -109,8 +239,11 @@ async function ensureTab(): Promise<number> {
   return id;
 }
 
-async function send(request: ApiRequest): Promise<unknown> {
+type RequestBody = ApiRequest extends infer R ? R extends ApiRequest ? Omit<R, "kind" | "requestId"> : never : never;
+
+async function send(body: RequestBody): Promise<unknown> {
   const id = await ensureTab();
+  const request = { kind: "chatgpt/api", requestId: nextRequestId(), ...body } as ApiRequest;
   return new Promise<unknown>((resolve, reject) => {
     chrome.tabs.sendMessage(id, request, (response: unknown) => {
       if (chrome.runtime.lastError) {
@@ -119,16 +252,16 @@ async function send(request: ApiRequest): Promise<unknown> {
       }
       const decoded = decodeApiResponse(response);
       if (!decoded) {
-        reject(new TriageError("http", "The content script returned an unexpected response."));
+        reject(new TriageError("offline", "The ChatGPT tab returned an unexpected response."));
         return;
       }
       if (decoded.ok) {
         resolve(decoded.value);
         return;
       }
-      const error = decoded.error as FailurePayload;
-      const kind = FAILURE_KINDS.includes(error.kind) ? error.kind : "http";
-      reject(new TriageError(kind as TriageError["kind"], error.message, error.until));
+      const error = decoded.error;
+      const kind = error && isFailureKind(error.kind) ? error.kind : "http";
+      reject(new TriageError(kind, error?.message ?? "The change failed.", error?.until ?? 0));
     });
   });
 }
@@ -151,403 +284,363 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
-async function persist(): Promise<void> {
-  await store.save(journal);
-}
-
-async function loadChats(which: "active" | "archived"): Promise<Chat[]> {
-  const value = await send({ kind: "chatgpt/api", requestId: nextRequestId(), op: "list", scope: which });
-  return decodeValue(ChatListSchema, value).map((chat) => ({ ...chat }));
-}
-
-async function loadProjects(): Promise<Project[]> {
-  const value = await send({ kind: "chatgpt/api", requestId: nextRequestId(), op: "projects" });
-  return decodeValue(ProjectListSchema, value).map((project) => ({ ...project }));
-}
-
-interface QueueCounts {
-  delete: number;
-  archive: number;
-  unarchive: number;
-  rename: number;
-  move: number;
-  total: number;
+async function loadChats(which: "active" | "archived"): Promise<{ chats: Chat[]; complete: boolean; total: number | null }> {
+  const value = decodeValue(ChatListSchema, await send({ op: "list", scope: which }));
+  return { chats: value.chats.map((chat) => ({ ...chat })), complete: value.complete, total: value.total };
 }
 
 function decodeConversation(value: unknown): Conversation {
   const decoded = decodeValue(ConversationSchema, value);
-  return {
-    title: decoded.title,
-    search: decoded.search,
-    messages: decoded.messages.map((message) => ({ ...message })),
-  };
-}
-
-async function loadPreview(id: string): Promise<void> {
-  const token = ++previewToken;
-  const cached = previewCache.get(id);
-  if (cached) {
-    renderPreview(cached);
-    return;
-  }
-  renderPreview(null);
-  try {
-    const value = await send({ kind: "chatgpt/api", requestId: nextRequestId(), op: "conversation", id });
-    const conversation = decodeConversation(value);
-    previewCache.set(id, conversation);
-    if (previewCache.size > 300) {
-      const oldest = previewCache.keys().next().value;
-      if (oldest != null) previewCache.delete(oldest);
-    }
-    if (token === previewToken) renderPreview(conversation);
-  } catch (error) {
-    if (token === previewToken) renderPreview(null, error instanceof Error ? error.message : String(error));
-  }
+  return { title: decoded.title, search: decoded.search, messages: decoded.messages.map((message) => ({ ...message })) };
 }
 
 const transport: QueueTransport = {
-  async getConversation(id) {
-    const value = await send({ kind: "chatgpt/api", requestId: nextRequestId(), op: "conversation", id });
-    return decodeConversation(value);
+  async fetchRecord(id) {
+    return send({ op: "record", id });
   },
-  async writeChange(job) {
-    await send({
-      kind: "chatgpt/api",
-      requestId: nextRequestId(),
-      op: "change",
-      id: job.id,
-      runId: journal.run?.id ?? "",
-      action: job.action,
-      body: requestBodyFor(job) as Record<string, unknown>,
-    });
+  async writeChange(run, job) {
+    await send({ op: "change", runId: run.id, accountId: run.accountId, id: job.id });
   },
   async listActive() {
-    const value = await send({ kind: "chatgpt/api", requestId: nextRequestId(), op: "list", scope: "active" });
-    return decodeValue(ChatListSchema, value).map((chat) => ({ ...chat }));
+    return (await loadChats("active")).chats;
   },
   async probe(id) {
-    const value = await send({ kind: "chatgpt/api", requestId: nextRequestId(), op: "detail", id });
-    return decodeValue(ConversationProbeSchema, probeFromDetail(value));
+    return decodeValue(ConversationProbeSchema, await send({ op: "probe", id }));
   },
 };
 
-function makeRunner(): QueueRunner {
+// ---------- run lease and arming ----------
+
+function closeLease(): void {
+  const current = lease;
+  lease = null;
+  current?.port.disconnect();
+}
+
+async function openLease(runId: string): Promise<void> {
+  if (lease?.runId === runId) return;
+  closeLease();
+  const id = await ensureTab();
+  const port = chrome.tabs.connect(id, { name: `${LEASE_PORT_PREFIX}${runId}` });
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new TriageError("offline", "The ChatGPT tab didn't answer.")), 5000);
+    port.onMessage.addListener(function ready() {
+      clearTimeout(timer);
+      port.onMessage.removeListener(ready);
+      resolve();
+    });
+    port.onDisconnect.addListener(() => {
+      clearTimeout(timer);
+      reject(new TriageError("offline", "The ChatGPT tab closed the connection. Reload it, then try again."));
+    });
+  });
+  lease = { runId, port };
+  port.onDisconnect.addListener(() => {
+    if (lease?.port !== port) return;
+    lease = null;
+    if (runner?.isActive()) void runner.pause("The ChatGPT tab closed or reloaded, so changes were switched off. Resume to re-check and continue.");
+  });
+}
+
+async function arm(run: { id: string; accountId: string; jobs: readonly Job[] }): Promise<void> {
+  await openLease(run.id);
+  await send({ op: "arm", runId: run.id, accountId: run.accountId, commands: run.jobs.map(commandOf) });
+}
+
+async function disarm(runId: string): Promise<void> {
+  await send({ op: "disarm", runId }).catch(() => undefined);
+  if (lease?.runId === runId) closeLease();
+}
+
+function makeRunner(loaded: Journal): QueueRunner {
   return new QueueRunner({
     transport,
-    journal,
+    journal: loaded,
     chats,
     now: () => Date.now(),
     sleep,
-    persist: () => persist(),
-    owner,
+    persist: persistJournal,
     onEvent: (event) => {
       if (event.type === "note" && event.message) toast(event.message);
-      renderAll();
+      const run = loaded.run;
+      if (run && runControls(run) === "finished" && lease?.runId === run.id) void disarm(run.id);
+      invalidateAll();
     },
   });
 }
 
-async function armRun(runId: string, jobs: readonly Job[]): Promise<void> {
-  await send({
-    kind: "chatgpt/api",
-    requestId: nextRequestId(),
-    op: "arm",
-    runId,
-    jobs: jobs.map((job) => ({ id: job.id, action: job.action })),
-  });
-}
-
-async function disarmRun(runId: string): Promise<void> {
-  try {
-    await send({ kind: "chatgpt/api", requestId: nextRequestId(), op: "disarm", runId });
-  } catch {
-    return;
-  }
-}
-
-async function startRun(jobs: Job[], backup: boolean): Promise<void> {
+async function startRun(jobs: Job[], options: { backup: boolean; acceptIncomplete: boolean; gap: number }): Promise<void> {
+  if (!journal || !runner) return;
   const runId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
-  journal.settings.backup = backup;
-  await persist();
-  runner = makeRunner();
+  journal.settings.backup = options.backup;
+  journal.settings.gap = clampGap(options.gap, CONFIG);
   try {
-    await armRun(runId, jobs);
+    await persistJournal();
+    await arm({ id: runId, accountId: journal.accountId, jobs });
   } catch (error) {
-    toast(`Changes stayed disabled; nothing was sent. ${error instanceof Error ? error.message : String(error)}`);
+    closeLease();
+    toast(`Changes stayed switched off; nothing was sent. ${failureOf(error).message}`);
     return;
   }
-  runner.start({ backup, runId });
+  await runner.start(jobs, { runId, backup: options.backup, acceptIncomplete: options.acceptIncomplete });
 }
 
 async function resumeRun(): Promise<void> {
-  const run = journal.run;
-  if (!run) return;
+  const run = journal?.run;
+  if (!run || !runner) return;
   try {
-    await armRun(run.id, run.jobs);
+    await arm(run);
   } catch (error) {
-    toast(`Changes stayed disabled; nothing was sent. ${error instanceof Error ? error.message : String(error)}`);
+    toast(`Changes stayed switched off; nothing was sent. ${failureOf(error).message}`);
     return;
   }
-  runner?.resume();
+  await runner.resume();
 }
+
+async function stopRun(): Promise<void> {
+  const run = journal?.run;
+  if (!run || !runner) return;
+  await runner.stop();
+  await disarm(run.id);
+}
+
+async function dismissRun(): Promise<void> {
+  const run = journal?.run;
+  if (!run || !runner) return;
+  await runner.dismiss();
+  await disarm(run.id);
+}
+
+// ---------- view state ----------
 
 function visibleChats(): Chat[] {
   const archived = scope === "archived";
   const term = search.trim().toLowerCase();
-  const rows = chats.filter((chat) => {
+  const marks = journal?.marks ?? {};
+  return chats.filter((chat) => {
     if (chat.archived !== archived) return false;
     if (filter === "unorganized" && chat.projectId) return false;
     if (filter === "projects" && (!chat.projectId || (projectFilter && chat.projectId !== projectFilter))) return false;
-    if (filter === "marked" && !journal.marks[chat.id]) return false;
+    if (filter === "marked" && !marks[chat.id]) return false;
     if (!term) return true;
     if (chat.title.toLowerCase().includes(term)) return true;
-    const cached = previewCache.get(chat.id);
-    return Boolean(cached?.search.includes(term));
+    return Boolean(previewCache.get(chat.id)?.search.includes(term));
   });
-  return rows;
 }
 
-function queueCounts(): QueueCounts {
-  const counts: QueueCounts = { delete: 0, archive: 0, unarchive: 0, rename: 0, move: 0, total: 0 };
-  for (const [id, mark] of Object.entries(journal.marks)) {
-    if (journal.protect[id]) continue;
-    switch (mark.action) {
-      case "delete": counts.delete += 1; break;
-      case "archive": counts.archive += 1; break;
-      case "unarchive": counts.unarchive += 1; break;
-      case "rename": counts.rename += 1; break;
-      case "move": counts.move += 1; break;
-      case "protect": continue;
-    }
-    counts.total += 1;
+// A selection never reaches chats the current view hides.
+function viewChanged(): void {
+  const visible = new Set(visibleChats().map((chat) => chat.id));
+  const hidden = [...selected].filter((id) => !visible.has(id));
+  if (hidden.length) {
+    for (const id of hidden) selected.delete(id);
+    toast(`${hidden.length} selected ${hidden.length === 1 ? "chat is" : "chats are"} hidden by this view and ${hidden.length === 1 ? "was" : "were"} deselected.`);
   }
-  return counts;
+  if (focusId && !visible.has(focusId)) focusId = null;
+  invalidate("toolbar", "filters", "list", "preview");
 }
 
-function badge(id: string): HTMLElement | null {
-  const protection = journal.protect[id];
-  if (protection) return h("span", { class: "badge protect", text: "Protected" });
-  const mark = journal.marks[id];
-  if (!mark) return null;
-  const label = mark.action === "move" ? `Move → ${mark.projectName || "No Project"}` : ACTION_LABELS[mark.action];
-  return h("span", { class: `badge ${mark.action}`, text: label });
+function queueCount(): number {
+  if (!journal) return 0;
+  return Object.values(journal.marks).filter((mark) => mark.action !== "protect").length;
 }
 
-function renderTopbar(): void {
-  const counts = queueCounts();
-  const run = journal.run;
-  const statusText = run
-    ? `${run.status} · ${run.i}/${run.jobs.length}${run.note ? ` · ${run.note}` : ""}`
-    : activity[0] ?? (compatOk ? "Ready" : "Changes disabled: unfamiliar ChatGPT data");
+function changeLabel(mark: Pick<Mark, "action" | "newTitle" | "projectName">): string {
+  if (mark.action === "move") return `Move → ${mark.projectName || "No Project"}`;
+  if (mark.action === "rename") return `Rename → “${mark.newTitle ?? ""}”`;
+  return ACTION_LABELS[mark.action];
+}
 
+// ---------- toolbar ----------
+
+let toolbarKey = "";
+
+function renderToolbar(): void {
+  const run = journal?.run ?? null;
+  const controls = runControls(run);
+  const total = queueCount();
+  ui.counts.textContent = `${total} queued · ${selected.size} selected`;
+  ui.status.textContent = blocked || progress || statusText(run) || activity[0] || inventoryNote || (compatOk ? "Ready" : "");
+  const canRun = Boolean(journal && runner && compatOk && total > 0);
+  const key = `${controls}|${canRun}|${journal ? 1 : 0}`;
+  if (key === toolbarKey) return;
+  toolbarKey = key;
   const buttons: HTMLElement[] = [];
-  const disarmCurrent = (): void => {
-    const id = journal.run?.id;
-    if (id) void disarmRun(id);
-  };
-  if (run && ACTIVE_STATUSES.has(run.status)) {
-    buttons.push(h("button", { onclick: () => runner?.pause("Paused by you."), text: "Pause" }));
-    buttons.push(h("button", { class: "danger", onclick: () => { runner?.stop(); disarmCurrent(); }, text: "Stop" }));
-  } else if (run?.status === "paused") {
-    buttons.push(h("button", { class: "primary", onclick: () => void resumeRun(), text: "Resume" }));
-    buttons.push(h("button", { onclick: () => { runner?.stop(); disarmCurrent(); }, text: "Stop" }));
-    buttons.push(h("button", { class: "link", onclick: () => { runner?.dismiss(); disarmCurrent(); }, text: "Dismiss" }));
-  } else if (run?.status === "saving") {
-    buttons.push(h("button", { class: "primary", onclick: saveBackup, text: "Save backup & continue" }));
-    buttons.push(h("button", { onclick: () => { runner?.stop(); disarmCurrent(); }, text: "Stop" }));
-  } else {
-    buttons.push(h("button", {
-      class: "primary",
-      disabled: counts.total === 0 || !compatOk,
-      onclick: runQueue,
-      text: "Run queue",
-    }));
-    buttons.push(h("button", { onclick: importPlan, text: "Import plan" }));
-    buttons.push(h("button", { onclick: exportPlan, text: "Export plan" }));
-    if (run && (run.status === "done" || run.status === "stopped")) {
-      buttons.push(h("button", { class: "link", onclick: exportReport, text: "Export report" }));
-      buttons.push(h("button", { class: "link", onclick: () => { runner?.dismiss(); disarmCurrent(); }, text: "Dismiss" }));
-    }
+  switch (controls) {
+    case "working":
+      buttons.push(h("button", { onclick: () => void runner?.pause("Paused by you."), text: "Pause" }));
+      buttons.push(h("button", { class: "danger", onclick: () => void stopRun(), text: "Stop" }));
+      break;
+    case "save-backup":
+      buttons.push(h("button", { class: "primary", onclick: () => void saveBackup(), text: "Save backup & continue" }));
+      buttons.push(h("button", { class: "danger", onclick: () => void stopRun(), text: "Stop" }));
+      break;
+    case "paused":
+      buttons.push(h("button", { class: "primary", onclick: () => void resumeRun(), text: "Resume" }));
+      buttons.push(h("button", { class: "danger", onclick: () => void stopRun(), text: "Stop" }));
+      buttons.push(h("button", { class: "link", onclick: () => void dismissRun(), text: "Dismiss" }));
+      break;
+    case "idle":
+    case "finished":
+      buttons.push(h("button", { class: "primary", disabled: !canRun, onclick: openReview, text: "Run queue" }));
+      buttons.push(h("button", { disabled: !journal, onclick: importPlan, text: "Import plan" }));
+      buttons.push(h("button", { disabled: !journal, onclick: exportPlan, text: "Export plan" }));
+      if (controls === "finished") {
+        buttons.push(h("button", { class: "link", onclick: exportReport, text: "Export report" }));
+        buttons.push(h("button", { class: "link", onclick: () => void dismissRun(), text: "Dismiss" }));
+      }
+      break;
   }
-
-  app.replaceChildren(
-    h("div", { class: "app" },
-      h("div", { class: "topbar" },
-        h("span", { class: "brand" }, h("span", { class: "mark", text: "◈" }), " ChatGPT Organizer"),
-        h("span", { class: "counts", text: `${counts.total} queued · ${selected.size} selected` }),
-        h("span", { class: "status", text: progress || statusText }),
-        h("span", { class: "spacer" }),
-        ...buttons,
-      ),
-      h("div", { class: "columns" }, renderFilters(), renderList(), renderPreviewColumn()),
-      renderFooter(),
-    ),
-  );
+  ui.actions.replaceChildren(...buttons);
 }
 
-function renderFilters(): HTMLElement {
+function statusText(run: Run | null): string {
+  if (!run) return "";
+  const where = `${run.status} · ${Math.min(run.i, run.jobs.length)}/${run.jobs.length}`;
+  return run.note ? `${where} · ${run.note}` : where;
+}
+
+// ---------- filters ----------
+
+function renderFilters(): void {
+  ui.scopes.replaceChildren(
+    h("button", { class: scope === "active" ? "primary" : "", onclick: () => setScope("active"), text: "Active" }),
+    h("button", { class: scope === "archived" ? "primary" : "", onclick: () => setScope("archived"), text: "Archived" }),
+  );
   const all = chats.filter((chat) => chat.archived === (scope === "archived"));
-  const options: { key: typeof filter; label: string }[] = [
-    { key: "all", label: "All conversations" },
-    { key: "unorganized", label: "Unorganized" },
-    { key: "projects", label: "In projects" },
-    { key: "marked", label: "Marked" },
+  const marks = journal?.marks ?? {};
+  const options: { key: typeof filter; label: string; count: number }[] = [
+    { key: "all", label: "All conversations", count: all.length },
+    { key: "unorganized", label: "Unorganized", count: all.filter((chat) => !chat.projectId).length },
+    { key: "projects", label: "In projects", count: all.filter((chat) => chat.projectId).length },
+    { key: "marked", label: "Marked", count: all.filter((chat) => marks[chat.id]).length },
   ];
-  return h("aside", { class: "col" },
-    h("div", { class: "col-head" },
-      h("div", { class: "col-title", text: "Filters" }),
-      h("div", { class: "tools" },
-        h("button", {
-          class: scope === "active" ? "primary" : "",
-          onclick: () => { scope = "active"; focusId = null; renderAll(); },
-          text: "Active",
-        }),
-        h("button", {
-          class: scope === "archived" ? "primary" : "",
-          onclick: () => { scope = "archived"; focusId = null; renderAll(); },
-          text: "Archived",
-        }),
-      ),
-      h("input", {
-        class: "search",
-        type: "search",
-        placeholder: "Search titles ( / )",
-        value: search,
-        oninput: (event) => { search = (event.target as HTMLInputElement).value; renderAll(); },
-      }),
-    ),
-    h("div", { style: "padding:10px 12px" },
-      h("div", { class: "filters" }, ...options.map((option) => {
-        const count = option.key === "all" ? all.length
-          : option.key === "unorganized" ? all.filter((chat) => !chat.projectId).length
-          : option.key === "projects" ? all.filter((chat) => chat.projectId).length
-          : all.filter((chat) => journal.marks[chat.id]).length;
-        return h("button", {
-          class: `filter ${filter === option.key ? "on" : ""}`,
-          onclick: () => { filter = option.key; projectFilter = null; renderAll(); },
-        }, h("span", { text: option.label }), h("span", { class: "n", text: String(count) }));
-      })),
-      h("div", { class: "projects" },
-        h("div", { class: "label", text: "Projects" }),
-        h("div", { class: "filters" },
-          h("button", {
-            class: `filter ${projectFilter === null && filter === "projects" ? "on" : ""}`,
-            onclick: () => { filter = "projects"; projectFilter = null; renderAll(); },
-          }, h("span", { text: "Any project" })),
-          ...projects.map((project) => h("button", {
-            class: `filter ${projectFilter === project.id ? "on" : ""}`,
-            onclick: () => { filter = "projects"; projectFilter = project.id; renderAll(); },
-          }, h("span", { text: project.name }))),
-        ),
-      ),
-      h("div", { class: "projects" },
-        h("div", { class: "label", text: "Selection" }),
-        h("div", { class: "tools" },
-          h("button", { onclick: selectAll, text: "Select all" }),
-          h("button", { onclick: invertSelection, text: "Invert" }),
-          h("button", { onclick: clearSelection, text: "Clear" }),
-        ),
-      ),
-    ),
-  );
+  ui.filters.replaceChildren(...options.map((option) => h("button", {
+    class: `filter ${filter === option.key && (option.key !== "projects" || projectFilter === null) ? "on" : ""}`,
+    onclick: () => { filter = option.key; projectFilter = null; viewChanged(); },
+  }, h("span", { text: option.label }), h("span", { class: "n", text: String(option.count) }))));
+  ui.projects.replaceChildren(...projects.map((project) => h("button", {
+    class: `filter ${projectFilter === project.id ? "on" : ""}`,
+    onclick: () => { filter = "projects"; projectFilter = project.id; viewChanged(); },
+  }, h("span", { text: project.name }), h("span", { class: "n", text: String(all.filter((chat) => chat.projectId === project.id).length) }))));
 }
 
-function renderList(): HTMLElement {
+function setScope(next: "active" | "archived"): void {
+  if (scope === next) return;
+  scope = next;
+  viewChanged();
+}
+
+// ---------- list (keyed rows, updated in place) ----------
+
+interface RowView {
+  el: HTMLElement;
+  box: HTMLInputElement;
+  title: HTMLElement;
+  tags: HTMLElement;
+  meta: HTMLElement;
+  sig: string;
+}
+
+const rowViews = new Map<string, RowView>();
+let shownIds: string[] = [];
+const emptyList = h("div", { class: "empty" });
+
+function rowView(id: string): RowView {
+  const existing = rowViews.get(id);
+  if (existing) return existing;
+  const box = h("input", {
+    type: "checkbox",
+    tabindex: "-1",
+    "aria-label": "Select",
+    onclick: (event) => { event.stopPropagation(); toggleSelection(id); },
+  }) as HTMLInputElement;
+  const title = h("span", { class: "name" });
+  const tags = h("span", { class: "tags" });
+  const meta = h("div", { class: "meta" });
+  const el = h("div", {
+    class: "row",
+    role: "option",
+    "data-id": id,
+    onclick: (event) => {
+      if ((event as MouseEvent).shiftKey && focusId) selectRange(focusId, id);
+      focusChat(id);
+    },
+  }, box, h("div", { class: "title" }, title, tags), meta);
+  const view = { el, box, title, tags, meta, sig: "" };
+  rowViews.set(id, view);
+  return view;
+}
+
+function syncRow(view: RowView, chat: Chat): void {
+  const mark = journal?.marks[chat.id];
+  const protection = journal?.protect[chat.id];
+  const focused = focusId === chat.id;
+  const chosen = selected.has(chat.id);
+  const sig = `${focused}|${chosen}|${chat.title}|${chat.createdMs}|${protection ? 1 : 0}|${mark ? changeLabel(mark) : ""}`;
+  if (sig === view.sig) return;
+  view.sig = sig;
+  view.el.classList.toggle("focus", focused);
+  view.el.classList.toggle("selected", chosen);
+  view.el.setAttribute("aria-selected", String(chosen));
+  view.box.checked = chosen;
+  view.title.textContent = chat.title || "Untitled";
+  const tags: HTMLElement[] = [];
+  if (isUntitled(chat.title)) tags.push(h("span", { class: "badge", text: "untitled" }));
+  if (protection) tags.push(h("span", { class: "badge protect", text: "Protected" }));
+  else if (mark) tags.push(h("span", { class: `badge ${mark.action}`, text: changeLabel(mark) }));
+  view.tags.replaceChildren(...tags);
+  view.meta.textContent = chat.createdMs ? new Date(chat.createdMs).toLocaleDateString() : "—";
+}
+
+function renderList(): void {
   const rows = visibleChats();
-  if (!rows.length) {
-    return h("section", { class: "col" },
-      h("div", { class: "col-head" }, h("div", { class: "col-title", text: "Conversations" })),
-      h("div", { class: "empty", text: search ? "No conversations match this search." : "No conversations here." }),
-    );
+  ui.listTitle.textContent = `Conversations · ${rows.length}`;
+  const ids = rows.map((chat) => chat.id);
+  const same = ids.length === shownIds.length && ids.every((id, index) => id === shownIds[index]);
+  if (!same) {
+    shownIds = ids;
+    if (!rows.length) {
+      emptyList.textContent = journal ? (search ? "No conversations match this search." : "No conversations here.") : "";
+      ui.list.replaceChildren(emptyList);
+    } else {
+      ui.list.replaceChildren(...rows.map((chat) => rowView(chat.id).el));
+    }
+    const known = new Set(chats.map((chat) => chat.id));
+    for (const id of rowViews.keys()) if (!known.has(id)) rowViews.delete(id);
   }
-  return h("section", { class: "col" },
-    h("div", { class: "col-head" },
-      h("div", { class: "col-title", text: `Conversations · ${rows.length}` }),
-      h("div", { class: "tools" },
-        h("button", { onclick: () => markSelection("delete"), text: "Delete" }),
-        h("button", { onclick: () => markSelection("archive"), text: "Archive" }),
-        h("button", { onclick: () => markSelection("unarchive"), text: "Unarchive" }),
-        h("button", { onclick: () => markSelection("rename"), text: "Rename" }),
-        h("button", { onclick: () => markSelection("move"), text: "Move" }),
-        h("button", { onclick: () => markSelection("protect"), text: "Protect" }),
-        h("button", { onclick: clearMarks, text: "Clear marks" }),
-      ),
-    ),
-    h("div", { class: "list" }, ...rows.map((chat) => {
-      const mark = journal.marks[chat.id];
-      return h("div", {
-        class: `row ${focusId === chat.id ? "focus" : ""}`,
-        onclick: (event) => {
-          if ((event.target as HTMLElement).closest("input")) return;
-          if ((event as MouseEvent).shiftKey && focusId) selectRange(focusId, chat.id);
-          focusChat(chat.id);
-        },
-      },
-        h("input", {
-          type: "checkbox",
-          checked: selected.has(chat.id),
-          onclick: (event) => { event.stopPropagation(); toggleSelection(chat.id); },
-        }),
-        h("div", { class: "title" },
-          h("span", { text: chat.title || "Untitled" }),
-          isUntitled(chat.title) ? h("span", { class: "badge", text: "untitled" }) : null,
-          badge(chat.id),
-          mark?.action === "move" ? h("span", { class: "meta", text: ` → ${mark.projectName || "No Project"}` }) : null,
-        ),
-        h("div", { class: "meta", text: chat.createdMs ? new Date(chat.createdMs).toLocaleDateString() : "—" }),
-      );
-    })),
-  );
+  for (const chat of rows) syncRow(rowView(chat.id), chat);
 }
 
-function renderPreviewColumn(): HTMLElement {
-  const run = journal.run;
-  const results = run?.results ?? [];
-  return h("section", { class: "col" },
-    h("div", { class: "col-head" }, h("div", { class: "col-title", text: "Preview & review" })),
-    renderPreviewBody(),
-    h("div", { class: "preview" },
-      h("div", { class: "queued" },
-        h("h3", { text: "Queued changes" }),
-        results.length
-          ? h("div", {}, ...results.map((result) => h("div", { class: `result ${result.status}` },
-            h("span", { class: "s", text: result.status }),
-            " ", result.action, " ", result.title || result.id,
-            result.note ? h("div", { class: "note", text: result.note }) : null,
-          )))
-          : h("div", { class: "note", text: "Mark a chat to queue a change, then run the queue." }),
-      ),
-      h("div", { class: "queued" },
-        h("h3", { text: "Keyboard" }),
-        h("div", { class: "note" },
-          h("span", { class: "kbd", text: "↑↓" }), " move · ",
-          h("span", { class: "kbd", text: "X" }), " select · ",
-          h("span", { class: "kbd", text: "D/A/U/R/M/P/C" }), " mark · ",
-          h("span", { class: "kbd", text: "/" }), " search",
-        ),
-      ),
-    ),
-  );
+function revealFocus(): void {
+  if (!focusId) return;
+  rowViews.get(focusId)?.el.scrollIntoView({ block: "nearest" });
 }
 
-function renderPreviewBody(): HTMLElement {
+// ---------- preview (rebuilt only when the focused chat or its content changes) ----------
+
+let previewKey = "";
+
+function renderPreview(): void {
   const id = focusId;
-  if (!id) return h("div", { class: "preview empty", text: "Select a conversation to read it before you decide." });
-  return h("div", { id: "preview-slot", class: "preview" }, h("div", { class: "note", text: "Loading conversation…" }));
-}
-
-function renderPreview(conversation: Conversation | null, error?: string): void {
-  const slot = document.querySelector<HTMLElement>("#preview-slot");
-  if (!slot) return;
+  const conversation = id ? previewCache.get(id) : undefined;
+  const error = id ? previewErrors.get(id) : undefined;
+  const key = !id ? "none" : conversation ? `${id}:ready` : error ? `${id}:error` : `${id}:loading`;
+  if (key === previewKey) return;
+  previewKey = key;
+  if (!id) {
+    ui.preview.replaceChildren(h("div", { class: "note", text: "Select a conversation to read it before you decide." }));
+    return;
+  }
   if (error) {
-    slot.replaceChildren(h("div", { class: "err", text: `Couldn't load this conversation: ${error}` }));
+    ui.preview.replaceChildren(h("div", { class: "err", text: `Couldn't load this conversation: ${error}` }));
     return;
   }
   if (!conversation) {
-    slot.replaceChildren(h("div", { class: "note", text: "This conversation could not be read. It will not be deleted until a backup succeeds." }));
+    ui.preview.replaceChildren(h("div", { class: "note", text: "Loading conversation…" }));
     return;
   }
-  slot.replaceChildren(
+  ui.preview.replaceChildren(
     h("h2", { text: conversation.title || "Untitled" }),
     h("div", { class: "meta", text: `${conversation.messages.length} messages` }),
     ...conversation.messages.map((message) => h("div", { class: `msg ${message.role}` },
@@ -555,49 +648,95 @@ function renderPreview(conversation: Conversation | null, error?: string): void 
       h("div", { class: "body", text: message.text }),
     )),
   );
+  ui.preview.scrollTop = 0;
 }
 
-function renderFooter(): HTMLElement {
-  return h("footer", { class: "footer" },
-    h("span", { text: activity.slice(0, 3).join(" | ") || "No activity yet." }),
-  );
+function schedulePreview(id: string): void {
+  if (previewCache.has(id)) return;
+  if (previewTimer) clearTimeout(previewTimer);
+  previewTimer = setTimeout(() => {
+    previewTimer = null;
+    if (focusId !== id) return;
+    void send({ op: "conversation", id }).then(
+      (value) => {
+        previewErrors.delete(id);
+        previewCache.set(id, decodeConversation(value));
+        if (previewCache.size > 300) {
+          const oldest = previewCache.keys().next().value;
+          if (oldest != null) previewCache.delete(oldest);
+        }
+      },
+      (error: unknown) => {
+        previewErrors.set(id, failureOf(error).message);
+      },
+    ).then(() => {
+      if (focusId === id) invalidate("preview");
+    });
+  }, 150);
 }
 
-function renderAll(): void {
-  renderTopbar();
+// ---------- queue panel and footer ----------
+
+function renderQueue(): void {
+  const run = journal?.run;
+  if (run) {
+    const pending = run.jobs.slice(run.i).filter((job) => !run.results.some((result) => result.id === job.id));
+    const unknown = run.inflight?.outcome === "unknown" ? run.inflight.id : null;
+    ui.queue.replaceChildren(h("div", {},
+      unknown
+        ? h("div", { class: "err", text: `Outcome unknown for ${run.jobs.find((job) => job.id === unknown)?.title ?? unknown}. It is checked again before anything else is sent.` })
+        : null,
+      ...run.results.map((result) => h("div", { class: `result ${result.status}` },
+        h("span", { class: "s", text: result.status }), " ", changeLabel(result), " · ", result.title || result.id,
+        result.note ? h("div", { class: "note", text: result.note }) : null,
+      )),
+      pending.length ? h("div", { class: "note", text: `${pending.length} still to run.` }) : null,
+    ));
+    return;
+  }
+  const count = queueCount();
+  ui.queue.replaceChildren(h("div", { class: "note", text: count ? `${count} marked. Press Q or Run queue to review them.` : "Mark a chat to queue a change, then run the queue." }));
 }
 
-function focusChat(id: string): void {
+function renderFooter(): void {
+  ui.footer.textContent = activity.slice(0, 3).join(" | ") || "No activity yet.";
+}
+
+// ---------- focus, selection and marks ----------
+
+function focusChat(id: string, reveal = false): void {
   focusId = id;
-  renderAll();
-  void loadPreview(id);
+  invalidate("list", "preview");
+  schedulePreview(id);
+  if (reveal) queueMicrotask(revealFocus);
 }
 
 function toggleSelection(id: string): void {
   if (selected.has(id)) selected.delete(id);
   else selected.add(id);
-  renderAll();
+  invalidate("list", "toolbar");
 }
 
 function clearSelection(): void {
   selected = new Set();
-  renderAll();
+  invalidate("list", "toolbar");
 }
 
 function selectAll(): void {
+  const pinnedToo = journal?.settings.pinnedInSelectAll ?? false;
   selected = new Set(visibleChats()
-    .filter((chat) => !journal.protect[chat.id] && (!chat.pinned || journal.settings.pinnedInSelectAll))
+    .filter((chat) => !journal?.protect[chat.id] && (!chat.pinned || pinnedToo))
     .map((chat) => chat.id));
-  renderAll();
+  invalidate("list", "toolbar");
 }
 
 function invertSelection(): void {
   const next = new Set<string>();
   for (const chat of visibleChats()) {
-    if (!journal.protect[chat.id] && !selected.has(chat.id)) next.add(chat.id);
+    if (!journal?.protect[chat.id] && !selected.has(chat.id)) next.add(chat.id);
   }
   selected = next;
-  renderAll();
+  invalidate("list", "toolbar");
 }
 
 function selectRange(fromId: string, toId: string): void {
@@ -606,67 +745,102 @@ function selectRange(fromId: string, toId: string): void {
   const to = rows.indexOf(toId);
   if (from < 0 || to < 0) return;
   for (const id of rows.slice(Math.min(from, to), Math.max(from, to) + 1)) {
-    if (!journal.protect[id]) selected.add(id);
+    if (!journal?.protect[id]) selected.add(id);
   }
-  renderAll();
+  invalidate("list", "toolbar");
+}
+
+function targets(): string[] {
+  const visible = new Set(visibleChats().map((chat) => chat.id));
+  if (selected.size) return [...selected].filter((id) => visible.has(id));
+  return focusId ? [focusId] : [];
+}
+
+function marksChanged(): void {
+  persistQuietly();
+  invalidate("toolbar", "filters", "list", "queue");
 }
 
 function clearMarks(): void {
-  const targets = selected.size ? selected : focusId ? new Set([focusId]) : new Set<string>();
-  for (const id of targets) delete journal.marks[id];
-  void persist();
-  renderAll();
+  if (!journal) return;
+  for (const id of targets()) delete journal.marks[id];
+  marksChanged();
 }
 
-function setMark(id: string, action: Action, options: { newTitle?: string; project?: string; projectName?: string } = {}): void {
+function canEdit(): boolean {
+  if (!journal) {
+    toast("Changes are switched off until the organizer journal loads.");
+    return false;
+  }
+  if (isRunActive(journal.run)) {
+    toast("Marks can't change while a run is in progress.");
+    return false;
+  }
+  return true;
+}
+
+// Applies one action to every target as a single state change and a single write.
+function setMarks(ids: readonly string[], action: Action, options: { newTitle?: string; project?: string; projectName?: string } = {}): void {
+  if (!journal || !canEdit()) return;
+  const byId = new Map(chats.map((chat) => [chat.id, chat]));
   if (action === "protect") {
-    if (journal.protect[id]) delete journal.protect[id];
-    else journal.protect[id] = { title: chats.find((chat) => chat.id === id)?.title ?? id, at: Date.now() };
-    void persist();
-    renderAll();
+    const protectAll = ids.some((id) => !journal?.protect[id]);
+    for (const id of ids) {
+      if (protectAll) {
+        journal.protect[id] = { title: byId.get(id)?.title ?? id, at: Date.now() };
+        delete journal.marks[id];
+      } else {
+        delete journal.protect[id];
+      }
+    }
+    marksChanged();
     return;
   }
-  const chat = chats.find((candidate) => candidate.id === id);
-  const reason = chat ? whyNot(chat, action, compatOk, journal.protect) : null;
-  if (reason) {
-    toast(reason);
-    return;
+  const refused = new Map<string, number>();
+  let marked = 0;
+  for (const id of ids) {
+    const chat = byId.get(id);
+    const reason = chat ? whyNot(chat, action, compatOk, journal.protect) : "That chat isn't loaded.";
+    if (!chat || reason) {
+      refused.set(reason ?? "", (refused.get(reason ?? "") ?? 0) + 1);
+      continue;
+    }
+    journal.marks[id] = {
+      action,
+      title: chat.title,
+      newTitle: action === "rename" ? options.newTitle ?? null : null,
+      project: action === "move" ? options.project ?? "" : "",
+      projectName: action === "move" ? options.projectName ?? "" : "",
+      at: Date.now(),
+    };
+    marked += 1;
   }
-  journal.marks[id] = {
-    action,
-    title: chat?.title ?? "",
-    newTitle: options.newTitle ?? null,
-    project: options.project ?? "",
-    projectName: options.projectName ?? "",
-    at: Date.now(),
-  };
-  void persist();
-  renderAll();
+  for (const [reason, count] of refused) toast(count > 1 ? `${count} chats skipped: ${reason}` : reason);
+  if (marked) marksChanged();
 }
 
 function markSelection(action: Action): void {
-  const targets = selected.size ? [...selected] : focusId ? [focusId] : [];
-  if (!targets.length) {
+  const ids = targets();
+  if (!ids.length) {
     toast("Select or focus a conversation first.");
     return;
   }
+  if (!canEdit()) return;
   if (action === "rename") {
-    const first = targets[0];
-    if (!first) return;
-    const current = chats.find((chat) => chat.id === first)?.title ?? "";
-    openPrompt("Rename conversation", current, (value) => {
+    const current = chats.find((chat) => chat.id === ids[0])?.title ?? "";
+    openPrompt(`Rename ${ids.length === 1 ? "conversation" : `${ids.length} conversations`}`, current, (value) => {
       if (!value.trim()) return;
-      for (const id of targets) setMark(id, "rename", { newTitle: value.trim() });
-      if (focusId && targets.length === 1) moveFocus(1);
+      setMarks(ids, "rename", { newTitle: value.trim() });
+      if (!selected.size) moveFocus(1);
     });
     return;
   }
   if (action === "move") {
-    openMove(targets);
+    openMove(ids);
     return;
   }
-  for (const id of targets) setMark(id, action);
-  if (focusId && targets.length === 1 && action !== "protect") moveFocus(1);
+  setMarks(ids, action);
+  if (!selected.size && action !== "protect") moveFocus(1);
 }
 
 function moveFocus(delta: number, extend = false): void {
@@ -676,103 +850,235 @@ function moveFocus(delta: number, extend = false): void {
   const next = rows[Math.min(rows.length - 1, Math.max(0, current + delta))];
   if (next == null) return;
   if (extend && focusId) selectRange(focusId, next);
-  focusChat(next);
+  focusChat(next, true);
 }
 
-function openModal(titleText: string, body: HTMLElement, buttons: HTMLElement[], shouldClose?: () => boolean): void {
+// ---------- dialogs ----------
+
+interface ModalButton {
+  label: string;
+  primary?: boolean;
+  // Returns false to keep the dialog open.
+  run?: () => boolean | void;
+}
+
+function openModal(titleText: string, body: HTMLElement, buttons: ModalButton[]): () => void {
+  const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  const elements = buttons.map((button) => h("button", { class: button.primary ? "primary" : "", text: button.label }));
   const veil = h("div", { class: "veil" },
-    h("div", { class: "modal" },
+    h("div", { class: "modal", role: "dialog", "aria-modal": "true", "aria-label": titleText },
       h("h2", { text: titleText }),
       body,
-      h("div", { class: "buttons" }, ...buttons),
+      h("div", { class: "buttons" }, ...elements),
     ),
   );
-  document.body.append(veil);
-  const close = (): void => veil.remove();
+  const close = (): void => {
+    veil.remove();
+    document.removeEventListener("keydown", onKey, true);
+    opener?.focus();
+  };
+  const activate = (button: ModalButton): void => {
+    if (button.run?.() === false) return;
+    close();
+  };
+  function onKey(event: KeyboardEvent): void {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      close();
+    } else if (event.key === "Enter" && !(event.target instanceof HTMLButtonElement)) {
+      const primary = buttons.find((button) => button.primary);
+      if (!primary) return;
+      event.preventDefault();
+      event.stopPropagation();
+      activate(primary);
+    }
+  }
+  elements.forEach((element, index) => {
+    const button = buttons[index];
+    if (button) element.addEventListener("click", () => activate(button));
+  });
   veil.addEventListener("click", (event) => {
     if (event.target === veil) close();
   });
-  for (const button of buttons) {
-    button.addEventListener("click", () => {
-      if (!shouldClose || shouldClose()) close();
-    });
-  }
+  document.addEventListener("keydown", onKey, true);
+  document.body.append(veil);
+  const first = body.querySelector<HTMLElement>("input:not([type=checkbox]), select") ?? elements.find((_, index) => buttons[index]?.primary) ?? null;
+  first?.focus();
+  if (first instanceof HTMLInputElement) first.select();
+  return close;
 }
 
 function openPrompt(titleText: string, initial: string, onConfirm: (value: string) => void): void {
-  const input = h("input", { type: "text", value: initial }) as HTMLInputElement;
-  const body = h("div", { class: "field" }, h("label", { text: "New title" }), input);
-  const confirm = h("button", { class: "primary", text: "Queue rename", onclick: () => onConfirm(input.value) });
-  openModal(titleText, body, [h("button", { text: "Cancel" }), confirm]);
-  input.focus();
-  input.select();
+  const input = h("input", { type: "text", value: initial, "aria-label": "New title" }) as HTMLInputElement;
+  openModal(titleText, h("div", { class: "field" }, h("label", { text: "New title" }), input), [
+    { label: "Cancel" },
+    { label: "Queue rename", primary: true, run: () => onConfirm(input.value) },
+  ]);
 }
 
-function openMove(targets: string[]): void {
-  const select = h("select", {},
+function openMove(ids: string[]): void {
+  const select = h("select", { "aria-label": "Project" },
     h("option", { value: "", text: "No Project" }),
     ...projects.map((project) => h("option", { value: project.id, text: project.name })),
   ) as HTMLSelectElement;
-  const body = h("div", { class: "field" },
-    h("label", { text: `Move ${targets.length} ${targets.length === 1 ? "chat" : "chats"} to` }),
+  openModal("Move to project", h("div", { class: "field" },
+    h("label", { text: `Move ${ids.length} ${ids.length === 1 ? "chat" : "chats"} to` }),
     select,
-  );
-  const confirm = h("button", {
-    class: "primary",
-    text: "Queue move",
-    onclick: () => {
-      const id = select.value;
-      const name = projects.find((project) => project.id === id)?.name ?? "";
-      for (const target of targets) setMark(target, "move", { project: id, projectName: name });
+  ), [
+    { label: "Cancel" },
+    {
+      label: "Queue move",
+      primary: true,
+      run: () => {
+        const id = select.value;
+        setMarks(ids, "move", { project: id, projectName: projects.find((project) => project.id === id)?.name ?? "" });
+      },
     },
-  });
-  openModal("Move to project", body, [h("button", { text: "Cancel" }), confirm]);
+  ]);
 }
 
-function runQueue(): void {
-  const jobs = buildJobs(journal, chats);
+function changeCell(job: Job): string {
+  switch (job.action) {
+    case "delete": return "Deleted permanently";
+    case "archive": return "Moved to Archived";
+    case "unarchive": return "Back to active chats";
+    case "rename": return `Renamed to “${job.newTitle ?? ""}”`;
+    case "move": return `Moved to ${job.projectName || "No Project"}`;
+  }
+}
+
+function openReview(): void {
+  if (!journal || !runner || runControls(journal.run) === "working" || journal.run?.status === "paused") return;
+  const { jobs, skipped } = buildJobs(journal, chats);
   if (!jobs.length) {
-    toast("Nothing is queued.");
+    toast(skipped.length ? `None of the ${skipped.length} marks can run: ${skipped[0]?.reason ?? ""}` : "Nothing is queued.");
     return;
   }
   const deletes = jobs.filter((job) => job.action === "delete").length;
-  const body = h("div", {},
-    h("p", { text: `${jobs.length} ${jobs.length === 1 ? "change" : "changes"} will run one at a time, with a ${clampGap(journal.settings.gap, CONFIG)} second gap.` }),
-    deletes ? h("p", { class: "err", text: `${deletes} ${deletes === 1 ? "chat" : "chats"} will be deleted permanently.` }) : null,
-    requiresTypedConfirmation(deletes, CONFIG.typeToConfirm) ? h("div", { class: "field" },
-      h("label", { text: `Type ${deletes} to confirm deletion` }),
-      h("input", { id: "confirm-count", type: "text", placeholder: String(deletes) }),
-    ) : null,
-    h("div", { class: "field" },
-      h("label", {},
-        h("input", { id: "backup-toggle", type: "checkbox", checked: journal.settings.backup }),
-        " Back up every chat before deleting it",
-      ),
-    ),
-    h("p", { class: "note", text: "Changes stay disabled until this exact list is authorized. Each chat is authorized once; anything else is refused." }),
+  const typed = requiresTypedConfirmation(deletes, CONFIG.typeToConfirm);
+  const confirmInput = h("input", { type: "text", placeholder: String(deletes), "aria-label": "Confirmation count" }) as HTMLInputElement;
+  const backupToggle = h("input", { type: "checkbox", checked: journal.settings.backup }) as HTMLInputElement;
+  const incompleteToggle = h("input", { type: "checkbox" }) as HTMLInputElement;
+  const gapInput = h("input", {
+    type: "number",
+    min: String(CONFIG.gapMin),
+    max: String(CONFIG.gapMax),
+    value: String(clampGap(journal.settings.gap, CONFIG)),
+    "aria-label": "Seconds between changes",
+  }) as HTMLInputElement;
+  const table = h("table", { class: "review" },
+    h("thead", {}, h("tr", {}, h("th", { text: "#" }), h("th", { text: "Conversation" }), h("th", { text: "Change" }))),
+    h("tbody", {}, ...jobs.map((job, index) => h("tr", { class: job.action },
+      h("td", { class: "n", text: String(index + 1) }),
+      h("td", { text: job.title || "Untitled" }),
+      h("td", { text: changeCell(job) }),
+    ))),
   );
-  const confirmed = (): boolean => {
-    const input = document.querySelector<HTMLInputElement>("#confirm-count");
-    return !input || input.value.trim() === String(deletes);
-  };
-  const confirm = h("button", {
-    class: "primary",
-    text: "Run",
-    onclick: () => {
-      if (!confirmed()) return;
-      const backup = document.querySelector<HTMLInputElement>("#backup-toggle")?.checked ?? false;
-      void startRun(jobs, backup);
+  const body = h("div", {},
+    h("p", { text: `These ${jobs.length} ${jobs.length === 1 ? "change runs" : "changes run"} one at a time, in this order. Only this exact list is authorized.` }),
+    deletes ? h("p", { class: "err", text: `${deletes} ${deletes === 1 ? "chat is" : "chats are"} deleted permanently.` }) : null,
+    h("div", { class: "review-wrap" }, table),
+    skipped.length ? h("div", { class: "note" },
+      h("p", { text: `${skipped.length} ${skipped.length === 1 ? "mark doesn't" : "marks don't"} run:` }),
+      h("ul", {}, ...skipped.slice(0, 20).map((entry) => h("li", { text: `${entry.title || entry.id}: ${entry.reason}` }))),
+    ) : null,
+    deletes ? h("div", { class: "field" },
+      h("label", {}, backupToggle, " Back up every chat before deleting it"),
+      h("label", {}, incompleteToggle, " Also delete chats whose attachment or image files the backup can't include"),
+      h("p", { class: "note", text: `The backup is a JSON file with each chat's full record. ${BACKUP_EXCLUDES} Without the second box, such chats are kept.` }),
+    ) : null,
+    h("div", { class: "field" }, h("label", { text: "Seconds between changes" }), gapInput),
+    typed ? h("div", { class: "field" }, h("label", { text: `Type ${deletes} to confirm deletion` }), confirmInput) : null,
+  );
+  openModal("Review and run", body, [
+    { label: "Cancel" },
+    {
+      label: `Run ${jobs.length} ${jobs.length === 1 ? "change" : "changes"}`,
+      primary: true,
+      run: () => {
+        if (typed && confirmInput.value.trim() !== String(deletes)) {
+          confirmInput.focus();
+          return false;
+        }
+        void startRun(jobs, {
+          backup: deletes > 0 && backupToggle.checked,
+          acceptIncomplete: incompleteToggle.checked,
+          gap: Number(gapInput.value) || CONFIG.gapDefault,
+        });
+        return true;
+      },
     },
-  });
-  openModal("Review and run queue", body, [h("button", { text: "Cancel" }), confirm], confirmed);
+  ]);
 }
 
-function saveBackup(): void {
-  const text = runner?.backupText() ?? "";
-  if (!text) return;
-  const stamp = fileStamp(Date.now());
-  download(`chatgpt-triage-backup-${stamp}.md`, text, "text/markdown");
-  runner?.acknowledgeBackupSaved(`chatgpt-triage-backup-${stamp}.md`);
+// ---------- backup saving ----------
+
+interface SaveHandle {
+  name: string;
+  createWritable(): Promise<{ write(data: string): Promise<void>; close(): Promise<void> }>;
+  getFile(): Promise<File>;
+}
+
+type SavePicker = (options: { suggestedName: string; types: { description: string; accept: Record<string, string[]> }[] }) => Promise<SaveHandle>;
+
+function savePicker(): SavePicker | null {
+  const picker = (window as unknown as { showSaveFilePicker?: SavePicker }).showSaveFilePicker;
+  return typeof picker === "function" ? picker.bind(window) : null;
+}
+
+// The file is written through a handle and read back, so the hash proves its bytes are on disk.
+async function saveBackup(): Promise<void> {
+  const pending = runner?.pendingBackup();
+  const run = journal?.run;
+  if (!pending || !run || !runner) return;
+  const name = `chatgpt-organizer-backup-${fileStamp(run.startedAt)}-${run.id}.json`;
+  const picker = savePicker();
+  if (!picker) {
+    confirmDownloadedBackup(name, pending.text, pending.sha256);
+    return;
+  }
+  let handle: SaveHandle;
+  try {
+    handle = await picker({ suggestedName: name, types: [{ description: "Backup", accept: { "application/json": [".json"] } }] });
+  } catch (error) {
+    toast(error instanceof DOMException && error.name === "AbortError"
+      ? "The backup wasn't saved, so nothing has been deleted."
+      : `Couldn't save the backup: ${failureOf(error).message}. Nothing has been deleted.`);
+    return;
+  }
+  try {
+    const writable = await handle.createWritable();
+    await writable.write(pending.text);
+    await writable.close();
+    const written = await sha256Hex(await (await handle.getFile()).arrayBuffer());
+    if (written !== pending.sha256) throw new TriageError("http", "The saved file doesn't match the backup");
+  } catch (error) {
+    toast(`Couldn't verify the saved backup: ${failureOf(error).message}. Nothing has been deleted.`);
+    return;
+  }
+  await runner.acknowledgeBackupSaved({ file: handle.name, sha256: pending.sha256, verification: "file" });
+}
+
+function confirmDownloadedBackup(name: string, text: string, sha256: string): void {
+  download(name, text, "application/json");
+  const check = h("input", { type: "checkbox" }) as HTMLInputElement;
+  openModal("Confirm the backup file", h("div", {},
+    h("p", { text: `Chrome can't confirm that ${name} was written. Open your downloads folder and check that it is there before continuing.` }),
+    h("p", { class: "note", text: `SHA-256: ${sha256}` }),
+    h("label", {}, check, " I can see the complete backup file"),
+  ), [
+    { label: "Not yet" },
+    {
+      label: "Continue",
+      primary: true,
+      run: () => {
+        if (!check.checked) return false;
+        void runner?.acknowledgeBackupSaved({ file: name, sha256, verification: "confirmed" });
+        return true;
+      },
+    },
+  ]);
 }
 
 function download(filename: string, text: string, type: string): void {
@@ -787,157 +1093,209 @@ function download(filename: string, text: string, type: string): void {
   setTimeout(() => URL.revokeObjectURL(url), 30_000);
 }
 
+// ---------- plans and reports ----------
+
+const PlanMarkSchema = Schema.Struct({
+  action: Schema.Literals(["delete", "archive", "unarchive", "rename", "move"]),
+  title: Schema.String,
+  newTitle: Schema.Union([Schema.String, Schema.Null]),
+  project: Schema.String,
+  projectName: Schema.String,
+  at: Schema.Number,
+});
+
 const PlanSchema = Schema.Struct({
   version: Schema.Number,
-  marks: Schema.Record(Schema.String, Schema.Struct({
-    action: Schema.Literals(["delete", "archive", "unarchive", "rename", "move"]),
-    title: Schema.String,
-    newTitle: Schema.Union([Schema.String, Schema.Null]),
-    project: Schema.String,
-    projectName: Schema.String,
-    at: Schema.Number,
-  })),
+  accountId: Schema.String,
+  marks: Schema.Record(Schema.String, PlanMarkSchema),
   protect: Schema.Record(Schema.String, Schema.Struct({ title: Schema.String, at: Schema.Number })),
 });
 
 function importPlan(): void {
+  if (!journal || !canEdit()) return;
   const input = document.createElement("input");
   input.type = "file";
   input.accept = "application/json,.json";
   input.addEventListener("change", () => {
     const file = input.files?.[0];
-    if (!file) return;
+    if (!file || !journal) return;
     void file.text().then((text) => {
+      if (!journal) return;
+      let check;
       try {
         const plan = decodeValue(PlanSchema, JSON.parse(text) as unknown);
-        journal.marks = { ...journal.marks, ...plan.marks };
-        journal.protect = { ...journal.protect, ...plan.protect };
-        void persist();
-        renderAll();
-        toast(`Imported ${Object.keys(plan.marks).length} planned changes.`);
+        check = validatePlan(
+          { ...plan, marks: { ...plan.marks }, protect: { ...plan.protect } },
+          { accountId: journal.accountId, chats, projects, protect: journal.protect },
+        );
       } catch (error) {
-        toast(`Could not import that plan: ${error instanceof Error ? error.message : String(error)}`);
+        toast(`Couldn't read that plan: ${failureOf(error).message}`);
+        return;
       }
+      if (!check.ok) {
+        openModal("Plan rejected", h("div", {},
+          h("p", { text: `Nothing was imported. ${check.problems.length} ${check.problems.length === 1 ? "entry doesn't" : "entries don't"} match this account's chats:` }),
+          h("ul", {}, ...check.problems.slice(0, 30).map((problem) => h("li", { text: problem }))),
+        ), [{ label: "Close", primary: true }]);
+        return;
+      }
+      journal.marks = { ...journal.marks, ...check.marks };
+      journal.protect = { ...journal.protect, ...check.protect };
+      marksChanged();
+      toast(`Imported ${Object.keys(check.marks).length} planned changes.`);
     });
   });
   input.click();
 }
 
 function exportPlan(): void {
-  const plan = { version: 1, marks: journal.marks, protect: journal.protect };
+  if (!journal) return;
+  const marks: Record<string, Mark> = {};
+  for (const [id, mark] of Object.entries(journal.marks)) if (mark.action !== "protect") marks[id] = mark;
+  const plan = { version: 2, accountId: journal.accountId, marks, protect: journal.protect };
   download(`chatgpt-organizer-plan-${fileStamp(Date.now())}.json`, JSON.stringify(plan, null, 2), "application/json");
 }
 
 function exportReport(): void {
-  const run = journal.run;
+  const run = journal?.run;
   if (!run) return;
-  download(`chatgpt-organizer-report-${fileStamp(Date.now())}.json`, JSON.stringify(run.results, null, 2), "application/json");
+  const report = { runId: run.id, accountId: run.accountId, status: run.status, backup: run.backup, results: run.results };
+  download(`chatgpt-organizer-report-${fileStamp(Date.now())}.json`, JSON.stringify(report, null, 2), "application/json");
 }
+
+// ---------- keyboard ----------
 
 function isTyping(target: EventTarget | null): boolean {
-  const element = target as HTMLElement | null;
-  if (!element) return false;
-  const tag = element.tagName;
-  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || element.isContentEditable;
+  if (!(target instanceof HTMLElement)) return false;
+  const tag = target.tagName;
+  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || target.isContentEditable;
 }
 
+const KEY_ACTIONS: Record<string, Action | "clear"> = {
+  d: "delete", a: "archive", u: "unarchive", r: "rename", m: "move", p: "protect", c: "clear",
+};
+
 function onKey(event: KeyboardEvent): void {
-  if (document.querySelector(".veil")) return;
+  if (document.querySelector(".veil") || event.metaKey || event.ctrlKey || event.altKey) return;
+  if (event.key === "Escape" && event.target === ui.search) {
+    ui.search.blur();
+    return;
+  }
   if (event.key === "/" && !isTyping(event.target)) {
     event.preventDefault();
-    document.querySelector<HTMLInputElement>(".search")?.focus();
+    ui.search.focus();
     return;
   }
   if (isTyping(event.target)) return;
-  const key = event.key;
-  if (key === "ArrowDown" || key.toLowerCase() === "j") {
+  const key = event.key.toLowerCase();
+  if (event.key === "ArrowDown" || key === "j") {
     event.preventDefault();
     moveFocus(1, event.shiftKey);
-  } else if (key === "ArrowUp" || key.toLowerCase() === "k") {
+  } else if (event.key === "ArrowUp" || key === "k") {
     event.preventDefault();
     moveFocus(-1, event.shiftKey);
-  } else if (key === " " || key.toLowerCase() === "x") {
+  } else if (event.key === " " || key === "x") {
     event.preventDefault();
     if (focusId) toggleSelection(focusId);
-  } else if (key === "Escape") {
+  } else if (event.key === "Escape") {
     clearSelection();
-  } else if (["d", "a", "u", "r", "m", "p", "c"].includes(key.toLowerCase())) {
+  } else if (key === "q") {
     event.preventDefault();
-    if (!focusId) return;
-    const action = { d: "delete", a: "archive", u: "unarchive", r: "rename", m: "move", p: "protect", c: "clear" }[key.toLowerCase()];
-    if (action === "clear") {
-      delete journal.marks[focusId];
-      void persist();
-      renderAll();
-      return;
-    }
-    if (action === "rename" || action === "move") markSelection(action);
-    else setMark(focusId, action as Action);
+    const controls = runControls(journal?.run ?? null);
+    if (controls === "working") void runner?.pause("Paused by you.");
+    else if (controls === "idle" || controls === "finished") openReview();
+  } else if (key in KEY_ACTIONS) {
+    event.preventDefault();
+    const action = KEY_ACTIONS[key];
+    if (action === "clear") clearMarks();
+    else if (action) markSelection(action);
   }
 }
 
+// ---------- boot ----------
+
+let booting = true;
+
 chrome.runtime.onMessage.addListener((message) => {
-  if (!message || typeof message !== "object") return false;
-  const record = message as { kind?: unknown; found?: unknown; total?: unknown; waiting?: unknown };
-  if (record.kind !== "chatgpt/list-progress" || !booting) return false;
-  const found = Number(record.found ?? 0);
-  const total = typeof record.total === "number" ? record.total : null;
-  progress = record.waiting === true
+  const update = decodeListProgress(message);
+  if (!update || !booting) return false;
+  progress = update.waiting
     ? "Waiting for ChatGPT…"
-    : total !== null && found >= total
-      ? ""
-      : `Loading ${found}${total !== null ? ` of ${total}` : ""} chats…`;
-  renderTopbar();
+    : `Loading ${update.found}${update.total !== null ? ` of ${update.total}` : ""} ${update.scope} chats…`;
+  invalidate("toolbar");
   return false;
 });
 
-document.addEventListener("keydown", onKey);
-
 async function boot(): Promise<void> {
   try {
-    await ensureTab();
-    const session = decodeValue(SessionSchema, await send({ kind: "chatgpt/api", requestId: nextRequestId(), op: "session" }));
-    const accountId = session.userId ?? "default";
-    journal = await store.load(accountId);
-    journal.accountId = accountId;
-    journal.settings.gap = clampGap(Number(journal.settings.gap) || CONFIG.gapDefault, CONFIG);
-    if (journal.run && ACTIVE_STATUSES.has(journal.run.status) && journal.run.owner !== owner) {
-      journal.run.status = "paused";
-      journal.run.note = "Interrupted by a restart. Review and resume deliberately.";
-      await persist();
+    progress = "Connecting to ChatGPT…";
+    invalidate("toolbar");
+    const session = decodeValue(SessionSchema, await send({ op: "session" }));
+    const loaded = await store.load(session.accountId);
+    loaded.settings.gap = clampGap(Number(loaded.settings.gap) || CONFIG.gapDefault, CONFIG);
+    recoverInterrupted(loaded);
+    journal = loaded;
+    await persistJournal();
+    const active = await loadChats("active");
+    const archived = await loadChats("archived").catch((error: unknown) => {
+      toast(`Couldn't load the archived list: ${failureOf(error).message}`);
+      return { chats: [], complete: false, total: null };
+    });
+    chats.splice(0, chats.length, ...active.chats, ...archived.chats.filter((chat) => !active.chats.some((other) => other.id === chat.id)));
+    if (!active.complete || !archived.complete) {
+      inventoryNote = `ChatGPT returned ${chats.length} chats${active.total != null ? ` of ${active.total} active` : ""}; only loaded chats can be changed.`;
     }
-    progress = "Loading conversations…";
-    renderAll();
-    chats = await loadChats("active");
-    try {
-      projects = await loadProjects();
-    } catch {
-      projects = [];
-      toast("Couldn't load projects; moving chats is unavailable this session.");
-    }
-    if (!chats.some((chat) => chat.archived)) {
-      try {
-        const archived = await loadChats("archived");
-        chats.push(...archived);
-      } catch {
-        toast("Couldn't load the archived list.");
-      }
-    }
+    projects = await send({ op: "projects" }).then(
+      (value) => decodeValue(ProjectListSchema, value).map((project) => ({ ...project })),
+      () => {
+        toast("Couldn't load projects; moving chats is unavailable this session.");
+        return [];
+      },
+    );
     compatOk = true;
-    progress = "";
-    booting = false;
+    runner = makeRunner(loaded);
     focusId = visibleChats()[0]?.id ?? null;
-    runner = makeRunner();
-    renderAll();
-    if (focusId) void loadPreview(focusId);
+    if (focusId) schedulePreview(focusId);
   } catch (error) {
-    const failure = error instanceof TriageError ? error : null;
-    if (failure?.kind === "compat") compatOk = false;
-    progress = "";
+    const failure = failureOf(error);
+    compatOk = false;
+    blocked = failure.message;
+    toast(failure.message);
+  } finally {
     booting = false;
-    toast(failure?.message ?? (error instanceof Error ? error.message : String(error)));
-    renderAll();
+    progress = "";
+    invalidateAll();
   }
 }
 
-void boot();
+function showWaiting(): void {
+  app.replaceChildren(h("div", { class: "waiting" },
+    h("h1", { text: "ChatGPT Organizer is open in another tab" }),
+    h("p", { text: "Only one dashboard can manage your chats at a time. This tab takes over as soon as the other one closes." }),
+  ));
+}
+
+async function main(): Promise<void> {
+  const start = async (): Promise<void> => {
+    journal = null;
+    buildLayout();
+    document.addEventListener("keydown", onKey);
+    invalidateAll();
+    await boot();
+  };
+  // The lock is held for the life of this tab, so at most one dashboard can run changes.
+  await navigator.locks.request(LOCK_NAME, { ifAvailable: true }, async (lock) => {
+    if (!lock) {
+      showWaiting();
+      void navigator.locks.request(LOCK_NAME, async () => {
+        await start();
+        await new Promise<never>(() => undefined);
+      });
+      return;
+    }
+    await start();
+    await new Promise<never>(() => undefined);
+  });
+}
+
+void main();

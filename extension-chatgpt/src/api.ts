@@ -6,8 +6,12 @@ import {
   parseConversation,
   parseProjects,
   parseRetryAfter,
+  probeFromDetail,
+  requestBodyFor,
   type Chat,
+  type Command,
   type Conversation,
+  type ConversationProbe,
   type Project,
 } from "./model.ts";
 
@@ -24,7 +28,6 @@ export interface Config {
   transientBackoff: number[];
   calmAfter: number;
   typeToConfirm: number;
-  staleBeat: number;
 }
 
 export const CONFIG: Config = {
@@ -40,7 +43,6 @@ export const CONFIG: Config = {
   transientBackoff: [5_000, 15_000, 45_000],
   calmAfter: 10,
   typeToConfirm: 20,
-  staleBeat: 20_000,
 };
 
 export interface ApiState {
@@ -93,18 +95,26 @@ export interface ApiDeps {
   onCooldown?: () => void;
 }
 
+// The bearer token never leaves the client; callers only learn which account is signed in.
 export interface Session {
-  accessToken: string;
-  userId: string | null;
+  accountId: string | null;
+}
+
+export interface ChatList {
+  chats: Chat[];
+  complete: boolean;
+  total: number | null;
 }
 
 export interface ApiClient {
   session(): Promise<Session>;
-  list(scope: "active" | "archived", onProgress?: (found: number, total: number | null, waiting: boolean) => void): Promise<Chat[]>;
+  accountId(): string | null;
+  list(scope: "active" | "archived", onProgress?: (found: number, total: number | null, waiting: boolean) => void): Promise<ChatList>;
   projects(): Promise<Project[]>;
   conversation(id: string): Promise<Conversation>;
-  detail(id: string): Promise<unknown>;
-  change(id: string, body: Record<string, string | boolean>): Promise<void>;
+  record(id: string): Promise<unknown>;
+  probe(id: string): Promise<ConversationProbe>;
+  change(command: Command): Promise<void>;
   cooldownLeft(): number;
   log(): NetworkRecord[];
 }
@@ -158,7 +168,7 @@ export function createApiClient(deps: ApiDeps): ApiClient {
     }
     state.token = data.accessToken;
     state.accountId = accountId;
-    return { accessToken: data.accessToken, userId: accountId };
+    return { accountId };
   }
 
   async function request(method: string, path: string, body?: Record<string, string | boolean>, retryAuth = true): Promise<unknown> {
@@ -230,11 +240,13 @@ export function createApiClient(deps: ApiDeps): ApiClient {
   async function listWithRetry(
     path: string,
     onProgress?: (found: number, total: number | null, waiting: boolean) => void,
-  ): Promise<{ items: unknown[]; total: number | null }> {
-    const found = new Map<string, unknown>();
+  ): Promise<{ items: Record<string, unknown>[]; total: number | null; complete: boolean }> {
+    const found = new Map<string, Record<string, unknown>>();
     let offset = 0;
     let total: number | null = null;
     let tries = 0;
+    let exhausted = false;
+    let stalled = false;
     for (let page = 0; page < config.maxPages; page += 1) {
       let data: unknown;
       try {
@@ -258,16 +270,21 @@ export function createApiClient(deps: ApiDeps): ApiClient {
       tries = 0;
       const checked = checkList(data);
       const before = found.size;
-      for (const item of checked.items) {
-        const row = item as { id: string };
-        found.set(row.id, item);
-      }
+      for (const item of checked.items) found.set(String(item["id"]), item);
       if (checked.total != null) total = checked.total;
       onProgress?.(found.size, total, false);
-      if (!checked.items.length || found.size === before) break;
+      if (!checked.items.length) {
+        exhausted = true;
+        break;
+      }
+      if (found.size === before) {
+        stalled = true;
+        break;
+      }
       offset += checked.items.length;
     }
-    return { items: [...found.values()], total };
+    const complete = exhausted && !stalled && (total == null || found.size >= total);
+    return { items: [...found.values()], total, complete };
   }
 
   return {
@@ -276,16 +293,8 @@ export function createApiClient(deps: ApiDeps): ApiClient {
     },
     async list(scope, onProgress) {
       const archived = scope === "archived" ? "&is_archived=true" : "";
-      const { items } = await listWithRetry(`/backend-api/conversations?offset={offset}&limit={limit}&order=updated${archived}`, onProgress);
-      const chats: Chat[] = [];
-      let compatible = true;
-      for (const item of items) {
-        const chat = normalizeListItem(item, scope === "archived");
-        if (chat) chats.push(chat);
-        else compatible = false;
-      }
-      if (!compatible) throw new TriageError("compat", "ChatGPT's chat list looks different from what Triage expects, so Triage stopped.");
-      return chats;
+      const { items, total, complete } = await listWithRetry(`/backend-api/conversations?offset={offset}&limit={limit}&order=updated${archived}`, onProgress);
+      return { chats: items.map((item) => normalizeListItem(item, scope === "archived")), complete, total };
     },
     async projects() {
       const found = new Map<string, Project>();
@@ -325,11 +334,17 @@ export function createApiClient(deps: ApiDeps): ApiClient {
       const data = await request("GET", `/backend-api/conversation/${encodeURIComponent(id)}`);
       return parseConversation(data);
     },
-    async detail(id) {
+    async record(id) {
       return request("GET", `/backend-api/conversation/${encodeURIComponent(id)}`);
     },
-    async change(id, body) {
-      await request("PATCH", `/backend-api/conversation/${encodeURIComponent(id)}`, body);
+    async probe(id) {
+      return probeFromDetail(await request("GET", `/backend-api/conversation/${encodeURIComponent(id)}`));
+    },
+    async change(command) {
+      await request("PATCH", `/backend-api/conversation/${encodeURIComponent(command.id)}`, requestBodyFor(command));
+    },
+    accountId() {
+      return state.accountId;
     },
     cooldownLeft,
     log() {

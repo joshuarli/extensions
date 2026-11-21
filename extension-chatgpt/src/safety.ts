@@ -1,49 +1,68 @@
 import { TriageError } from "./errors.ts";
-
-export interface ArmedJob {
-  id: string;
-  action: "delete" | "archive" | "unarchive" | "rename" | "move";
-}
+import { sameCommand, type Command } from "./model.ts";
 
 export const MAX_ATTEMPTS_PER_CHAT = 8;
 
-// The boundary that issues destructive PATCHes stays disarmed until the dashboard
-// arms an explicit job list. A change outside that list is refused loudly.
-export class DeletionGuard {
-  private runId: string | null = null;
-  private allowed = new Map<string, ArmedJob["action"]>();
-  private attempts = new Map<string, number>();
+interface Armed {
+  runId: string;
+  accountId: string;
+  commands: Map<string, Command>;
+  attempts: Map<string, number>;
+}
 
-  arm(runId: string, jobs: readonly ArmedJob[]): void {
-    this.runId = runId;
-    this.allowed = new Map(jobs.map((job) => [job.id, job.action]));
-    this.attempts = new Map();
+function refused(message: string): TriageError {
+  return new TriageError("auth", `${message} No change was sent.`);
+}
+
+// The boundary that issues PATCHes stays disarmed until the dashboard arms an exact
+// command list for one run and account. It hands back the armed command, so the
+// caller never chooses what is written.
+export class MutationGuard {
+  private armed: Armed | null = null;
+
+  arm(runId: string, accountId: string, commands: readonly Command[]): void {
+    if (!runId || !accountId) throw refused("A run needs an id and an account.");
+    const next = new Map<string, Command>();
+    for (const command of commands) {
+      if (next.has(command.id)) throw refused(`Chat ${command.id} appears twice in the run.`);
+      next.set(command.id, command);
+    }
+    if (!next.size) throw refused("The run has no changes.");
+    const current = this.armed;
+    if (current && current.runId !== runId) {
+      throw refused("Another run is already authorized. Stop it first.");
+    }
+    if (current) {
+      const same = current.accountId === accountId
+        && current.commands.size === next.size
+        && [...next.values()].every((command) => {
+          const existing = current.commands.get(command.id);
+          return existing != null && sameCommand(existing, command);
+        });
+      if (!same) throw refused("This run was authorized with a different list.");
+      return;
+    }
+    this.armed = { runId, accountId, commands: next, attempts: new Map() };
   }
 
   disarm(runId: string): void {
-    if (this.runId !== runId) return;
-    this.runId = null;
-    this.allowed = new Map();
-    this.attempts = new Map();
+    if (this.armed?.runId === runId) this.armed = null;
   }
 
   armedRunId(): string | null {
-    return this.runId;
+    return this.armed?.runId ?? null;
   }
 
-  authorize(runId: string, id: string, action: ArmedJob["action"]): void {
-    if (!runId || this.runId !== runId) {
-      throw new TriageError("auth", "No authorized run is armed. No change was sent.");
-    }
-    const expected = this.allowed.get(id);
-    if (expected !== action) {
-      throw new TriageError("auth", `Chat ${id} was not authorized for ${action}. No change was sent.`);
-    }
-    const attempts = (this.attempts.get(id) ?? 0) + 1;
-    if (attempts > MAX_ATTEMPTS_PER_CHAT) {
-      throw new TriageError("auth", `Chat ${id} exceeded its attempt limit. No change was sent.`);
-    }
-    this.attempts.set(id, attempts);
+  authorize(runId: string, accountId: string, id: string): Command {
+    const armed = this.armed;
+    if (!runId || armed?.runId !== runId) throw refused("No authorized run is armed.");
+    if (armed.accountId !== accountId) throw refused("The run was authorized for a different account.");
+    const command = armed.commands.get(id);
+    if (!command) throw refused(`Chat ${id} was not authorized.`);
+    const attempts = (armed.attempts.get(id) ?? 0) + 1;
+    if (attempts > MAX_ATTEMPTS_PER_CHAT) throw refused(`Chat ${id} exceeded its attempt limit.`);
+    armed.attempts.set(id, attempts);
+    return command;
   }
 }
 

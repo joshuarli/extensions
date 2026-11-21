@@ -31,9 +31,10 @@ function expectFailure(promise: Promise<unknown>): Promise<TriageError> {
 }
 
 describe("authenticated ChatGPT client", () => {
-  it("reads the session token and account id", async () => {
-    const { client } = harness(async () => jsonResponse(200, { accessToken: "t1", user: { id: "u1" } }));
-    expect(await client.session()).toEqual({ accessToken: "t1", userId: "u1" });
+  it("keeps the token inside the client and reports only the account", async () => {
+    const { client, state } = harness(async () => jsonResponse(200, { accessToken: "t1", user: { id: "u1" } }));
+    expect(await client.session()).toEqual({ accountId: "u1" });
+    expect(state.token).toBe("t1");
   });
 
   it("honours Retry-After and retries the same request after waiting", async () => {
@@ -44,7 +45,7 @@ describe("authenticated ChatGPT client", () => {
       const offset = new URL(String(input), "https://chatgpt.com").searchParams.get("offset");
       return jsonResponse(200, { items: offset === "0" ? [listItem("a")] : [], total: 1 });
     });
-    const chats = await client.list("active");
+    const { chats } = await client.list("active");
     expect(chats.map((chat) => chat.id)).toEqual(["a"]);
     expect(state.strikes).toBe(1);
     expect(state.cooldownUntil).toBeGreaterThan(0);
@@ -77,7 +78,7 @@ describe("authenticated ChatGPT client", () => {
       return jsonResponse(200, { success: true });
     });
     state.token = "old";
-    await client.change("c1", { is_archived: true });
+    await client.change({ action: "archive", id: "c1" });
     expect(seen).toEqual(["Bearer old", "Bearer new"]);
     expect(state.token).toBe("new");
   });
@@ -89,7 +90,7 @@ describe("authenticated ChatGPT client", () => {
       }
       return jsonResponse(403, { detail: "Unauthorized" });
     });
-    const failure = await expectFailure(client.change("c1", { is_visible: false }));
+    const failure = await expectFailure(client.change({ action: "delete", id: "c1" }));
     expect(failure.kind).toBe("auth");
   });
 
@@ -101,7 +102,7 @@ describe("authenticated ChatGPT client", () => {
       }
       return jsonResponse(200, { success: true });
     });
-    expect((await client.session()).userId).toBe("u1");
+    expect((await client.session()).accountId).toBe("u1");
     account = "u2";
     const failure = await expectFailure(client.session());
     expect(failure.kind).toBe("auth");
@@ -115,8 +116,9 @@ describe("authenticated ChatGPT client", () => {
       const offset = new URL(String(input), "https://chatgpt.com").searchParams.get("offset");
       return jsonResponse(200, { items: offset === "0" ? [listItem("a")] : [], total: 1 });
     });
-    const chats = await client.list("active");
+    const { chats, complete } = await client.list("active");
     expect(chats).toHaveLength(1);
+    expect(complete).toBe(true);
     expect(calls).toBe(4);
   });
 
@@ -126,9 +128,28 @@ describe("authenticated ChatGPT client", () => {
     expect(failure.kind).toBe("compat");
   });
 
+  it("reports a list as incomplete when ChatGPT returns fewer chats than its total", async () => {
+    const { client } = harness(async (input) => {
+      const offset = new URL(String(input), "https://chatgpt.com").searchParams.get("offset");
+      return jsonResponse(200, { items: offset === "0" ? [listItem("a")] : [], total: 5 });
+    });
+    const list = await client.list("active");
+    expect(list).toMatchObject({ complete: false, total: 5 });
+  });
+
+  it("reports a list as incomplete when a page only repeats chats already seen", async () => {
+    const { client } = harness(async () => jsonResponse(200, { items: [listItem("a")], total: null }));
+    expect((await client.list("active")).complete).toBe(false);
+  });
+
+  it("refuses to probe a record whose shape it doesn't recognize", async () => {
+    const { client } = harness(async () => jsonResponse(200, { title: "a" }));
+    expect((await expectFailure(client.probe("c1"))).kind).toBe("compat");
+  });
+
   it("treats an explicit success:false as a failed change", async () => {
     const { client } = harness(async () => jsonResponse(200, { success: false }));
-    const failure = await expectFailure(client.change("c1", { is_visible: false }));
+    const failure = await expectFailure(client.change({ action: "delete", id: "c1" }));
     expect(failure.kind).toBe("http");
   });
 });

@@ -1,62 +1,149 @@
 import { describe, expect, it } from "vitest";
+import { CONFIG, createApiClient, createApiState } from "../src/api.ts";
 import { TriageError } from "../src/errors.ts";
-import { DeletionGuard, MAX_ATTEMPTS_PER_CHAT, requiresTypedConfirmation, type ArmedJob } from "../src/safety.ts";
+import { isApiRequest, type ApiRequest } from "../src/messages.ts";
+import type { Command } from "../src/model.ts";
+import { createOperator } from "../src/operator.ts";
+import { MAX_ATTEMPTS_PER_CHAT, MutationGuard, requiresTypedConfirmation } from "../src/safety.ts";
+import { createClock, jsonResponse } from "./helpers.ts";
 
-function attempt(guard: DeletionGuard, runId: string, id: string, action: ArmedJob["action"]): string | null {
+function refusal(run: () => unknown): string | null {
   try {
-    guard.authorize(runId, id, action);
+    run();
     return null;
   } catch (error) {
     return error instanceof TriageError ? error.message : String(error);
   }
 }
 
-describe("destructive-action guardrail", () => {
-  it("is disarmed by default, so no change can be sent before confirmation", () => {
-    const guard = new DeletionGuard();
-    expect(attempt(guard, "run-1", "c1", "delete")).toContain("No authorized run");
-    expect(attempt(guard, "", "c1", "delete")).toContain("No authorized run");
+describe("mutation guard", () => {
+  it("is disarmed by default", () => {
+    const guard = new MutationGuard();
+    expect(refusal(() => guard.authorize("run-1", "u1", "c1"))).toContain("No authorized run");
+    expect(refusal(() => guard.authorize("", "u1", "c1"))).toContain("No authorized run");
   });
 
-  it("refuses a chat that was not in the confirmed job list", () => {
-    const guard = new DeletionGuard();
-    guard.arm("run-1", [
-      { id: "c1", action: "delete" },
-      { id: "c2", action: "archive" },
-    ]);
-    expect(attempt(guard, "run-1", "c1", "delete")).toBeNull();
-    expect(attempt(guard, "run-1", "c2", "archive")).toBeNull();
-    expect(attempt(guard, "run-1", "c3", "delete")).toContain("not authorized");
-    expect(attempt(guard, "run-1", "c1", "archive")).toContain("not authorized");
-    expect(attempt(guard, "run-2", "c1", "delete")).toContain("No authorized run");
+  it("hands back exactly the armed command, bound to run, account and chat", () => {
+    const guard = new MutationGuard();
+    guard.arm("run-1", "u1", [{ action: "archive", id: "c1" }, { action: "rename", id: "c2", title: "New" }]);
+    expect(guard.authorize("run-1", "u1", "c1")).toEqual({ action: "archive", id: "c1" });
+    expect(guard.authorize("run-1", "u1", "c2")).toEqual({ action: "rename", id: "c2", title: "New" });
+    expect(refusal(() => guard.authorize("run-1", "u1", "c3"))).toContain("not authorized");
+    expect(refusal(() => guard.authorize("run-2", "u1", "c1"))).toContain("No authorized run");
+    expect(refusal(() => guard.authorize("run-1", "u2", "c1"))).toContain("different account");
   });
 
-  it("an attempt to delete every chat is refused except for the explicitly marked ones", () => {
-    const guard = new DeletionGuard();
-    const marked = ["chat-1", "chat-2"];
-    guard.arm("run-1", marked.map((id) => ({ id, action: "delete" as const })));
-    const everyChat = Array.from({ length: 200 }, (_, index) => `chat-${index + 1}`);
-    const sent = everyChat.filter((id) => attempt(guard, "run-1", id, "delete") === null);
-    expect(sent).toEqual(marked);
-    expect(everyChat.length - sent.length).toBe(198);
+  it("refuses every chat but the marked ones when asked to delete all 200", () => {
+    const guard = new MutationGuard();
+    guard.arm("run-1", "u1", [{ action: "delete", id: "chat-1" }, { action: "delete", id: "chat-2" }]);
+    const every = Array.from({ length: 200 }, (_, index) => `chat-${index + 1}`);
+    const sent = every.filter((id) => refusal(() => guard.authorize("run-1", "u1", id)) === null);
+    expect(sent).toEqual(["chat-1", "chat-2"]);
   });
 
-  it("caps repeated attempts for one chat and can be disarmed", () => {
-    const guard = new DeletionGuard();
-    guard.arm("run-1", [{ id: "c1", action: "delete" }]);
-    for (let index = 0; index < MAX_ATTEMPTS_PER_CHAT; index += 1) {
-      expect(attempt(guard, "run-1", "c1", "delete")).toBeNull();
-    }
-    expect(attempt(guard, "run-1", "c1", "delete")).toContain("attempt limit");
-    guard.disarm("run-1");
+  it("keeps attempt counts when the same run is re-armed, and refuses a changed list", () => {
+    const guard = new MutationGuard();
+    const commands: Command[] = [{ action: "delete", id: "c1" }];
+    guard.arm("run-1", "u1", commands);
+    for (let index = 0; index < MAX_ATTEMPTS_PER_CHAT; index += 1) guard.authorize("run-1", "u1", "c1");
+    guard.arm("run-1", "u1", commands);
+    expect(refusal(() => guard.authorize("run-1", "u1", "c1"))).toContain("attempt limit");
+    expect(refusal(() => guard.arm("run-1", "u1", [{ action: "archive", id: "c1" }]))).toContain("different list");
+    expect(refusal(() => guard.arm("run-2", "u1", commands))).toContain("Another run");
+  });
+
+  it("rejects duplicate and empty command lists", () => {
+    const guard = new MutationGuard();
+    expect(refusal(() => guard.arm("run-1", "u1", []))).toContain("no changes");
+    expect(refusal(() => guard.arm("run-1", "u1", [{ action: "delete", id: "c1" }, { action: "archive", id: "c1" }]))).toContain("twice");
     expect(guard.armedRunId()).toBeNull();
-    expect(attempt(guard, "run-1", "c1", "delete")).toContain("No authorized run");
   });
 
   it("requires typing the count for a large delete batch but not a small one", () => {
-    expect(requiresTypedConfirmation(1, 20)).toBe(false);
     expect(requiresTypedConfirmation(19, 20)).toBe(false);
     expect(requiresTypedConfirmation(20, 20)).toBe(true);
-    expect(requiresTypedConfirmation(200, 20)).toBe(true);
+  });
+});
+
+function contentBoundary(account = "u1") {
+  const clock = createClock();
+  const patches: { path: string; body: unknown }[] = [];
+  let signedIn = account;
+  const client = createApiClient({
+    fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (path.includes("/api/auth/session")) return jsonResponse(200, { accessToken: "secret-token", user: { id: signedIn } });
+      if (init?.method === "PATCH") {
+        patches.push({ path, body: JSON.parse(String(init.body)) as unknown });
+        return jsonResponse(200, { success: true });
+      }
+      return jsonResponse(200, {});
+    }) as typeof fetch,
+    state: createApiState(),
+    now: clock.now,
+    sleep: clock.sleep,
+    config: { ...CONFIG, requestGap: 0 },
+  });
+  const operator = createOperator(client, () => undefined);
+  let next = 0;
+  const call = async (body: Record<string, unknown>) => {
+    const request = { kind: "chatgpt/api", requestId: String((next += 1)), ...body };
+    expect(isApiRequest(request)).toBe(true);
+    return operator.handle(request as ApiRequest);
+  };
+  return { operator, patches, call, switchAccount: (id: string) => { signedIn = id; } };
+}
+
+describe("content-script boundary", () => {
+  it("rejects a change that carries its own body", () => {
+    expect(isApiRequest({
+      kind: "chatgpt/api", requestId: "1", op: "change", runId: "run-1", accountId: "u1", id: "c1",
+      body: { is_visible: false },
+    })).toBe(false);
+  });
+
+  it("writes the body of the armed command, so an archive can't become a delete", async () => {
+    const boundary = contentBoundary();
+    boundary.operator.leaseOpened("run-1");
+    expect((await boundary.call({ op: "arm", runId: "run-1", accountId: "u1", commands: [{ action: "archive", id: "c1" }] })).ok).toBe(true);
+    expect((await boundary.call({ op: "change", runId: "run-1", accountId: "u1", id: "c1" })).ok).toBe(true);
+    expect(boundary.patches).toEqual([{ path: "/backend-api/conversation/c1", body: { is_archived: true } }]);
+  });
+
+  it("arms only while the dashboard holds the run's lease, and disarms when it closes", async () => {
+    const boundary = contentBoundary();
+    const arm = { op: "arm", runId: "run-1", accountId: "u1", commands: [{ action: "delete", id: "c1" }] };
+    expect((await boundary.call(arm)).error?.kind).toBe("auth");
+    boundary.operator.leaseOpened("run-1");
+    expect((await boundary.call(arm)).ok).toBe(true);
+    boundary.operator.leaseClosed("run-1");
+    expect(boundary.operator.armedRunId()).toBeNull();
+    const change = await boundary.call({ op: "change", runId: "run-1", accountId: "u1", id: "c1" });
+    expect(change.ok).toBe(false);
+    expect(boundary.patches).toEqual([]);
+  });
+
+  it("refuses to arm a run reviewed for another account", async () => {
+    const boundary = contentBoundary("u2");
+    boundary.operator.leaseOpened("run-1");
+    const armed = await boundary.call({ op: "arm", runId: "run-1", accountId: "u1", commands: [{ action: "delete", id: "c1" }] });
+    expect(armed.ok).toBe(false);
+    expect(armed.error?.message).toContain("account");
+  });
+
+  it("detects a switched account when the session is refreshed", async () => {
+    const boundary = contentBoundary();
+    boundary.operator.leaseOpened("run-1");
+    await boundary.call({ op: "arm", runId: "run-1", accountId: "u1", commands: [{ action: "delete", id: "c1" }] });
+    boundary.switchAccount("u2");
+    expect((await boundary.call({ op: "session" })).ok).toBe(false);
+    expect(boundary.patches).toEqual([]);
+  });
+
+  it("returns the account id without the bearer token", async () => {
+    const boundary = contentBoundary();
+    const session = await boundary.call({ op: "session" });
+    expect(session.value).toEqual({ accountId: "u1" });
+    expect(JSON.stringify(session)).not.toContain("secret-token");
   });
 });

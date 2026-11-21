@@ -5,32 +5,36 @@ const base = {
   requestId: Schema.String,
 };
 
-const MutatingActionSchema = Schema.Literals(["delete", "archive", "unarchive", "rename", "move"]);
+export const CommandSchema = Schema.Union([
+  Schema.Struct({ action: Schema.Literals(["delete", "archive", "unarchive"]), id: Schema.String }),
+  Schema.Struct({ action: Schema.Literal("rename"), id: Schema.String, title: Schema.String }),
+  Schema.Struct({ action: Schema.Literal("move"), id: Schema.String, project: Schema.String }),
+]);
 
+// A change names a chat in an armed run. It carries no body: the content script writes
+// the command that was armed for that chat.
 export const ApiRequestSchema = Schema.Union([
   Schema.Struct({ ...base, op: Schema.Literal("session") }),
   Schema.Struct({ ...base, op: Schema.Literal("list"), scope: Schema.Literals(["active", "archived"]) }),
   Schema.Struct({ ...base, op: Schema.Literal("projects") }),
   Schema.Struct({ ...base, op: Schema.Literal("conversation"), id: Schema.String }),
-  Schema.Struct({ ...base, op: Schema.Literal("detail"), id: Schema.String }),
-  Schema.Struct({
-    ...base,
-    op: Schema.Literal("change"),
-    id: Schema.String,
-    runId: Schema.String,
-    action: MutatingActionSchema,
-    body: Schema.Record(Schema.String, Schema.Unknown),
-  }),
+  Schema.Struct({ ...base, op: Schema.Literal("record"), id: Schema.String }),
+  Schema.Struct({ ...base, op: Schema.Literal("probe"), id: Schema.String }),
+  Schema.Struct({ ...base, op: Schema.Literal("change"), runId: Schema.String, accountId: Schema.String, id: Schema.String }),
   Schema.Struct({
     ...base,
     op: Schema.Literal("arm"),
     runId: Schema.String,
-    jobs: Schema.Array(Schema.Struct({ id: Schema.String, action: MutatingActionSchema })),
+    accountId: Schema.String,
+    commands: Schema.Array(CommandSchema),
   }),
   Schema.Struct({ ...base, op: Schema.Literal("disarm"), runId: Schema.String }),
 ]);
 
 export type ApiRequest = Schema.Schema.Type<typeof ApiRequestSchema>;
+
+// While a dashboard holds this port open for a run, the run may be armed; closing it disarms.
+export const LEASE_PORT_PREFIX = "chatgpt/lease:";
 
 export const FailurePayloadSchema = Schema.Struct({
   kind: Schema.String,
@@ -63,9 +67,14 @@ export const ChatSchema = Schema.Struct({
   archived: Schema.Boolean,
 });
 
-export const SessionSchema = Schema.Struct({ accessToken: Schema.String, userId: NullableString });
+export const SessionSchema = Schema.Struct({ accountId: Schema.String });
 
-export const ChatListSchema = Schema.Array(ChatSchema);
+export const ChatListSchema = Schema.Struct({
+  chats: Schema.Array(ChatSchema),
+  complete: Schema.Boolean,
+  total: Schema.Union([Schema.Number, Schema.Null]),
+});
+
 export const ProjectListSchema = Schema.Array(Schema.Struct({ id: Schema.String, name: Schema.String }));
 
 export const ConversationSchema = Schema.Struct({
@@ -86,10 +95,12 @@ export const ConversationProbeSchema = Schema.Struct({
 });
 
 export function decodeValue<S extends Schema.ConstraintDecoder<unknown>>(schema: S, value: unknown): S["Type"] {
-  return Schema.decodeUnknownSync(schema)(value);
+  return Schema.decodeUnknownSync(schema, { onExcessProperty: "error" })(value);
 }
 
-export const PingRequestSchema = Schema.Literal("chatgpt/ping");
+export function isPingRequest(message: unknown): message is "chatgpt/ping" {
+  return message === "chatgpt/ping";
+}
 
 export function isApiRequest(message: unknown): message is ApiRequest {
   try {
@@ -100,13 +111,27 @@ export function isApiRequest(message: unknown): message is ApiRequest {
   }
 }
 
-export function isPingRequest(message: unknown): message is "chatgpt/ping" {
-  return message === "chatgpt/ping";
-}
-
 export function decodeApiResponse(message: unknown): ApiResponse | null {
   try {
-    return Schema.decodeUnknownSync(ApiResponseSchema)(message);
+    return Schema.decodeUnknownSync(ApiResponseSchema, { onExcessProperty: "error" })(message);
+  } catch {
+    return null;
+  }
+}
+
+export const ListProgressSchema = Schema.Struct({
+  kind: Schema.Literal("chatgpt/list-progress"),
+  scope: Schema.Literals(["active", "archived"]),
+  found: Schema.Number,
+  total: Schema.Union([Schema.Number, Schema.Null]),
+  waiting: Schema.Boolean,
+});
+
+export type ListProgress = Schema.Schema.Type<typeof ListProgressSchema>;
+
+export function decodeListProgress(message: unknown): ListProgress | null {
+  try {
+    return Schema.decodeUnknownSync(ListProgressSchema, { onExcessProperty: "error" })(message);
   } catch {
     return null;
   }

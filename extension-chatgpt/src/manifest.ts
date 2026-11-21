@@ -4,7 +4,7 @@ export const chatgptManifest = {
   manifest_version: 3,
   name: chatgptExtensionName,
   short_name: "Triage",
-  version: "0.1.0",
+  version: "0.2.0",
   description: "Review, mark and safely bulk-organize your ChatGPT conversations with a resumable queue and a backup before deletion.",
   minimum_chrome_version: "120",
   icons: {
