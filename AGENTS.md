@@ -29,6 +29,7 @@ This repository builds one Chromium Manifest V3 extension from four feature pack
 - X Bookmarks collection/export: [extension-x-bookmarks/README.md](extension-x-bookmarks/README.md)
 - Onefile terminal CLI: [onefile-cli/README.md](onefile-cli/README.md)
 - Onefile save and format: [extension-onefile/README.md](extension-onefile/README.md), [extension-onefile/ARCHITECTURE.md](extension-onefile/ARCHITECTURE.md), [extension-onefile/FORMAT.md](extension-onefile/FORMAT.md)
+- ChatGPT organizer (standalone MV3 extension): [extension-chatgpt/README.md](extension-chatgpt/README.md)
 
 ## Verification
 
@@ -44,3 +45,4 @@ This repository builds one Chromium Manifest V3 extension from four feature pack
 - X CLI flags and exit codes: none at process boundary; backend selection: `x-archive-cli/test/backend.test.ts`; filesystem state: `fs-store.test.ts`; cookie input: `netscape.test.ts`.
 - X exported JSON/media/HTML complete end-to-end contract and live X/YouTube endpoints: none; tests use fixtures or mocks.
 - Onefile save workload and budgets: [extension-onefile/PERFORMANCE.md](extension-onefile/PERFORMANCE.md); current timing gate unmeasured on this host.
+- ChatGPT organizer: `extension-chatgpt/test/{api,queue,storage,messages,model,security,safety}.test.ts`; installed-extension Chromium test: `extension-chatgpt/test/browser/extension-runtime.spec.ts` (`pnpm run test:browser:chatgpt`) proves the disarmed-by-default deletion guard.

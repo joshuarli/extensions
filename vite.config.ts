@@ -5,7 +5,9 @@ const repositoryRoot = resolve(import.meta.dirname),
   isProductionBuild = process.env["NODE_ENV"] === "production",
   outputRoot = resolvePath(repositoryRoot, isProductionBuild ? "dist" : "build"),
   suiteOutputDirectory = resolvePath(outputRoot, "extension-suite"),
-  suiteSourceDirectory = resolvePath(repositoryRoot, "extension-suite", "src");
+  suiteSourceDirectory = resolvePath(repositoryRoot, "extension-suite", "src"),
+  chatgptOutputDirectory = resolvePath(outputRoot, "extension-chatgpt"),
+  chatgptSourceDirectory = resolvePath(repositoryRoot, "extension-chatgpt", "src");
 
 export interface SuiteBundle {
   root: string;
@@ -81,12 +83,67 @@ export const suiteBundles: SuiteBundle[] = [
   ]),
 ];
 
-export { repositoryRoot, suiteOutputDirectory, suiteSourceDirectory };
+export { chatgptOutputDirectory, chatgptSourceDirectory, repositoryRoot, suiteOutputDirectory, suiteSourceDirectory };
 
 export function createSuiteBuildConfigs(
   production = isProductionBuild,
 ): UserConfig[] {
   return suiteBundles.map((bundle) => ({
+    mode: production ? "production" : "development",
+    root: bundle.root,
+    base: "./",
+    define: {
+      "process.env.NODE_ENV": JSON.stringify(production ? "production" : "development"),
+    },
+    build: {
+      outDir: bundle.outputDirectory,
+      emptyOutDir: false,
+      copyPublicDir: false,
+      target: bundle.target,
+      minify: production,
+      sourcemap: production ? false : "inline",
+      rolldownOptions: {
+        input: bundle.input,
+        output: {
+          format: bundle.format,
+          entryFileNames: bundle.entryFileName,
+          chunkFileNames: "chunks/[name]-[hash].js",
+          assetFileNames: "[name][extname]",
+        },
+      },
+    },
+  }));
+}
+
+export const chatgptBundles: SuiteBundle[] = [
+  {
+    root: chatgptSourceDirectory,
+    input: sourcePath("extension-chatgpt", "service-worker.ts"),
+    outputDirectory: chatgptOutputDirectory,
+    entryFileName: "service-worker.js",
+    format: "es",
+    target: "chrome120",
+  },
+  {
+    root: chatgptSourceDirectory,
+    input: { dashboard: sourcePath("extension-chatgpt", "dashboard.html") },
+    outputDirectory: chatgptOutputDirectory,
+    entryFileName: "[name].js",
+    format: "es",
+    target: "chrome120",
+  },
+  {
+    root: chatgptSourceDirectory,
+    input: sourcePath("extension-chatgpt", "content.ts"),
+    outputDirectory: chatgptOutputDirectory,
+    entryFileName: "inject/content.js",
+    format: "iife",
+    target: "chrome120",
+  },
+];
+
+export function createChatgptBuildConfigs(production = isProductionBuild): UserConfig[] {
+  return chatgptBundles.map((bundle) => ({
     mode: production ? "production" : "development",
     root: bundle.root,
     base: "./",

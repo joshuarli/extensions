@@ -11,12 +11,14 @@ This repository builds one Chromium Manifest V3 extension with four features:
 
 The four `extension-*` packages remain separate source and test units; [extension-suite](extension-suite) composes them into one worker, manifest, popup, and options page.
 
+[extension-chatgpt](extension-chatgpt/README.md) is a **separately installable** MV3 extension for bulk-organizing ChatGPT conversations. It is a port of Triage and is not part of the suite, so it does not share the suite's permissions or storage boundary.
+
 ## Install
 
 Load the generated extension folder as an unpacked extension in a Chromium-based browser:
 
 1. Open chrome://extensions and enable Developer mode.
-2. Choose **Load unpacked** and select `dist/extension-suite` for a production build or `build/extension-suite` for a development build.
+2. Choose **Load unpacked** and select `dist/extension-suite` for a production build or `build/extension-suite` for a development build. To install the ChatGPT organizer instead, select `dist/extension-chatgpt` or `build/extension-chatgpt`.
 3. After replacing the folder's contents, reload the extension on the extensions page.
 
 The generated folders are not checked into the repository; obtain a built folder from the person who supplied the extension.
