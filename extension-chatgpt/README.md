@@ -26,11 +26,14 @@ content.ts               isolated content script on chatgpt.com; ephemeral token
 ChatGPT web backend      undocumented, untrusted, subject to change
 ```
 
-- `api.ts` — paced, typed client. Handles `429` with `Retry-After` and a cooldown ladder, refreshes the token once on `401`/`403`, retries transient errors, and refuses unfamiliar response shapes before any mutation.
-- `queue.ts` — resumable operation state machine. One change at a time, backup before deletion, protected chats, held chats that could not be backed up, reconciliation after interruption, and a direct re-check of suspicious changes at the end of a run.
-- `storage.ts` — Schema-validated, per-account journal of marks, protections, settings and run state.
+- `api.ts` — paced, typed client. Handles `429` with `Retry-After` and a cooldown ladder, refreshes the token once on `401`/`403`, and refuses unfamiliar list rows and conversation records. It keeps the bearer token to itself.
+- `operator.ts` — the content script's request handler. Each run is armed with an exact command per chat (`delete`, `archive`, `unarchive`, `rename` to a title, `move` to a project) for one account, and only while the dashboard holds that run's lease port. A `change` names a chat and nothing else; the PATCH body is built from the armed command.
+- `safety.ts` — the guard behind `operator.ts`. It starts disarmed, refuses a second run while one is armed, and caps attempts per chat.
+- `queue.ts` — resumable state machine. Each write is a transaction: its intent is saved before it is sent, and an uncertain response is checked with ChatGPT before any retry. Deletes wait for a saved backup, chats that couldn't be backed up are held, and the end of a run re-checks every change.
+- `storage.ts` — Schema-validated, per-account journal with serialized writes. A journal it can't read switches changes off instead of being replaced.
 - `messages.ts` — Schema-validated message and wire contracts.
-- `safety.ts` — the destructive-action guard. The content script is **disarmed by default**; the dashboard must send an `arm` message with the exact job list after confirmation. Every `change` is checked against that list (id, action, run id, attempt cap) and an unarmed change is refused with no request sent. This is a second gate independent of the queue.
+
+Only one dashboard runs at a time: each holds a Web Lock, and a second tab waits for the first to close.
 
 The authenticated client runs in Chrome's **isolated** content-script world, not the page's `MAIN` world. The access token is held in memory only; conversation bodies are not persisted by default. The journal stores metadata and operation state, never ChatGPT's `localStorage`.
 
@@ -41,7 +44,7 @@ The authenticated client runs in Chrome's **isolated** content-script world, not
 - Read a conversation before marking it; keyboard navigation, range selection and protected chats.
 - Mark delete, archive, unarchive, rename, move into a project, or protect.
 - Projects live in their own filter so a cleanup cannot empty a project by accident.
-- Rate-limit pacing, one-change-at-a-time writes, token refresh, and a backup that must be saved before any deletion starts.
+- Rate-limit pacing, one-change-at-a-time writes, token refresh, and a backup that must be saved before any deletion starts. The backup is a JSON file with each chat's full record (all branches and metadata). It is written through a file handle and read back to check its hash. Attachment and image files are not included, so chats that have them are kept unless you accept that in the review.
 - Verification re-reads the list and probes suspicious chats directly; a change that cannot be confirmed is marked again rather than silently accepted.
 - Marks and run state survive restarts; an interrupted run requires deliberate resumption and reconciles the in-flight change before repeating it.
 
@@ -50,11 +53,13 @@ The authenticated client runs in Chrome's **isolated** content-script world, not
 - The dashboard is a full extension tab (three columns) instead of an injected panel. A native side panel is not part of this milestone.
 - The journal is extension-owned storage per account rather than page `localStorage`.
 - The runner is driven by the dashboard page, not a service worker, because MV3 workers are not persistent job runtimes.
-- Importable JSON change plans and exportable reports replace Triage's console-only mock flows. The demo's hard cases are covered by Vitest instead of browser URL flags.
+- Importable JSON change plans (checked against the signed-in account and loaded chats) and exportable reports replace Triage's console-only mock flows. The demo's hard cases are covered by Vitest instead of browser URL flags.
 
 ## Tests
 
-- `pnpm exec vitest run extension-chatgpt/test --maxWorkers=1` covers the API client, queue state machine, storage, message contracts, model helpers and the security boundary. `test/safety.test.ts` proves that an attempt to delete all 200 chats is refused for the 198 unmarked ones, and that the guard starts disarmed.
-- `pnpm run build && pnpm run test:browser:chatgpt` installs the built extension in Chromium and drives a routed fake `chatgpt.com`. It proves an unarmed delete is refused at the installed boundary and that only an explicitly armed chat is deleted.
+- `pnpm exec vitest run extension-chatgpt/test --maxWorkers=1` covers the API client, the content-script boundary and guard, the queue (including a restart from every durable state of a run), storage, message contracts and model helpers.
+- `pnpm run build && pnpm run test:browser:chatgpt` installs the built extension in Chromium and drives the real dashboard against a routed fake `chatgpt.com`. It covers backup-gated deletion, cancelled and reloaded backups, lost responses and rate limits, a ChatGPT tab reload mid-run, two dashboards, focus and selection behavior, plan import, and a 3,200-chat account. CI runs it.
+
+[QUALIFICATION.md](QUALIFICATION.md) lists the safety invariants, fixed defects and their tests, remaining limits, and release blockers.
 
 ChatGPT uses private, undocumented web endpoints. OpenAI can change them at any time. Deletion is permanent; turn on the backup and review the queue before running it. This project is not affiliated with or endorsed by OpenAI.
