@@ -19,11 +19,8 @@ Next: 4
 - **Fix with:** design-cli
 - **Effort:** S
 
+## Completed
+
 ### EXT-3 · P3 · Complete performance workload coverage
 
-- **Area:** benchmarks
-- **Where:** extension-onefile/test/browser/perf-compare.spec.ts; x-archive-cli; onefile-cli
-- **Problem:** The Onefile harness checks fixture markers and archive bytes but its upstream comparison needs a separately provisioned reference; download, peak memory and process-tree attribution are not measured. X collection/export, extension startup and CLI journeys have no representative benchmark or attribution path.
-- **Recommendation:** Add realistic offline workloads and correctness oracles, process-tree CPU and memory attribution, and a pinned available comparator; establish paired host-gated budgets before claiming regressions.
-- **Fix with:** bench-pyramid
-- **Effort:** M
+- **Closed:** 2026-11-21. Registry-driven `scripts/bench.mjs` with edit/change/scenario tiers, selectors, preflight, dated results and exclusions; `onefile-assemble` and `x-export` offline workloads with correctness oracles; process-tree CPU and peak RSS attribution; pinned upstream comparator; paired CPU-per-work budget check. `scripts/bench.test.ts` proves the entrypoint, and one Change workload per harness kind ran end to end. Full and scenario remain manual. See [extension-onefile/PERFORMANCE.md](extension-onefile/PERFORMANCE.md).

@@ -44,5 +44,5 @@ This repository builds one Chromium Manifest V3 extension from four feature pack
 - X GraphQL request and response handling: `extension-x-bookmarks/test/api.test.ts`, `parser.test.ts`, `capture.test.ts`; IndexedDB archive state: `storage.test.ts`, `likes.test.ts`, `profile.test.ts`.
 - X CLI flags and exit codes: none at process boundary; backend selection: `x-archive-cli/test/backend.test.ts`; filesystem state: `fs-store.test.ts`; cookie input: `netscape.test.ts`.
 - X exported JSON/media/HTML complete end-to-end contract and live X/YouTube endpoints: none; tests use fixtures or mocks.
-- Onefile save workload and budgets: [extension-onefile/PERFORMANCE.md](extension-onefile/PERFORMANCE.md); current timing gate unmeasured on this host.
+- Performance workloads, entrypoint and budgets: [extension-onefile/PERFORMANCE.md](extension-onefile/PERFORMANCE.md); `make bench-list`, `make bench BENCH_ARGS='--tier=edit'`, Change workloads and `--budget=BASE,CAND`; Full is manual only.
 - ChatGPT organizer: `extension-chatgpt/test/{api,queue,storage,messages,model,security,safety}.test.ts`; installed-extension Chromium test: `extension-chatgpt/test/browser/extension-runtime.spec.ts` (`pnpm run test:browser:chatgpt`) proves the disarmed-by-default deletion guard.
