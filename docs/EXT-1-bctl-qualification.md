@@ -97,3 +97,36 @@ the archive came through the appliance.
 
 Still unestablished: an unattended interval, with renewal and recovery
 outcomes, and a run with everyday Helium closed.
+
+## 2026-11-21 re-check: owner-gated, no code defect
+
+The bctl seam is present and unchanged: `backend.ts` plans and resolves the
+dedicated session, `deps.ts` refuses the everyday-browser cookie-export
+fallback on the bctl path, and `run.ts` skips extension seeding on the
+appliance path. `x-archive-cli/test/backend.test.ts` covers backend planning,
+including the bctl session and attach overrides; the credential cache path is
+covered by `x-archive-cli/test/state.test.ts`. None of this can stand in for
+the 2026-11-17 run or the two unestablished conditions, and no offline
+regression reproduces a CLI defect.
+
+Local state on 2026-11-21: the 30-day cache `~/.local/state/x-archive/credentials.json`
+is present from 2026-11-16; the documented Shadowdriver shim
+(`~/d/shadowdriver/.venv/bin/bctl`) is absent while `~/repos/bctl` remains; no
+Helium process and no listener on `127.0.0.1:9222` were found. Bookmark folders
+stay incomplete until a live Helium session captures `BookmarkFoldersSlice`
+and `BookmarkFolderTimeline`; `collect()` already reports
+`folder_query_not_captured` instead of failing, so that is a live-capture gap,
+not a code path to patch.
+
+Closing EXT-1 therefore needs owner action and an owner decision:
+
+1. Provision or select a working bctl executable and authorize a real
+   `x download self --backend=bctl` run with everyday Helium closed. The guest
+   sign-in, any new-device/2FA challenge, and the owner's X account are
+   required; the agent cannot perform or substitute them.
+2. Define the unattended interval and the evidence that counts as acceptance
+   (start/end, outcome, renewal and recovery failures), or explicitly drop that
+   requirement. A short signed-in pilot does not establish overnight
+   reliability.
+
+The ticket area is marked `Needs owner · …` until both are resolved.
