@@ -5,11 +5,11 @@ describe("typed message boundary", () => {
   it("accepts each API operation", () => {
     const requests = [
       { kind: "chatgpt/api", requestId: "1", op: "session" },
-      { kind: "chatgpt/api", requestId: "2", op: "list", scope: "active" },
-      { kind: "chatgpt/api", requestId: "3", op: "projects" },
-      { kind: "chatgpt/api", requestId: "4", op: "conversation", id: "c1" },
-      { kind: "chatgpt/api", requestId: "5", op: "record", id: "c1" },
-      { kind: "chatgpt/api", requestId: "5b", op: "probe", id: "c1" },
+      { kind: "chatgpt/api", requestId: "2", op: "list", accountId: "u1", scope: "active" },
+      { kind: "chatgpt/api", requestId: "3", op: "projects", accountId: "u1" },
+      { kind: "chatgpt/api", requestId: "4", op: "conversation", accountId: "u1", id: "c1" },
+      { kind: "chatgpt/api", requestId: "5", op: "record", accountId: "u1", id: "c1" },
+      { kind: "chatgpt/api", requestId: "5b", op: "probe", accountId: "u1", id: "c1" },
       { kind: "chatgpt/api", requestId: "6", op: "change", runId: "run-1", accountId: "u1", id: "c1" },
       {
         kind: "chatgpt/api", requestId: "7", op: "arm", runId: "run-1", accountId: "u1",

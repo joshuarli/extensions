@@ -164,6 +164,8 @@ export function createApiClient(deps: ApiDeps): ApiClient {
     }
     const accountId = typeof data.user?.id === "string" ? data.user.id : null;
     if (state.accountId != null && accountId !== state.accountId) {
+      state.token = null;
+      state.accountId = null;
       throw new TriageError("auth", "The signed-in ChatGPT account changed during a run. Reload the dashboard before making more changes.");
     }
     state.token = data.accessToken;
@@ -214,7 +216,12 @@ export function createApiClient(deps: ApiDeps): ApiClient {
     if (response.status === 404) throw new TriageError("notfound", "Chat not found.");
     if (response.status >= 500) throw new TriageError("transient", `ChatGPT had a server error (HTTP ${response.status}).`);
 
-    const text = await response.text();
+    let text: string;
+    try {
+      text = await response.text();
+    } catch {
+      throw new TriageError("transient", `ChatGPT's response (HTTP ${response.status}) was cut off.`);
+    }
     let data: unknown = null;
     if (text) {
       try {

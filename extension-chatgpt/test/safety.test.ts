@@ -73,6 +73,9 @@ function contentBoundary(account = "u1") {
     fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input);
       if (path.includes("/api/auth/session")) return jsonResponse(200, { accessToken: "secret-token", user: { id: signedIn } });
+      if (path.includes("/backend-api/conversation/") && init?.method !== "PATCH") {
+        return jsonResponse(200, { title: "t", is_archived: false, mapping: {} });
+      }
       if (init?.method === "PATCH") {
         patches.push({ path, body: JSON.parse(String(init.body)) as unknown });
         return jsonResponse(200, { success: true });
@@ -91,7 +94,7 @@ function contentBoundary(account = "u1") {
     expect(isApiRequest(request)).toBe(true);
     return operator.handle(request as ApiRequest);
   };
-  return { operator, patches, call, switchAccount: (id: string) => { signedIn = id; } };
+  return { operator, client, patches, call, switchAccount: (id: string) => { signedIn = id; } };
 }
 
 describe("content-script boundary", () => {
@@ -131,13 +134,33 @@ describe("content-script boundary", () => {
     expect(armed.error?.message).toContain("account");
   });
 
-  it("detects a switched account when the session is refreshed", async () => {
+  it("disarms and refuses to write once a session refresh shows another account", async () => {
     const boundary = contentBoundary();
     boundary.operator.leaseOpened("run-1");
     await boundary.call({ op: "arm", runId: "run-1", accountId: "u1", commands: [{ action: "delete", id: "c1" }] });
     boundary.switchAccount("u2");
     expect((await boundary.call({ op: "session" })).ok).toBe(false);
+    expect(boundary.operator.armedRunId()).toBeNull();
+    const change = await boundary.call({ op: "change", runId: "run-1", accountId: "u1", id: "c1" });
+    expect(change.ok).toBe(false);
     expect(boundary.patches).toEqual([]);
+  });
+
+  it("refuses reads for an account other than the signed-in one", async () => {
+    const boundary = contentBoundary("u2");
+    const probe = await boundary.call({ op: "probe", accountId: "u1", id: "c1" });
+    expect(probe.ok).toBe(false);
+    expect(probe.error?.kind).toBe("auth");
+    expect((await boundary.call({ op: "probe", accountId: "u2", id: "c1" })).ok).toBe(true);
+  });
+
+  it("doesn't arm a run whose lease closed while it was being authorized", async () => {
+    const boundary = contentBoundary();
+    boundary.operator.leaseOpened("run-1");
+    const arming = boundary.call({ op: "arm", runId: "run-1", accountId: "u1", commands: [{ action: "delete", id: "c1" }] });
+    boundary.operator.leaseClosed("run-1");
+    expect((await arming).ok).toBe(false);
+    expect(boundary.operator.armedRunId()).toBeNull();
   });
 
   it("returns the account id without the bearer token", async () => {

@@ -35,7 +35,7 @@ import {
   decodeValue,
   type ApiRequest,
 } from "./messages.ts";
-import { QueueRunner, clampGap, type QueueTransport } from "./queue.ts";
+import { QueueRunner, clampGap, type BackupProof, type QueueTransport } from "./queue.ts";
 import { requiresTypedConfirmation } from "./safety.ts";
 import { createChromeJournalStore, createSerialPersist } from "./storage.ts";
 
@@ -72,6 +72,7 @@ const LOCK_NAME = "chatgpt-organizer:dashboard";
 const store = createChromeJournalStore(chrome.storage);
 
 let journal: Journal | null = null;
+let accountId: string | null = null;
 const chats: Chat[] = [];
 let projects: Project[] = [];
 let tabId: number | null = null;
@@ -241,11 +242,24 @@ async function ensureTab(): Promise<number> {
 
 type RequestBody = ApiRequest extends infer R ? R extends ApiRequest ? Omit<R, "kind" | "requestId"> : never : never;
 
+// One ChatGPT request, including its pacing slot, finishes well inside this. A change that
+// doesn't answer in time has an unknown outcome and is reconciled like a lost response.
+const SINGLE_REQUEST_TIMEOUT_MS = 90_000;
+
+function signedIn(): string {
+  if (!accountId) throw new TriageError("auth", "The signed-in account isn't known yet.");
+  return accountId;
+}
+
 async function send(body: RequestBody): Promise<unknown> {
   const id = await ensureTab();
   const request = { kind: "chatgpt/api", requestId: nextRequestId(), ...body } as ApiRequest;
   return new Promise<unknown>((resolve, reject) => {
+    const timer = request.op === "list"
+      ? null
+      : setTimeout(() => reject(new TriageError("offline", "The ChatGPT tab stopped answering.")), SINGLE_REQUEST_TIMEOUT_MS);
     chrome.tabs.sendMessage(id, request, (response: unknown) => {
+      if (timer) clearTimeout(timer);
       if (chrome.runtime.lastError) {
         reject(new TriageError("offline", chrome.runtime.lastError.message ?? "The ChatGPT tab did not answer."));
         return;
@@ -285,7 +299,7 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
 }
 
 async function loadChats(which: "active" | "archived"): Promise<{ chats: Chat[]; complete: boolean; total: number | null }> {
-  const value = decodeValue(ChatListSchema, await send({ op: "list", scope: which }));
+  const value = decodeValue(ChatListSchema, await send({ op: "list", accountId: signedIn(), scope: which }));
   return { chats: value.chats.map((chat) => ({ ...chat })), complete: value.complete, total: value.total };
 }
 
@@ -296,16 +310,16 @@ function decodeConversation(value: unknown): Conversation {
 
 const transport: QueueTransport = {
   async fetchRecord(id) {
-    return send({ op: "record", id });
+    return send({ op: "record", accountId: signedIn(), id });
   },
   async writeChange(run, job) {
     await send({ op: "change", runId: run.id, accountId: run.accountId, id: job.id });
   },
   async listActive() {
-    return (await loadChats("active")).chats;
+    return loadChats("active");
   },
   async probe(id) {
-    return decodeValue(ConversationProbeSchema, await send({ op: "probe", id }));
+    return decodeValue(ConversationProbeSchema, await send({ op: "probe", accountId: signedIn(), id }));
   },
 };
 
@@ -323,7 +337,11 @@ async function openLease(runId: string): Promise<void> {
   const id = await ensureTab();
   const port = chrome.tabs.connect(id, { name: `${LEASE_PORT_PREFIX}${runId}` });
   await new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new TriageError("offline", "The ChatGPT tab didn't answer.")), 5000);
+    const fail = (error: TriageError): void => {
+      port.disconnect();
+      reject(error);
+    };
+    const timer = setTimeout(() => fail(new TriageError("offline", "The ChatGPT tab didn't answer.")), 5000);
     port.onMessage.addListener(function ready() {
       clearTimeout(timer);
       port.onMessage.removeListener(ready);
@@ -331,7 +349,7 @@ async function openLease(runId: string): Promise<void> {
     });
     port.onDisconnect.addListener(() => {
       clearTimeout(timer);
-      reject(new TriageError("offline", "The ChatGPT tab closed the connection. Reload it, then try again."));
+      fail(new TriageError("offline", "The ChatGPT tab closed the connection. Reload it, then try again."));
     });
   });
   lease = { runId, port };
@@ -462,7 +480,7 @@ function renderToolbar(): void {
   ui.counts.textContent = `${total} queued · ${selected.size} selected`;
   ui.status.textContent = blocked || progress || statusText(run) || activity[0] || inventoryNote || (compatOk ? "Ready" : "");
   const canRun = Boolean(journal && runner && compatOk && total > 0);
-  const key = `${controls}|${canRun}|${journal ? 1 : 0}`;
+  const key = `${controls}|${canRun}|${journal ? 1 : 0}|${runner?.canDismiss() ? 1 : 0}`;
   if (key === toolbarKey) return;
   toolbarKey = key;
   const buttons: HTMLElement[] = [];
@@ -478,7 +496,7 @@ function renderToolbar(): void {
     case "paused":
       buttons.push(h("button", { class: "primary", onclick: () => void resumeRun(), text: "Resume" }));
       buttons.push(h("button", { class: "danger", onclick: () => void stopRun(), text: "Stop" }));
-      buttons.push(h("button", { class: "link", onclick: () => void dismissRun(), text: "Dismiss" }));
+      if (runner?.canDismiss()) buttons.push(h("button", { class: "link", onclick: () => void dismissRun(), text: "Dismiss" }));
       break;
     case "idle":
     case "finished":
@@ -657,7 +675,7 @@ function schedulePreview(id: string): void {
   previewTimer = setTimeout(() => {
     previewTimer = null;
     if (focusId !== id) return;
-    void send({ op: "conversation", id }).then(
+    void send({ op: "conversation", accountId: signedIn(), id }).then(
       (value) => {
         previewErrors.delete(id);
         previewCache.set(id, decodeConversation(value));
@@ -1057,7 +1075,12 @@ async function saveBackup(): Promise<void> {
     toast(`Couldn't verify the saved backup: ${failureOf(error).message}. Nothing has been deleted.`);
     return;
   }
-  await runner.acknowledgeBackupSaved({ file: handle.name, sha256: pending.sha256, verification: "file" });
+  await acknowledge({ file: handle.name, sha256: pending.sha256, verification: "file" });
+}
+
+async function acknowledge(proof: BackupProof): Promise<void> {
+  if (await runner?.acknowledgeBackupSaved(proof)) return;
+  toast(`${proof.file} was saved, but the run changed while it was saving, so nothing was deleted. Resume to continue; it may ask for the backup again.`);
 }
 
 function confirmDownloadedBackup(name: string, text: string, sha256: string): void {
@@ -1074,7 +1097,7 @@ function confirmDownloadedBackup(name: string, text: string, sha256: string): vo
       primary: true,
       run: () => {
         if (!check.checked) return false;
-        void runner?.acknowledgeBackupSaved({ file: name, sha256, verification: "confirmed" });
+        void acknowledge({ file: name, sha256, verification: "confirmed" });
         return true;
       },
     },
@@ -1231,6 +1254,7 @@ async function boot(): Promise<void> {
     progress = "Connecting to ChatGPT…";
     invalidate("toolbar");
     const session = decodeValue(SessionSchema, await send({ op: "session" }));
+    accountId = session.accountId;
     const loaded = await store.load(session.accountId);
     loaded.settings.gap = clampGap(Number(loaded.settings.gap) || CONFIG.gapDefault, CONFIG);
     recoverInterrupted(loaded);
@@ -1245,7 +1269,7 @@ async function boot(): Promise<void> {
     if (!active.complete || !archived.complete) {
       inventoryNote = `ChatGPT returned ${chats.length} chats${active.total != null ? ` of ${active.total} active` : ""}; only loaded chats can be changed.`;
     }
-    projects = await send({ op: "projects" }).then(
+    projects = await send({ op: "projects", accountId: signedIn() }).then(
       (value) => decodeValue(ProjectListSchema, value).map((project) => ({ ...project })),
       () => {
         toast("Couldn't load projects; moving chats is unavailable this session.");

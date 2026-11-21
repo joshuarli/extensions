@@ -11,15 +11,17 @@ export const CommandSchema = Schema.Union([
   Schema.Struct({ action: Schema.Literal("move"), id: Schema.String, project: Schema.String }),
 ]);
 
+// Every operation after "session" names the account it is for, so nothing is read or
+// written for an account other than the one the dashboard loaded.
 // A change names a chat in an armed run. It carries no body: the content script writes
 // the command that was armed for that chat.
 export const ApiRequestSchema = Schema.Union([
   Schema.Struct({ ...base, op: Schema.Literal("session") }),
-  Schema.Struct({ ...base, op: Schema.Literal("list"), scope: Schema.Literals(["active", "archived"]) }),
-  Schema.Struct({ ...base, op: Schema.Literal("projects") }),
-  Schema.Struct({ ...base, op: Schema.Literal("conversation"), id: Schema.String }),
-  Schema.Struct({ ...base, op: Schema.Literal("record"), id: Schema.String }),
-  Schema.Struct({ ...base, op: Schema.Literal("probe"), id: Schema.String }),
+  Schema.Struct({ ...base, op: Schema.Literal("list"), accountId: Schema.String, scope: Schema.Literals(["active", "archived"]) }),
+  Schema.Struct({ ...base, op: Schema.Literal("projects"), accountId: Schema.String }),
+  Schema.Struct({ ...base, op: Schema.Literal("conversation"), accountId: Schema.String, id: Schema.String }),
+  Schema.Struct({ ...base, op: Schema.Literal("record"), accountId: Schema.String, id: Schema.String }),
+  Schema.Struct({ ...base, op: Schema.Literal("probe"), accountId: Schema.String, id: Schema.String }),
   Schema.Struct({ ...base, op: Schema.Literal("change"), runId: Schema.String, accountId: Schema.String, id: Schema.String }),
   Schema.Struct({
     ...base,

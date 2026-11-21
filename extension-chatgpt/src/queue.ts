@@ -26,7 +26,7 @@ import { CONFIG, scaled, type Config } from "./api.ts";
 export interface QueueTransport {
   fetchRecord(id: string): Promise<unknown>;
   writeChange(run: Run, job: Job): Promise<void>;
-  listActive(): Promise<Chat[]>;
+  listActive(): Promise<{ chats: Chat[]; complete: boolean }>;
   probe(id: string): Promise<ConversationProbe>;
 }
 
@@ -89,6 +89,7 @@ export class QueueRunner {
   private wake: AbortController | null = null;
   private looping: Promise<void> | null = null;
   private resumeAfter = false;
+  private kickAfter = false;
   private pending: PendingBackup | null = null;
 
   constructor(deps: QueueDeps) {
@@ -227,8 +228,14 @@ export class QueueRunner {
     await this.save();
   }
 
+  // A paused run with a change in flight must be resumed (to check it) or stopped first.
+  canDismiss(): boolean {
+    const run = this.run;
+    return Boolean(run) && !this.isActive() && !(run?.status === "paused" && run.inflight);
+  }
+
   async dismiss(): Promise<void> {
-    if (this.isActive()) return;
+    if (!this.canDismiss()) return;
     this.deps.journal.run = null;
     this.pending = null;
     this.changed();
@@ -255,14 +262,22 @@ export class QueueRunner {
     return true;
   }
 
+  // A loop still unwinding from a stopped or replaced run is followed by a fresh one.
   private kick(): void {
-    if (this.looping) return;
+    if (this.looping) {
+      this.kickAfter = true;
+      return;
+    }
     const wake = new AbortController();
     this.wake = wake;
     this.looping = this.loop(wake.signal).finally(() => {
       this.looping = null;
       if (this.wake === wake) this.wake = null;
       this.changed();
+      if (this.kickAfter) {
+        this.kickAfter = false;
+        if (this.isActive() && this.run?.status !== "saving") this.kick();
+      }
       if (this.resumeAfter) {
         this.resumeAfter = false;
         void this.resume();
@@ -337,7 +352,7 @@ export class QueueRunner {
   private async loop(signal: AbortSignal): Promise<void> {
     const run = this.run;
     if (!run) return;
-    const live = () => !signal.aborted && this.run === run;
+    const live = () => !signal.aborted && this.run === run && isRunActive(run);
     const set = (status: RunStatus) => {
       if (live()) run.status = status;
     };
@@ -378,11 +393,20 @@ export class QueueRunner {
   }
 
   private async writeAll(run: Run, signal: AbortSignal, set: (status: RunStatus) => void): Promise<boolean> {
-    const live = () => !signal.aborted && this.run === run;
+    const live = () => !signal.aborted && this.run === run && isRunActive(run);
     while (run.i < run.jobs.length) {
       if (!live()) return false;
       const job = run.jobs[run.i];
       if (!job) break;
+
+      const withdrawn = this.withdrawn(job);
+      if (withdrawn) {
+        this.record(run, job, "held", withdrawn);
+        run.i += 1;
+        if (!(await this.save())) return false;
+        this.changed();
+        continue;
+      }
 
       if (job.action === "delete" && run.backup.required) {
         const held = run.held[job.id];
@@ -489,6 +513,15 @@ export class QueueRunner {
     return live();
   }
 
+  // A chat protected, unmarked or re-marked after the run was reviewed is left alone.
+  private withdrawn(job: Job): string | null {
+    if (this.deps.journal.protect[job.id]) return "Not changed: it was protected after the run was reviewed.";
+    const mark = this.deps.journal.marks[job.id];
+    if (!mark) return "Not changed: its mark was cleared after the run was reviewed.";
+    if (mark.action !== job.action) return "Not changed: it was marked differently after the run was reviewed.";
+    return null;
+  }
+
   private async collectBackup(
     run: Run,
     signal: AbortSignal,
@@ -562,8 +595,9 @@ export class QueueRunner {
     run.note = "Double-checking with ChatGPT.";
     this.changed();
     let fresh: Chat[];
+    let complete: boolean;
     try {
-      fresh = await this.deps.transport.listActive();
+      ({ chats: fresh, complete } = await this.deps.transport.listActive());
     } catch (error) {
       const failure = failureOf(error);
       if (failure.kind === "aborted") throw failure;
@@ -575,7 +609,8 @@ export class QueueRunner {
     for (const result of done) {
       if (!live()) throw aborted();
       const job = jobOf(result);
-      if (listedSatisfies(job, listed.get(result.id))) {
+      // Absence from a partial list proves nothing, so each change is probed directly.
+      if (complete && listedSatisfies(job, listed.get(result.id))) {
         confirmed.push(result);
         continue;
       }
@@ -592,7 +627,8 @@ export class QueueRunner {
       result.note = "ChatGPT still shows this chat unchanged. It's marked again so you can retry.";
       this.deps.journal.marks[result.id] = markFor(job, this.deps.now());
     }
-    const keep = this.deps.chats.filter((chat) => !listed.has(chat.id) && (chat.archived || confirmed.some((result) => result.id === chat.id)));
+    const keep = this.deps.chats.filter((chat) => !listed.has(chat.id)
+      && (!complete || chat.archived || confirmed.some((result) => result.id === chat.id)));
     const merged = [...fresh, ...keep];
     for (const result of confirmed) applyToInventory(merged, jobOf(result), this.deps.now());
     this.deps.chats.splice(0, this.deps.chats.length, ...merged);

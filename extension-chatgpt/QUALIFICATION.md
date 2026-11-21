@@ -5,11 +5,11 @@ This record covers the safety repair that followed the review of `31528575` (ver
 ## Safety invariants
 
 1. **Backup before deletion.** When backup protection is on, a delete is sent only if the journal's durable `run.backup.saved.ids` contains that chat. A file write that was read back and hash-checked, or an explicit confirmation on the fallback path, sets that field. The queue checks it before every delete, whatever the run's phase or status.
-2. **Exact authorization.** The content script sends a PATCH only for a chat in the armed run, for the armed account, with the body derived from that chat's armed command. The `change` message carries no body. A run can be armed only while the dashboard holds the run's lease port open, and closing the port disarms it.
+2. **Exact authorization.** The content script sends a PATCH only for a chat in the armed run, for the armed account, with the body derived from that chat's armed command. The `change` message carries no body. A run can be armed only while the dashboard holds the run's lease port open, and closing the port disarms it. Every read also names its account: a request for any other account is refused, and a sign of another signed-in account disarms the run. A chat protected, unmarked or re-marked while its run is paused is left unchanged.
 3. **Intent before send.** `run.inflight` is durably saved before each PATCH. If saving fails, the run pauses and nothing more is sent.
 4. **Reconcile, then retry.** After a network error, 5xx or lost tab response, the queue probes the chat before sending again. If the probe can't decide, the run pauses with an `unknown` outcome, and the next resume probes again first.
 5. **One runner.** A dashboard holds a Web Lock for its lifetime. A second dashboard waits and loads the journal only once the first closes.
-6. **Pause and stop hold.** A loop step changes the run only while its abort signal is live, so a late completion records its outcome and never overwrites a pause or a stop.
+6. **Pause and stop hold.** A loop step changes the run only while its abort signal is live and the run is still active. A late completion records its outcome but never overwrites a pause or a stop, even one made while a start, resume or backup acknowledgement is being saved.
 7. **Credentials stay in the content script.** The session response carries the account id only. The extension requests only `storage` and `https://chatgpt.com/*`.
 
 ## Fixed defects and regression tests
@@ -41,9 +41,26 @@ Unit tests are in `test/`. Browser tests are in `test/browser/extension-runtime.
 | Unreadable journal silently replaced | Decode failure switches changes off and overwrites nothing | `storage.test.ts` "fails closed…" |
 | Re-arming reset attempt limits | Re-arming the same run keeps attempts and requires an identical list | `safety.test.ts` "keeps attempt counts…" |
 
-`queue.test.ts` "recovers from a crash after any durable write" restarts a four-change run, including one lost response, from every journal snapshot it persisted. Every restart must finish with all changes applied, and every write must satisfy invariants 1 and 3 against the last durable snapshot.
+### Found by the independent review
 
-Mutation checks were run by hand against the queue: resuming the save phase into writing, removing the delete gate, dropping the durable intent, skipping reconciliation, letting completion overwrite a stop, and sending after a pause. Each made at least one test fail. Mapping `saving` back to Pause/Stop failed the first browser test.
+An independent adversarial review of the first repair found the following defects, all now fixed. Its scratch reproductions failed before the fixes and pass after them.
+
+| Defect | Fix | Regression tests |
+| --- | --- | --- |
+| A pause or stop made while `start`, `resume` or a backup acknowledgement was being saved was overwritten, and changes were sent | Loop liveness also requires an active run status | `queue.test.ts` "keeps a pause made while the run's start…", "…a resume or a saved backup is being recorded" |
+| A new run started while a stopped run's loop was still unwinding never ran | The queue starts the new run once that loop exits; single-request messages time out after 90 s and count as uncertain | `queue.test.ts` "starts a new run even while…" |
+| A chat protected or unmarked while its run was paused was still changed | Each job checks current protection and marks before sending | `queue.test.ts` "leaves a chat alone that was protected…" |
+| The crash test never restarted with an in-flight write that had already applied | Each in-flight snapshot is also restarted with the write applied, and must not resend it | `queue.test.ts` "recovers from a crash after any durable write" |
+| A detected account switch left the run armed; the test claiming otherwise sent no change | The run is disarmed on any sign of another account; reads name their account | `safety.test.ts` "disarms and refuses to write…", "refuses reads for an account…" |
+| A lease closed while arming still armed the guard; a lease timeout leaked its port | The lease is re-checked after the account check; the port is disconnected on failure | `safety.test.ts` "doesn't arm a run whose lease closed…" |
+| Verification trusted a partial list | Every change is probed when the list is incomplete; unlisted chats stay in the inventory | `queue.test.ts` "probes every change when ChatGPT's list is incomplete…" |
+| A 2xx response with a cut-off body counted as a definite failure | It counts as uncertain and is reconciled | `api.test.ts` "treats a 2xx response whose body was cut off…" |
+| A paused run with an unknown outcome could be dismissed, skipping its re-check | Dismiss is unavailable until it is resumed or stopped | `queue.test.ts` "can't be dismissed while paused…" |
+| A verified backup refused because the run changed during the save gave no message | The dashboard says so | Dashboard code only; not covered by a test |
+
+`queue.test.ts` "recovers from a crash after any durable write" restarts a four-change run, including one lost response, from every journal snapshot it persisted. Each snapshot with a write in flight is restarted twice: once before ChatGPT applied the write, and once after, where it must not be sent again. Every restart must finish with all changes applied, and every write must satisfy invariants 1 and 3 against the last durable snapshot.
+
+Mutation checks were run by hand against the queue: resuming the save phase into writing, removing the delete gate, dropping the durable intent, skipping reconciliation, letting completion overwrite a stop, and sending after a pause. Each made at least one test fail. After the review fixes, the same was done for each fix, and for removing the reconcile after a restart (the crash test's former blind spot). Mapping `saving` back to Pause/Stop failed the first browser test.
 
 ## Verification
 
@@ -53,7 +70,7 @@ pnpm run typecheck && pnpm run lint
 pnpm run build && pnpm run test:browser:chatgpt
 ```
 
-The CI `installed-browser` job runs the browser suite. On 2026-11-21 (macOS, headless Chromium) all 72 unit tests and all 8 browser tests passed, and the browser suite took 2.5 minutes. With 3,200 generated chats (about 2,900 active rows), moving focus cost 5.6 ms and selecting plus marking cost 20 ms. At that cost the list does not need virtualization.
+The CI `installed-browser` job runs the browser suite. On 2026-11-21 (macOS, headless Chromium) all 81 unit tests and all 8 browser tests passed, and the browser suite took 2.5 minutes. With 3,200 generated chats (about 2,900 active rows), moving focus cost 5.5 ms and selecting plus marking cost 11–20 ms across runs. At that cost the list does not need virtualization.
 
 ## Unsupported and unproven
 

@@ -32,36 +32,58 @@ export function createOperator(
   const guard = new MutationGuard();
   const leases = new Map<string, number>();
 
+  // Any sign that another account is signed in disarms the run before anything else happens.
+  async function requireAccount(accountId: string): Promise<void> {
+    let current = client.accountId();
+    try {
+      if (current == null) current = await signedInAccount(client);
+    } catch (error) {
+      disarmAll();
+      throw error;
+    }
+    if (current !== accountId) {
+      disarmAll();
+      throw new TriageError("auth", "The signed-in ChatGPT account isn't the one the dashboard loaded. Nothing was read or changed.");
+    }
+  }
+
+  function disarmAll(): void {
+    const armed = guard.armedRunId();
+    if (armed) guard.disarm(armed);
+  }
+
   async function value(request: ApiRequest): Promise<unknown> {
     switch (request.op) {
-      case "arm": {
-        if (!leases.has(request.runId)) {
-          throw new TriageError("auth", "The dashboard isn't holding this run open. No change was sent.");
+      case "session":
+        try {
+          return { accountId: await signedInAccount(client) };
+        } catch (error) {
+          disarmAll();
+          throw error;
         }
-        const accountId = await signedInAccount(client);
-        if (accountId !== request.accountId) {
-          throw new TriageError("auth", "The signed-in ChatGPT account isn't the one this run was reviewed for. No change was sent.");
-        }
-        guard.arm(request.runId, request.accountId, request.commands);
-        return true;
-      }
       case "disarm":
         guard.disarm(request.runId);
         return true;
+      case "arm":
+        if (!leases.has(request.runId)) {
+          throw new TriageError("auth", "The dashboard isn't holding this run open. No change was sent.");
+        }
+        await requireAccount(request.accountId);
+        if (!leases.has(request.runId)) {
+          throw new TriageError("auth", "The dashboard closed this run while it was being authorized. No change was sent.");
+        }
+        guard.arm(request.runId, request.accountId, request.commands);
+        return true;
       case "change": {
         const command = guard.authorize(request.runId, request.accountId, request.id);
-        if (client.accountId() !== request.accountId) {
-          throw new TriageError("auth", "The signed-in ChatGPT account changed. No change was sent.");
-        }
+        await requireAccount(request.accountId);
         await client.change(command);
         return true;
       }
-      case "session":
-        return { accountId: await signedInAccount(client) };
       default:
         break;
     }
-    if (client.accountId() == null) await signedInAccount(client);
+    await requireAccount(request.accountId);
     switch (request.op) {
       case "list":
         return client.list(request.scope, (found, total, waiting) => onListProgress(request.scope, found, total, waiting));

@@ -78,6 +78,8 @@ interface Options {
   onList?: () => Promise<void>;
   // The list still shows every chat as it was before the run.
   listLags?: boolean;
+  // ChatGPT's list stopped short of its total.
+  listIncomplete?: boolean;
   persist?: (call: number) => Promise<void> | void;
 }
 
@@ -121,10 +123,11 @@ function makeEnv(options: Options) {
     },
     async listActive() {
       await options.onList?.();
-      if (options.listLags) return options.chats.map((chat) => ({ ...chat }));
-      return [...server.entries()]
+      if (options.listLags) return { chats: options.chats.map((chat) => ({ ...chat })), complete: true };
+      const listed = [...server.entries()]
         .filter(([, chat]) => chat.visible && !chat.archived)
         .map(([id, chat]) => makeChat(id, { title: chat.title, projectId: chat.projectId }));
+      return options.listIncomplete ? { chats: listed.slice(1), complete: false } : { chats: listed, complete: true };
     },
     async probe(id) {
       if (options.probe) return options.probe(id, server);
@@ -150,7 +153,7 @@ function makeEnv(options: Options) {
   });
   const start = (backup: boolean, acceptIncomplete = false) =>
     runner.start(buildJobs(journal, chats).jobs, { runId: "run-1", backup, acceptIncomplete });
-  return { clock, journal, chats, server, writes, events, runner, snapshots, violations, start };
+  return { clock, journal, chats, server, writes, attempts, events, runner, snapshots, violations, start };
 }
 
 async function saveBackupWhenAsked(env: ReturnType<typeof makeEnv>): Promise<void> {
@@ -390,7 +393,130 @@ describe("durable writes", () => {
   });
 });
 
+// Holds the persist call with the given number until released, to land a user action inside it.
+function heldPersist(target: number) {
+  let release: () => void = () => undefined;
+  let reached: () => void = () => undefined;
+  const arrived = new Promise<void>((resolve) => { reached = resolve; });
+  return {
+    persist: (call: number) => {
+      if (call !== target) return undefined;
+      reached();
+      return new Promise<void>((resolve) => { release = resolve; });
+    },
+    arrived,
+    release: () => release(),
+  };
+}
+
 describe("pause and stop", () => {
+  it("keeps a pause made while the run's start is being saved", async () => {
+    const gate = heldPersist(1);
+    const env = makeEnv({ chats: [makeChat("a")], marks: { a: mark("archive", "Chat a") }, persist: gate.persist });
+    const starting = env.start(false);
+    await gate.arrived;
+    const pausing = env.runner.pause("Paused by you.");
+    gate.release();
+    await Promise.all([starting, pausing]);
+    await env.runner.waitUntilIdle();
+    expect(env.writes).toEqual([]);
+    expect(env.journal.run?.status).toBe("paused");
+  });
+
+  it("keeps a pause made while a resume or a saved backup is being recorded", async () => {
+    let gate: ReturnType<typeof heldPersist> | null = null;
+    const env = makeEnv({ chats: fourChats, marks: fourMarks, persist: (call) => gate?.persist(call) });
+    const holdNext = () => {
+      gate = heldPersist(env.snapshots.length + 1);
+      return gate;
+    };
+
+    await env.start(true);
+    await env.runner.waitUntilIdle();
+    await env.runner.pause("first");
+    let held = holdNext();
+    const resuming = env.runner.resume();
+    await held.arrived;
+    const pausedResume = env.runner.pause("during resume");
+    held.release();
+    await Promise.all([resuming, pausedResume]);
+    await env.runner.waitUntilIdle();
+    expect(env.journal.run?.status).toBe("paused");
+
+    gate = null;
+    await env.runner.resume();
+    await env.runner.waitUntilIdle();
+    const pending = env.runner.pendingBackup();
+    if (!pending) throw new Error("no backup");
+    held = holdNext();
+    const acknowledging = env.runner.acknowledgeBackupSaved({ file: "b.json", sha256: pending.sha256, verification: "file" });
+    await held.arrived;
+    const pausedSave = env.runner.pause("during save");
+    held.release();
+    await Promise.all([acknowledging, pausedSave]);
+    await env.runner.waitUntilIdle();
+    expect(env.writes).toEqual([]);
+    expect(env.journal.run?.status).toBe("paused");
+    expect(env.journal.run?.backup.saved?.ids).toEqual(["a"]);
+  });
+
+  it("starts a new run even while the stopped run's loop is still unwinding", async () => {
+    let unblock: () => void = () => undefined;
+    let block = true;
+    const env = makeEnv({
+      chats: [makeChat("a", { createdMs: 1 }), makeChat("b", { createdMs: 2 })],
+      marks: { a: mark("archive", "Chat a") },
+      onList: () => (block ? new Promise<void>((resolve) => { unblock = resolve; }) : Promise.resolve()),
+    });
+    await env.start(false);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(env.journal.run?.status).toBe("verifying");
+    await env.runner.stop();
+    await env.runner.dismiss();
+    block = false;
+    env.journal.marks["b"] = mark("archive", "Chat b");
+    await env.runner.start(buildJobs(env.journal, env.chats).jobs, { runId: "run-2", backup: false, acceptIncomplete: false });
+    unblock();
+    await env.runner.waitUntilIdle();
+    await env.runner.waitUntilIdle();
+    expect(env.journal.run?.id).toBe("run-2");
+    expect(env.journal.run?.status).toBe("done");
+    expect(env.writes).toEqual(["archive:a", "archive:b"]);
+  });
+
+  it("leaves a chat alone that was protected or unmarked while its run was paused", async () => {
+    const env = makeEnv({
+      chats: [makeChat("a", { createdMs: 1 }), makeChat("b", { createdMs: 2 }), makeChat("c", { createdMs: 3 })],
+      marks: { a: mark("archive", "Chat a"), b: mark("archive", "Chat b"), c: mark("archive", "Chat c") },
+      beforeApply: (job) => {
+        if (job.id === "a") void env.runner.pause("Paused by you.");
+      },
+    });
+    await env.start(false);
+    await env.runner.waitUntilIdle();
+    expect(env.journal.run?.status).toBe("paused");
+    env.journal.protect["b"] = { title: "Chat b", at: 0 };
+    delete env.journal.marks["c"];
+    await env.runner.resume();
+    await env.runner.waitUntilIdle();
+    expect(env.writes).toEqual(["archive:a"]);
+    expect(env.journal.run?.results.map((result) => `${result.id}:${result.status}`)).toEqual(["a:done", "b:held", "c:held"]);
+  });
+
+  it("can't be dismissed while paused with a change in flight", async () => {
+    const env = makeEnv({
+      chats: [makeChat("a")],
+      marks: { a: mark("delete", "Chat a") },
+      afterApply: () => { throw new TriageError("offline", "The ChatGPT tab did not answer."); },
+      probe: () => { throw new TriageError("transient", "Network error."); },
+    });
+    await env.start(false);
+    await env.runner.waitUntilIdle();
+    expect(env.runner.canDismiss()).toBe(false);
+    await env.runner.dismiss();
+    expect(env.journal.run?.inflight?.outcome).toBe("unknown");
+  });
+
   it("doesn't send a change whose intent was being saved when the user paused", async () => {
     let release: () => void = () => undefined;
     const env = makeEnv({
@@ -468,6 +594,29 @@ describe("verification", () => {
     expect(env.journal.run?.results.map((result) => result.status)).toEqual(["unconfirmed", "unconfirmed"]);
   });
 
+  it("probes every change when ChatGPT's list is incomplete, rather than trusting absence", async () => {
+    const probed: string[] = [];
+    const env = makeEnv({
+      chats: [makeChat("a", { createdMs: 1 }), makeChat("b", { createdMs: 2 })],
+      marks: { a: mark("archive", "Chat a") },
+      listIncomplete: true,
+      afterApply: (job) => {
+        const chat = env.server.get(job.id);
+        if (chat) chat.archived = false;
+      },
+      probe: (id, server) => {
+        probed.push(id);
+        const chat = server.get(id);
+        return { archived: chat?.archived ?? false, visible: true, projectId: null, title: null };
+      },
+    });
+    await env.start(false);
+    await env.runner.waitUntilIdle();
+    expect(probed).toContain("a");
+    expect(env.journal.run?.results[0]?.status).toBe("unconfirmed");
+    expect(env.chats.map((chat) => chat.id).sort()).toEqual(["a", "b"]);
+  });
+
   it("keeps archived chats in the inventory after a run", async () => {
     const env = makeEnv({
       chats: [makeChat("a", { createdMs: 1 }), makeChat("z", { archived: true })],
@@ -497,7 +646,18 @@ describe("crash consistency", () => {
     expect(reference.violations).toEqual([]);
     expect(reference.snapshots.length).toBeGreaterThan(8);
 
-    for (const [index, snapshot] of reference.snapshots.entries()) {
+    // A crash with a change in flight may land before or after ChatGPT applied it.
+    const restarts = reference.snapshots.flatMap((snapshot, index) => {
+      const inflight = snapshot.journal.run?.inflight;
+      const job = snapshot.journal.run?.jobs.find((entry) => entry.id === inflight?.id);
+      if (!job) return [{ index, snapshot, applied: null }];
+      const after = structuredClone(snapshot.server);
+      applyOnServer(after, job);
+      return [{ index, snapshot, applied: null }, { index, snapshot: { ...snapshot, server: after }, applied: job.id }];
+    });
+    expect(restarts.some((restart) => restart.applied)).toBe(true);
+
+    for (const { index, snapshot, applied } of restarts) {
       const stored = decodeJournal(structuredClone(snapshot.journal), "u1");
       recoverInterrupted(stored);
       const server = structuredClone(snapshot.server);
@@ -506,8 +666,9 @@ describe("crash consistency", () => {
         await env.runner.resume();
         await saveBackupWhenAsked(env);
       }
-      const context = `restart from snapshot ${index}`;
+      const context = `restart from snapshot ${index}${applied ? ` after ${applied} applied` : ""}`;
       expect(env.journal.run?.status, context).toBe("done");
+      if (applied) expect(env.attempts.get(applied) ?? 0, `${context}: resent`).toBe(0);
       expect(env.violations, context).toEqual([]);
       expect(server.get("a")?.visible, context).toBe(false);
       expect(server.get("b")?.archived, context).toBe(true);

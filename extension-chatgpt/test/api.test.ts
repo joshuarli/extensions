@@ -147,6 +147,14 @@ describe("authenticated ChatGPT client", () => {
     expect((await expectFailure(client.probe("c1"))).kind).toBe("compat");
   });
 
+  it("treats a 2xx response whose body was cut off as uncertain, not failed", async () => {
+    const { client } = harness(async () => {
+      const body = new ReadableStream({ start(controller) { controller.error(new Error("connection reset")); } });
+      return new Response(body, { status: 200 });
+    });
+    expect((await expectFailure(client.change({ action: "delete", id: "c1" }))).kind).toBe("transient");
+  });
+
   it("treats an explicit success:false as a failed change", async () => {
     const { client } = harness(async () => jsonResponse(200, { success: false }));
     const failure = await expectFailure(client.change({ action: "delete", id: "c1" }));
