@@ -1,5 +1,8 @@
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
+import { UsageError } from "../../lib/cli.ts";
+
+export { UsageError };
 
 const options = [
   { name: "out", value: "DIR", description: "output directory (ONEFILE_OUT or XDG_DATA_HOME; default ~/.local/share/onefile)" },
@@ -11,7 +14,6 @@ const options = [
 type OptionName = typeof options[number]["name"];
 export interface SaveOptions { url: string; out: string; backend: string; session: string; cdpUrl: string | undefined }
 export type Command = { kind: "help" } | { kind: "version" } | { kind: "save"; options: SaveOptions };
-export class UsageError extends Error {}
 export const help = `onefile — save a web page as a self-extracting archive\n\nUsage:\n  onefile save <url> [options]\n\nOptions:\n${options.map((o) => `  --${o.name} ${o.value}  ${o.description}`).join("\n")}\n  --help, -h  show help\n  --version, -v  show version\n\nExample:\n  pnpm onefile save https://example.com/ --out ./saved\n`;
 export function outputDirectory(out: string | undefined, env: NodeJS.ProcessEnv = process.env): string {
   return resolve(out ?? (env["ONEFILE_OUT"] || join(env["XDG_DATA_HOME"] || join(homedir(), ".local", "share"), "onefile")));

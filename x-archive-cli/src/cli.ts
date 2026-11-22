@@ -1,3 +1,4 @@
+import { UsageError } from "../../lib/cli.ts";
 import {
   downloadProfile,
   downloadSelf,
@@ -59,8 +60,6 @@ bctl appliance backend:
   X_ARCHIVE_BACKEND, X_ARCHIVE_SESSION and X_ARCHIVE_BCTL (binary path)
   override the defaults; X_ARCHIVE_CDP_URL attaches instead of launching.
 `;
-
-class UsageError extends Error {}
 
 interface ParsedArgs {
   command: string;

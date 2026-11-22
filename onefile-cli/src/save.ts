@@ -6,7 +6,7 @@ import { build } from "vite";
 import { fetchResourceBytes } from "../../extension-onefile/src/fetch-resource.ts";
 import { saveTab, type SaveDependencies } from "../../extension-onefile/src/workflow.ts";
 import type { SaveOptions } from "./args.ts";
-import { resolveCdpUrl } from "./backend.ts";
+import { resolveBackend } from "./backend.ts";
 
 async function bundle(name: "capture" | "loader"): Promise<string> {
   const result = await build({ configFile: false, logLevel: "silent", build: { write: false, minify: false, target: "chrome120", rolldownOptions: { input: resolve(import.meta.dirname, `../../extension-onefile/src/inject/${name}.ts`), output: { format: "iife" } } } });
@@ -33,7 +33,8 @@ export async function assembleCapture(payload: unknown, loaderSource: string, fe
 
 export async function save(options: SaveOptions): Promise<string> {
   const [captureScript, loaderScript] = await Promise.all([bundle("capture"), bundle("loader")]);
-  const browser = await chromium.connectOverCDP(resolveCdpUrl(options));
+  const cdpUrl = resolveBackend(options).cdpUrl;
+  const browser = await chromium.connectOverCDP(cdpUrl);
   try {
     const context = browser.contexts()[0];
     if (!context) throw new Error("CDP browser has no default context");
