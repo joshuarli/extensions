@@ -138,3 +138,20 @@ export function decodeListProgress(message: unknown): ListProgress | null {
     return null;
   }
 }
+
+export const ListPageSchema = Schema.Struct({
+  kind: Schema.Literal("chatgpt/list-page"),
+  requestId: Schema.String,
+  scope: Schema.Literals(["active", "archived"]),
+  chats: Schema.Array(ChatSchema),
+});
+
+export type ListPage = Schema.Schema.Type<typeof ListPageSchema>;
+
+export function decodeListPage(message: unknown): ListPage | null {
+  try {
+    return Schema.decodeUnknownSync(ListPageSchema, { onExcessProperty: "error" })(message);
+  } catch {
+    return null;
+  }
+}

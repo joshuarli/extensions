@@ -33,6 +33,7 @@ export class FakeChatgpt {
   readonly patches: Patch[] = [];
   accountId = "u-e2e";
   private sessionGate: (() => Promise<void>) | undefined;
+  private listGates = new Map<number, { wait: Promise<void>; entered: () => void }>();
 
   holdSession(): { entered: Promise<void>; release: () => void } {
     const entered = Promise.withResolvers<void>();
@@ -43,6 +44,19 @@ export class FakeChatgpt {
     };
     return { entered: entered.promise, release: released.resolve };
   }
+  holdListPage(offset: number): { entered: Promise<void>; release: () => void } {
+    const entered = Promise.withResolvers<void>();
+    const released = Promise.withResolvers<void>();
+    this.listGates.set(offset, { wait: released.promise, entered: () => entered.resolve() });
+    return {
+      entered: entered.promise,
+      release: () => {
+        released.resolve();
+        this.listGates.delete(offset);
+      },
+    };
+  }
+
   // Apply the next PATCH to these chats, then answer 500 as if the response was lost.
   readonly loseResponseFor = new Set<string>();
   unfamiliarAcknowledgement = false;
@@ -156,6 +170,11 @@ export class FakeChatgpt {
       const offset = Number(url.searchParams.get("offset") ?? 0);
       const limit = Number(url.searchParams.get("limit") ?? 100);
       const archived = url.searchParams.get("is_archived") === "true";
+      const gate = this.listGates.get(offset);
+      if (gate) {
+        gate.entered();
+        await gate.wait;
+      }
       const rows = [...this.chats.values()]
         .filter((chat) => chat.visible && chat.archived === archived)
         .sort((a, b) => b.createdMs - a.createdMs);

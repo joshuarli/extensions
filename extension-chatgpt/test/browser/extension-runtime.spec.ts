@@ -112,6 +112,31 @@ const fixture = () => new FakeChatgpt([
   { id: "c5", title: "Old archived chat", archived: true },
 ]);
 
+test("rows stream in while loading and a saved copy appears immediately on reopen", async () => {
+  const server = FakeChatgpt.generated(250);
+  const activeCount = [...server.chats.values()].filter((chat) => !chat.archived).length;
+  await withExtension(server, async ({ openDashboard }) => {
+    const page = await openDashboard();
+    const gate = server.holdListPage(100);
+    await expect(page.locator(".row")).toHaveCount(100, { timeout: 20_000 });
+    await gate.entered;
+    await expect(page.locator(".status")).toContainText("Loading 100 of", { timeout: 20_000 });
+    expect(await page.locator(".row").count()).toBe(100);
+
+    gate.release();
+    await expect(page.locator(".row")).toHaveCount(activeCount, { timeout: 20_000 });
+    await expect(page.locator(".status")).toContainText("Ready", { timeout: 20_000 });
+
+    const reopenGate = server.holdListPage(0);
+    await page.reload();
+    await expect(page.locator(".row")).toHaveCount(activeCount, { timeout: 20_000 });
+    await expect(page.locator(".status")).toContainText("Showing saved chats · syncing…", { timeout: 20_000 });
+    await reopenGate.entered;
+    reopenGate.release();
+    await expect(page.locator(".status")).toContainText("Ready", { timeout: 20_000 });
+  });
+});
+
 test("rows link to their chat and show Projects; previews hide withheld tool output", async () => {
   const server = new FakeChatgpt([
     { id: "c1", title: "Sourdough starter" },
@@ -126,6 +151,7 @@ test("rows link to their chat and show Projects; previews hide withheld tool out
     await expect(sourdough.locator("a.open")).toHaveAttribute("href", "https://chatgpt.com/c/c1");
     await expect(sourdough.locator("a.open use")).toHaveAttribute("href", "#chatgpt-logo");
     await expect(sourdough.locator(".badge.project")).toHaveCount(0);
+    await expect(page.locator(".status")).toContainText("Ready", { timeout: 20_000 });
     await expect(row(page, "Tax questions").locator(".badge.project")).toHaveText("Work");
 
     await row(page, "Redacted output").click();

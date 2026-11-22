@@ -128,7 +128,12 @@ export interface ChatList {
 
 export interface ApiClient {
   session(): Promise<Session>;
-  list(accountId: string, scope: "active" | "archived", onProgress?: (found: number, total: number | null, waiting: boolean) => void): Promise<ChatList>;
+  list(
+    accountId: string,
+    scope: "active" | "archived",
+    onProgress?: (found: number, total: number | null, waiting: boolean) => void,
+    onPage?: (chats: Chat[], found: number, total: number | null) => void,
+  ): Promise<ChatList>;
   projects(accountId: string): Promise<Project[]>;
   conversation(accountId: string, id: string): Promise<Conversation>;
   record(accountId: string, id: string): Promise<unknown>;
@@ -307,6 +312,7 @@ export function createApiClient(deps: ApiDeps): ApiClient {
     accountId: string,
     path: string,
     onProgress?: (found: number, total: number | null, waiting: boolean) => void,
+    onPage?: (items: Record<string, unknown>[], found: number, total: number | null) => void,
   ): Promise<{ items: Record<string, unknown>[]; total: number | null; complete: boolean }> {
     const found = new Map<string, Record<string, unknown>>();
     let offset = 0;
@@ -340,6 +346,7 @@ export function createApiClient(deps: ApiDeps): ApiClient {
       for (const item of checked.items) found.set(String(item["id"]), item);
       if (checked.total != null) total = checked.total;
       onProgress?.(found.size, total, false);
+      if (checked.items.length) onPage?.(checked.items, found.size, total);
       if (!checked.items.length) {
         exhausted = true;
         break;
@@ -359,10 +366,17 @@ export function createApiClient(deps: ApiDeps): ApiClient {
       const { accountId } = await sessionRequest();
       return { accountId };
     },
-    async list(accountId, scope, onProgress) {
-      const archived = scope === "archived" ? "&is_archived=true" : "";
-      const { items, total, complete } = await listWithRetry(accountId, `/backend-api/conversations?offset={offset}&limit={limit}&order=updated${archived}`, onProgress);
-      return { chats: items.map((item) => normalizeListItem(item, scope === "archived")), complete, total };
+    async list(accountId, scope, onProgress, onPage) {
+      const archived = scope === "archived";
+      const { items, total, complete } = await listWithRetry(
+        accountId,
+        `/backend-api/conversations?offset={offset}&limit={limit}&order=updated${archived ? "&is_archived=true" : ""}`,
+        onProgress,
+        onPage
+          ? (page, found, pageTotal) => onPage(page.map((item) => normalizeListItem(item, archived)), found, pageTotal)
+          : undefined,
+      );
+      return { chats: items.map((item) => normalizeListItem(item, archived)), complete, total };
     },
     async projects(accountId) {
       const found = new Map<string, Project>();

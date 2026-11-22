@@ -31,10 +31,12 @@ import {
   ProjectListSchema,
   SessionSchema,
   decodeApiResponse,
+  decodeListPage,
   decodeListProgress,
   decodeValue,
   type ApiRequest,
 } from "./messages.ts";
+import { createChromeListCacheStore, type CachedList } from "./list-cache.ts";
 import { QueueRunner, clampGap, type BackupProof, type QueueTransport } from "./queue.ts";
 import { requiresTypedConfirmation } from "./safety.ts";
 import { createChromeJournalStore, createSerialPersist } from "./storage.ts";
@@ -99,10 +101,16 @@ installChatgptIcon();
 
 const LOCK_NAME = "chatgpt-organizer:dashboard";
 const store = createChromeJournalStore(chrome.storage);
+const listCache = createChromeListCacheStore(chrome.storage);
 
 let journal: Journal | null = null;
 let accountId: string | null = null;
 const chats: Chat[] = [];
+const streamed = new Map<string, Chat>();
+const paintedScopes = new Set<"active" | "archived">();
+let streamRequestId: string | null = null;
+let cachedSnapshot: CachedList | null = null;
+let syncing = false;
 let projects: Project[] = [];
 let tabId: number | null = null;
 let scope: "active" | "archived" = "active";
@@ -281,9 +289,9 @@ function signedIn(): string {
   return accountId;
 }
 
-async function send(body: RequestBody): Promise<unknown> {
+async function send(body: RequestBody, requestId: string = nextRequestId()): Promise<unknown> {
   const id = await ensureTab();
-  const request = { kind: "chatgpt/api", requestId: nextRequestId(), ...body } as ApiRequest;
+  const request = { kind: "chatgpt/api", requestId, ...body } as ApiRequest;
   return new Promise<unknown>((resolve, reject) => {
     const timer = request.op === "list"
       ? null
@@ -329,8 +337,14 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
 }
 
 async function loadChats(which: "active" | "archived"): Promise<{ chats: Chat[]; complete: boolean; total: number | null }> {
-  const value = decodeValue(ChatListSchema, await send({ op: "list", accountId: signedIn(), scope: which }));
-  return { chats: value.chats.map((chat) => ({ ...chat })), complete: value.complete, total: value.total };
+  const requestId = nextRequestId();
+  streamRequestId = requestId;
+  try {
+    const value = decodeValue(ChatListSchema, await send({ op: "list", accountId: signedIn(), scope: which }, requestId));
+    return { chats: value.chats.map((chat) => ({ ...chat })), complete: value.complete, total: value.total };
+  } finally {
+    if (streamRequestId === requestId) streamRequestId = null;
+  }
 }
 
 function decodeConversation(value: unknown): Conversation {
@@ -347,6 +361,7 @@ const transport: QueueTransport = {
     if (current?.runId !== run.id) throw new TriageError("auth", "This run's lease closed. No change was sent.");
     try {
       await send({ op: "change", runId: run.id, leaseId: current.id, accountId: run.accountId, id: job.id });
+      await listCache.clear(run.accountId).catch(() => undefined);
     } catch (error) {
       if (failureOf(error).kind === "offline" && lease === current) closeLease();
       throw error;
@@ -484,6 +499,14 @@ function visibleChats(): Chat[] {
   });
 }
 
+function paintChats(source: Iterable<Chat>): void {
+  chats.splice(0, chats.length, ...source);
+  if (focusId && !chats.some((chat) => chat.id === focusId)) focusId = null;
+  if (!focusId) focusId = visibleChats()[0]?.id ?? null;
+  invalidate("list", "toolbar", "preview");
+  if (focusId) schedulePreview(focusId);
+}
+
 // A selection never reaches chats the current view hides.
 function viewChanged(): void {
   const visible = new Set(visibleChats().map((chat) => chat.id));
@@ -516,7 +539,7 @@ function renderToolbar(): void {
   const controls = runner ? runControls(run) : "idle";
   const total = queueCount();
   ui.counts.textContent = `${total} queued · ${selected.size} selected`;
-  ui.status.textContent = blocked || progress || statusText(run) || activity[0] || inventoryNote || (compatOk ? "Ready" : "");
+  ui.status.textContent = blocked || statusText(run) || progress || (syncing && cachedSnapshot ? "Showing saved chats · syncing…" : "") || activity[0] || inventoryNote || (compatOk ? "Ready" : "");
   const canRun = Boolean(journal && runner && compatOk && total > 0);
   const verifyOnly = run?.phase === "verify";
   const key = `${controls}|${canRun}|${journal ? 1 : 0}|${runner?.canDismiss() ? 1 : 0}|${verifyOnly}`;
@@ -1304,6 +1327,21 @@ function onKey(event: KeyboardEvent): void {
 let booting = true;
 
 chrome.runtime.onMessage.addListener((message) => {
+  const page = decodeListPage(message);
+  if (page && booting && page.requestId === streamRequestId) {
+    let added = false;
+    for (const chat of page.chats) {
+      if (streamed.has(chat.id)) continue;
+      streamed.set(chat.id, { ...chat });
+      added = true;
+    }
+    if (added && !paintedScopes.has(page.scope)) {
+      paintedScopes.add(page.scope);
+      compatOk = true;
+      paintChats(streamed.values());
+    }
+    return false;
+  }
   const update = decodeListProgress(message);
   if (!update || !booting) return false;
   progress = update.waiting
@@ -1324,6 +1362,29 @@ async function boot(): Promise<void> {
     recoverInterrupted(loaded);
     journal = loaded;
     await persistJournal();
+    runner = makeRunner(loaded);
+
+    streamed.clear();
+    paintedScopes.clear();
+    const cached = await listCache.load(session.accountId);
+    if (cached) {
+      cachedSnapshot = cached;
+      syncing = true;
+      progress = "";
+      projects = cached.projects.map((project) => ({ ...project }));
+      for (const chat of cached.chats) streamed.set(chat.id, { ...chat });
+      paintChats(streamed.values());
+    }
+
+    const freshProjects = await send({ op: "projects", accountId: signedIn() }).then(
+      (value) => decodeValue(ProjectListSchema, value).map((project) => ({ ...project })),
+      () => {
+        toast("Couldn't load projects; moving chats is unavailable this session.");
+        return null;
+      },
+    );
+    if (freshProjects) projects = freshProjects;
+
     const active = await loadChats("active");
     const archived = await loadChats("archived").catch((error: unknown) => {
       toast(`Couldn't load the archived list: ${failureOf(error).message}`);
@@ -1333,25 +1394,33 @@ async function boot(): Promise<void> {
     if (!active.complete || !archived.complete) {
       inventoryNote = `ChatGPT returned ${chats.length} chats${active.total != null ? ` of ${active.total} active` : ""}; only loaded chats can be changed.`;
     }
-    projects = await send({ op: "projects", accountId: signedIn() }).then(
-      (value) => decodeValue(ProjectListSchema, value).map((project) => ({ ...project })),
-      () => {
-        toast("Couldn't load projects; moving chats is unavailable this session.");
-        return [];
-      },
-    );
+    if (active.complete && archived.complete) {
+      const snapshot: CachedList = {
+        version: 1,
+        accountId: signedIn(),
+        savedAt: Date.now(),
+        chats: chats.map((chat) => ({ ...chat })),
+        complete: true,
+        total: active.total,
+        projects: projects.map((project) => ({ ...project })),
+      };
+      await listCache.save(snapshot).catch(() => undefined);
+    }
+    cachedSnapshot = null;
+    syncing = false;
     compatOk = true;
-    runner = makeRunner(loaded);
     focusId = visibleChats()[0]?.id ?? null;
     if (focusId) schedulePreview(focusId);
   } catch (error) {
     const failure = failureOf(error);
     compatOk = false;
-    blocked = failure.message;
-    toast(failure.message);
+    syncing = false;
+    blocked = cachedSnapshot ? `Showing saved chats; couldn't refresh: ${failure.message}` : failure.message;
+    toast(blocked);
   } finally {
     booting = false;
     progress = "";
+    streamRequestId = null;
     invalidateAll();
   }
 }

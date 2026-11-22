@@ -28,9 +28,15 @@ const client = createApiClient({
   sleep,
 });
 
-const operator = createOperator(client, (scope, found, total, waiting) => {
-  void chrome.runtime.sendMessage({ kind: "chatgpt/list-progress", scope, found, total, waiting }).catch(() => undefined);
-});
+const operator = createOperator(
+  client,
+  (scope, found, total, waiting) => {
+    void chrome.runtime.sendMessage({ kind: "chatgpt/list-progress", scope, found, total, waiting }).catch(() => undefined);
+  },
+  (scope, requestId, chats) => {
+    void chrome.runtime.sendMessage({ kind: "chatgpt/list-page", scope, requestId, chats }).catch(() => undefined);
+  },
+);
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (!isApiRequest(message)) return false;

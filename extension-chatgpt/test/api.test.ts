@@ -59,6 +59,19 @@ describe("authenticated ChatGPT client", () => {
     expect(calls).toBe(3);
   });
 
+  it("emits each page as soon as it arrives", async () => {
+    const items = Array.from({ length: 150 }, (_, index) => listItem(`c${index}`));
+    const { client } = harness(async (input) => {
+      const offset = Number(new URL(String(input), "https://chatgpt.com").searchParams.get("offset") ?? "0");
+      return jsonResponse(200, { items: items.slice(offset, offset + 100), total: items.length });
+    });
+    const pages: string[][] = [];
+    const result = await client.list("u1", "active", undefined, (page) => pages.push(page.map((chat) => chat.id)));
+    expect(pages.map((page) => page.length)).toEqual([100, 50]);
+    expect(pages[1]).toEqual(Array.from({ length: 50 }, (_, index) => `c${100 + index}`));
+    expect(result.chats).toHaveLength(150);
+  });
+
   it("uses the cooldown ladder when Retry-After is absent", async () => {
     const start = 1_700_000_000_000;
     let calls = 0;

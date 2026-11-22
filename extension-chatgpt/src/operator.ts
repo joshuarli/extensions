@@ -1,5 +1,6 @@
 import type { ApiClient } from "./api.ts";
 import { isFailureKind, TriageError } from "./errors.ts";
+import type { Chat } from "./model.ts";
 import type { ApiRequest, ApiResponse, FailurePayload } from "./messages.ts";
 import { MutationGuard } from "./safety.ts";
 
@@ -27,6 +28,7 @@ async function signedInAccount(client: ApiClient): Promise<string> {
 export function createOperator(
   client: ApiClient,
   onListProgress: (scope: "active" | "archived", found: number, total: number | null, waiting: boolean) => void,
+  onListPage?: (scope: "active" | "archived", requestId: string, chats: Chat[]) => void,
 ): Operator {
   const guard = new MutationGuard();
   const leases = new Map<string, string>();
@@ -92,7 +94,12 @@ export function createOperator(
     await requireAccount(request.accountId);
     switch (request.op) {
       case "list":
-        return client.list(request.accountId, request.scope, (found, total, waiting) => onListProgress(request.scope, found, total, waiting));
+        return client.list(
+          request.accountId,
+          request.scope,
+          (found, total, waiting) => onListProgress(request.scope, found, total, waiting),
+          onListPage ? (chats) => onListPage(request.scope, request.requestId, chats) : undefined,
+        );
       case "projects":
         return client.projects(request.accountId);
       case "conversation":
