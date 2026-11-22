@@ -4,6 +4,8 @@ This repository builds one Chromium Manifest V3 extension from five feature pack
 
 ## Commands
 
+`make clean` removes this checkout’s build output in `./build` and `./dist`. It refuses symlinks and ordinary files at those paths.
+
 - Install the pinned pnpm CLI with Node.js: `npm install --global pnpm@11.0.2`
 - Install dependencies: `pnpm install`
 - Check types and unit tests: `pnpm run check`
