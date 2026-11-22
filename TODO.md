@@ -10,17 +10,3 @@ Next: 4
 - **Fix with:** none
 - **Effort:** M
 
-### EXT-2 · P3 · CLI help advertises flag syntax the parser rejects
-
-- **Area:** X archive · CLI
-- **Where:** x-archive-cli/src/cli.ts:12,27,75,110; x-archive-cli/README.md
-- **Problem:** Confirmed on acbedac: pnpm x --help exits 2 and advertises --out DIR, --backend NAME and --session NAME. The same executable rejects space-separated --out with '--out requires =DIR syntax: --out=DIR'; backend and session have equivalent explicit rejection branches. README examples already use equals syntax. No browser or network request is needed to reproduce argument parsing.
-- **Recommendation:** Align the advertised and accepted flag syntax, and make explicit help requests succeed. Add bounded executable tests for help and representative accepted/rejected flags without launching a browser.
-- **Fix with:** design-cli
-- **Effort:** S
-
-## Completed
-
-### EXT-3 · P3 · Complete performance workload coverage
-
-- **Closed:** 2026-11-21. Registry-driven `scripts/bench.mjs` with edit/change/scenario tiers, selectors, preflight, dated results and exclusions; `onefile-assemble` and `x-export` offline workloads with correctness oracles; process-tree CPU and peak RSS attribution; pinned upstream comparator; paired CPU-per-work budget check. `scripts/bench.test.ts` proves the entrypoint, and one Change workload per harness kind ran end to end. Full and scenario remain manual. See [extension-onefile/PERFORMANCE.md](extension-onefile/PERFORMANCE.md).
