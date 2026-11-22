@@ -145,9 +145,10 @@ export function parseCliArgs(argv: readonly string[], schema: ArgSchema): Parsed
   return { values, flags, positional };
 }
 
-export function installInterrupt(message: string): void {
+export function installInterrupt(message: string, onInterrupt?: () => void): void {
   process.on("SIGINT", () => {
     process.stderr.write(`\n${message}\n`);
-    process.exit(130);
+    if (onInterrupt) onInterrupt();
+    else process.exit(130);
   });
 }

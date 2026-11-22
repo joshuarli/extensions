@@ -3,6 +3,8 @@ import { installInterrupt } from "../../lib/cli.ts";
 import { help, parseArgs, UsageError } from "./args.ts";
 import { save } from "./save.ts";
 
+const controller = new AbortController();
+
 async function main(argv: string[]): Promise<number> {
   try {
     const command = parseArgs(argv);
@@ -15,17 +17,19 @@ async function main(argv: string[]): Promise<number> {
       return 0;
     }
     const path = await Effect.runPromise(Effect.tryPromise({
-      try: () => save(command.options),
+      try: () => save(command.options, controller.signal),
       catch: (error) => error instanceof Error ? error : new Error(String(error)),
     }));
+    if (controller.signal.aborted) return 130;
     process.stdout.write(`${path}\n`);
     return 0;
   } catch (error) {
+    if (controller.signal.aborted) return 130;
     process.stderr.write(`onefile: ${error instanceof Error ? error.message : String(error)}${error instanceof UsageError ? "\nTry onefile --help." : ""}\n`);
     return error instanceof UsageError ? 2 : 1;
   }
 }
 
-installInterrupt("Interrupted.");
+installInterrupt("Interrupted; closing the capture tab.", () => controller.abort());
 
 process.exitCode = await main(process.argv.slice(2));

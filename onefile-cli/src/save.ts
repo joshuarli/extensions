@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { Effect } from "effect";
-import { chromium } from "playwright";
+import { chromium, type Page } from "playwright";
 import { build } from "vite";
 import { fetchResourceBytes } from "../../extension-onefile/src/fetch-resource.ts";
 import { saveTab, type SaveDependencies } from "../../extension-onefile/src/workflow.ts";
@@ -31,24 +31,39 @@ export async function assembleCapture(payload: unknown, loaderSource: string, fe
   return { ...saved, missingCount: outcome.missingCount };
 }
 
-export async function save(options: SaveOptions): Promise<string> {
+export function watchBrowserClose(browser: { close(): Promise<void> }, signal: AbortSignal | undefined): () => void {
+  if (!signal) return () => {};
+  if (signal.aborted) {
+    void browser.close();
+    return () => {};
+  }
+  const close = () => { void browser.close(); };
+  signal.addEventListener("abort", close, { once: true });
+  return () => signal.removeEventListener("abort", close);
+}
+
+export async function save(options: SaveOptions, signal?: AbortSignal): Promise<string> {
   const [captureScript, loaderScript] = await Promise.all([bundle("capture"), bundle("loader")]);
   const cdpUrl = resolveBackend(options).cdpUrl;
   const browser = await chromium.connectOverCDP(cdpUrl);
+  const unwatch = watchBrowserClose(browser, signal);
+  let page: Page | undefined;
   try {
     const context = browser.contexts()[0];
     if (!context) throw new Error("CDP browser has no default context");
-    const page = await context.newPage();
-    try {
-      await page.goto(options.url, { waitUntil: "load" });
-      await page.evaluate(captureScript);
-      const payload: unknown = await page.evaluate(() => globalThis.onefileCapture!("onefile-cli", Date.now()));
-      const archive = await assembleCapture(payload, loaderScript);
-      await mkdir(options.out, { recursive: true });
-      const path = join(options.out, archive.filename);
-      await writeFile(path, archive.bytes, { flag: "wx" });
-      if (archive.missingCount) process.stderr.write(`Saved with ${archive.missingCount} missing file(s); see archive metadata.\n`);
-      return path;
-    } finally { await page.close(); }
-  } finally { await browser.close(); }
+    page = await context.newPage();
+    await page.goto(options.url, { waitUntil: "load" });
+    await page.evaluate(captureScript);
+    const payload: unknown = await page.evaluate(() => globalThis.onefileCapture!("onefile-cli", Date.now()));
+    const archive = await assembleCapture(payload, loaderScript);
+    await mkdir(options.out, { recursive: true });
+    const path = join(options.out, archive.filename);
+    await writeFile(path, archive.bytes, { flag: "wx" });
+    if (archive.missingCount) process.stderr.write(`Saved with ${archive.missingCount} missing file(s); see archive metadata.\n`);
+    return path;
+  } finally {
+    unwatch();
+    if (page && !signal?.aborted) await page.close();
+    await browser.close();
+  }
 }
