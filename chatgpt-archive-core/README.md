@@ -10,7 +10,7 @@ CLI, browser, or Chrome APIs: every network call goes through an injected
 import { createChatgptArchive } from "chatgpt-archive-core/src/index.ts";
 
 const archive = createChatgptArchive({
-  transport,                 // getJson(path, headers?) — cookies are owned by the CLI
+  transport,                 // getJson(path, headers?), optional getBytes(path, headers?)
   sleep: (ms) => delay(ms),
   now: () => Date.now(),
   requestGapMs: 1200,        // optional; defaults to 1200
@@ -40,6 +40,27 @@ milliseconds; a row missing or mistyping a required field throws rather than
 being dropped. `record(id)` GETs `/backend-api/conversation/{id}` and returns the
 raw conversation object unchanged, including all branches and metadata.
 
+## Media
+
+`extractMediaJobs(record)` walks a raw conversation record and returns one
+`MediaJob` per unique referenced file: string `file-service://<id>` pointers
+(in `asset_pointer` and anywhere else they occur), object `asset_pointer`
+values with a `file_id`/`id`, and `library_file_id` values in metadata content
+references. Jobs are sorted by id and carry `id`, a sanitized deterministic
+`filename` and the `path` `/backend-api/files/{id}/download`.
+`sanitizeMediaFilename(id, name?)` is the filename helper; ids and optional
+pointer names are reduced to safe characters with a short hash suffix, so no
+path separators or credentials can reach the filesystem.
+
+`getMediaBytes(path)` uses the stored token, applies the same request gap as
+other calls and delegates the response to the optional
+`ChatgptTransport.getBytes(path, headers?)`. Existing transports that only
+implement `getJson` keep working; calling `getMediaBytes` with such a transport
+throws. Bytes are returned as `Uint8Array` — the core never writes files and
+never interprets the response body. Media downloads are best-effort in the CLI:
+missing library files, expired links, non-2xx responses and JSON error bodies
+are reported as per-file failures rather than failing the archive.
+
 ## Archive format
 
 `encodeRecordLine` writes one JSON object per line. The object is the
@@ -68,13 +89,11 @@ records hash identically regardless of key order.
   "timeField": "created",
   "total": 0,
   "archived": 0,
-  "sha256OfRecords": "…"
+  "sha256OfRecords": "…",
+  "media": { "downloaded": 0, "failed": 0, "skipped": 0, "errors": [] }
 }
 ```
 
 `createdAt` is taken from the input; an empty string falls back to
-`new Date(deps.now()).toISOString()`.
-
-**Media is not downloaded.** The archive stores the conversation records exactly
-as returned by ChatGPT; image, file, and voice references inside a record are
-left as URLs and are never fetched.
+`new Date(deps.now()).toISOString()`. The `media` field is included only when
+the caller supplies it, so older callers keep the same manifest shape.

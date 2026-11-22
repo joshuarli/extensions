@@ -19,6 +19,7 @@ describe("chatgpt-archive arguments", () => {
       "--time-field", "created",
       "--out", "./saved",
       "--include-archived",
+      "--no-media",
       "--limit", "3",
       "--backend", "bctl",
       "--session", "research",
@@ -32,6 +33,7 @@ describe("chatgpt-archive arguments", () => {
       timeField: "created",
       outRoot: "./saved",
       includeArchived: true,
+      noMedia: true,
       limit: 3,
       backend: "bctl",
       session: "research",
@@ -45,6 +47,7 @@ describe("chatgpt-archive arguments", () => {
       timeField: "updated",
       outRoot: downloadsRoot(),
       includeArchived: false,
+      noMedia: false,
       limit: null,
       backend: undefined,
       session: undefined,
@@ -78,6 +81,7 @@ describe("chatgpt-archive arguments", () => {
     expect(USAGE).toContain("ISO-8601");
     expect(USAGE).toContain("append-only");
     expect(USAGE).toContain("resumes");
-    expect(USAGE).toContain("NOT downloaded");
+    expect(USAGE).toContain("--no-media");
+    expect(USAGE).toContain("best-effort");
   });
 });

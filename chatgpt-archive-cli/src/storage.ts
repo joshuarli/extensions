@@ -1,10 +1,22 @@
-import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  appendFileSync,
+  existsSync,
+  linkSync,
+  mkdirSync,
+  readFileSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 
 export interface ArchiveFs {
   mkdir(path: string): void;
   readText(path: string): string | null;
   appendText(path: string, text: string): void;
   writeText(path: string, text: string): void;
+  exists(path: string): boolean;
+  writeBytes(path: string, bytes: Uint8Array): void;
+  rename(from: string, to: string): void;
+  remove(path: string): void;
 }
 
 export function createNodeArchiveFs(): ArchiveFs {
@@ -25,6 +37,30 @@ export function createNodeArchiveFs(): ArchiveFs {
     },
     writeText(path, text) {
       writeFileSync(path, text, { mode: 0o600 });
+    },
+    exists(path) {
+      return existsSync(path);
+    },
+    writeBytes(path, bytes) {
+      writeFileSync(path, bytes, { mode: 0o600 });
+    },
+    rename(from, to) {
+      try {
+        linkSync(from, to);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+          throw new Error("Refusing to overwrite existing media file: " + to);
+        }
+        throw error;
+      }
+      unlinkSync(from);
+    },
+    remove(path) {
+      try {
+        unlinkSync(path);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
     },
   };
 }

@@ -1,5 +1,24 @@
 export interface ChatgptTransport {
   getJson(path: string, headers?: Record<string, string>): Promise<unknown>;
+  getBytes?(path: string, headers?: Record<string, string>): Promise<Uint8Array>;
+}
+
+export interface MediaJob {
+  readonly id: string;
+  readonly filename: string;
+  readonly path: string;
+}
+
+export interface MediaFailure {
+  readonly id: string;
+  readonly error: string;
+}
+
+export interface MediaManifest {
+  readonly downloaded: number;
+  readonly failed: number;
+  readonly skipped: number;
+  readonly errors: readonly MediaFailure[];
 }
 
 export interface ArchiveDeps {
@@ -45,6 +64,7 @@ export interface ArchiveManifest {
   total: number;
   archived: number;
   sha256OfRecords: string;
+  media?: MediaManifest | undefined;
 }
 
 export interface ChatgptArchive {
@@ -54,6 +74,7 @@ export interface ChatgptArchive {
   record(id: string): Promise<unknown>;
   withinTimeframe(chat: ChatRef, sinceMs: number | null, untilMs: number | null, field: TimeField): boolean;
   toArchivedRecord(chat: ChatRef, record: unknown): Promise<ArchivedRecord>;
+  getMediaBytes(path: string): Promise<Uint8Array>;
   encodeRecordLine(record: ArchivedRecord): string;
   decodeRecordLine(line: string): ArchivedRecord | null;
   buildManifest(input: Omit<ArchiveManifest, "format" | "version">): string;

@@ -29,6 +29,7 @@ function options(overrides: Partial<DownloadOptions> = {}): DownloadOptions {
     timeField: "updated",
     outRoot: "/downloads",
     includeArchived: false,
+    noMedia: false,
     limit: null,
     backend: undefined,
     session: undefined,

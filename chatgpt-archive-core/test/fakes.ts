@@ -7,10 +7,17 @@ export interface TransportCall {
 
 export class FakeTransport implements ChatgptTransport {
   readonly calls: TransportCall[] = [];
+  readonly byteCalls: TransportCall[] = [];
   private readonly routes = new Map<string, unknown[]>();
+  private readonly byteRoutes = new Map<string, Array<Uint8Array | Error>>();
 
   add(path: string, ...responses: unknown[]): this {
     this.routes.set(path, responses);
+    return this;
+  }
+
+  addBytes(path: string, ...responses: Array<Uint8Array | Error>): this {
+    this.byteRoutes.set(path, responses);
     return this;
   }
 
@@ -19,6 +26,15 @@ export class FakeTransport implements ChatgptTransport {
     const queue = this.routes.get(path);
     if (queue === undefined || queue.length === 0) throw new Error("Unexpected request: " + path);
     const next = queue.shift();
+    if (next instanceof Error) throw next;
+    return next;
+  }
+
+  async getBytes(path: string, headers?: Record<string, string>): Promise<Uint8Array> {
+    this.byteCalls.push(headers === undefined ? { path } : { path, headers });
+    const queue = this.byteRoutes.get(path);
+    if (queue === undefined || queue.length === 0) throw new Error("Unexpected media request: " + path);
+    const next = queue.shift()!;
     if (next instanceof Error) throw next;
     return next;
   }

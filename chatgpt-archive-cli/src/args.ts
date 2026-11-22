@@ -16,6 +16,7 @@ Options:
   --out DIR              downloads root (default: ~/.local/share/chatgpt-archive/downloads,
                          or CHATGPT_ARCHIVE_DOWNLOADS / XDG_DATA_HOME)
   --include-archived     include the Archived section as well as active chats
+  --no-media             do not download media referenced by conversations
   --limit N              write at most N new records in this run
   --backend NAME         helium (default) or bctl
   --session NAME         bctl session to launch or attach to (default: chatgpt-archive,
@@ -49,8 +50,11 @@ Resume:
   at the end of each run and describes every record in that day's file.
 
 Media:
-  Only conversation JSON is archived. Images, files, attachments and other
-  media referenced by conversations are NOT downloaded.
+  Referenced images, files and other media are downloaded alongside records
+  into DIR/chatgpt-YYYY-MM-DD/media/ and counted in manifest.json. Downloads
+  are best-effort: a missing library file, an expired link or a non-2xx body
+  is reported as a failure without failing the archive. Use --no-media to
+  skip media entirely. No cookies, tokens or headers are written to disk.
 `;
 
 export interface DownloadOptions {
@@ -61,6 +65,7 @@ export interface DownloadOptions {
   readonly timeField: TimeField;
   readonly outRoot: string;
   readonly includeArchived: boolean;
+  readonly noMedia: boolean;
   readonly limit: number | null;
   readonly backend: string | undefined;
   readonly session: string | undefined;
@@ -74,7 +79,7 @@ export type Command =
 
 const schema: ArgSchema = {
   values: ["since", "until", "time-field", "out", "limit", "backend", "session", "cdp-url"],
-  flags: ["include-archived"],
+  flags: ["include-archived", "no-media"],
   maxPositionals: 0,
 };
 
@@ -118,6 +123,7 @@ export function parseArgs(argv: readonly string[]): Command {
       timeField: timeFieldValue,
       outRoot: parsed.values.get("out") ?? downloadsRoot(),
       includeArchived: parsed.flags.has("include-archived"),
+      noMedia: parsed.flags.has("no-media"),
       limit: limitValue === undefined ? null : parseLimit(limitValue),
       backend: parsed.values.get("backend"),
       session: parsed.values.get("session"),

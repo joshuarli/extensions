@@ -16,6 +16,8 @@ import type {
   TimeField,
 } from "./types.ts";
 
+export { extractMediaJobs, sanitizeMediaFilename } from "./media.ts";
+
 export type {
   ArchiveDeps,
   ArchiveManifest,
@@ -23,6 +25,9 @@ export type {
   ChatgptArchive,
   ChatRef,
   ChatgptTransport,
+  MediaFailure,
+  MediaJob,
+  MediaManifest,
   Session,
   TimeField,
 } from "./types.ts";
@@ -115,6 +120,16 @@ export function createChatgptArchive(deps: ArchiveDeps): ChatgptArchive {
       };
     },
 
+    async getMediaBytes(path: string): Promise<Uint8Array> {
+      const authorization = "Bearer " + requireToken();
+      const getBytes = deps.transport.getBytes;
+      if (getBytes === undefined) {
+        throw new Error("The attached ChatGPT transport cannot download media bytes.");
+      }
+      await deps.sleep(gap);
+      return getBytes.call(deps.transport, path, { Authorization: authorization });
+    },
+
     encodeRecordLine(record: ArchivedRecord): string {
       return JSON.stringify({
         format: RECORD_LINE_FORMAT,
@@ -145,6 +160,7 @@ export function createChatgptArchive(deps: ArchiveDeps): ChatgptArchive {
         total: input.total,
         archived: input.archived,
         sha256OfRecords: input.sha256OfRecords,
+        ...(input.media === undefined ? {} : { media: input.media }),
       };
       return JSON.stringify(manifest, null, 2) + "\n";
     },

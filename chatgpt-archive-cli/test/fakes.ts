@@ -9,10 +9,20 @@ import type {
 import type { ProgressReport, ProgressReporter } from "../../lib/progress.ts";
 import type { ArchiveFs } from "../src/storage.ts";
 
-export function createMemoryFs(files: Record<string, string> = {}): ArchiveFs & { files: Map<string, string> } {
+export interface FakeFs {
+  files: Map<string, string>;
+  bytes: Map<string, Uint8Array>;
+  renames: Array<readonly [string, string]>;
+}
+
+export function createMemoryFs(files: Record<string, string> = {}): ArchiveFs & FakeFs {
   const filesByName = new Map(Object.entries(files));
+  const bytesByName = new Map<string, Uint8Array>();
+  const renames: Array<readonly [string, string]> = [];
   return {
     files: filesByName,
+    bytes: bytesByName,
+    renames,
     mkdir() {},
     readText(path) {
       return filesByName.get(path) ?? null;
@@ -22,6 +32,34 @@ export function createMemoryFs(files: Record<string, string> = {}): ArchiveFs & 
     },
     writeText(path, text) {
       filesByName.set(path, text);
+    },
+    exists(path) {
+      return filesByName.has(path) || bytesByName.has(path);
+    },
+    writeBytes(path, bytes) {
+      bytesByName.set(path, bytes.slice());
+      filesByName.delete(path);
+    },
+    rename(from, to) {
+      if (filesByName.has(to) || bytesByName.has(to)) {
+        throw new Error("Refusing to overwrite existing media file: " + to);
+      }
+      const data = bytesByName.get(from);
+      if (data !== undefined) {
+        bytesByName.delete(from);
+        bytesByName.set(to, data);
+      } else {
+        const text = filesByName.get(from);
+        if (text !== undefined) {
+          filesByName.delete(from);
+          filesByName.set(to, text);
+        }
+      }
+      renames.push([from, to]);
+    },
+    remove(path) {
+      bytesByName.delete(path);
+      filesByName.delete(path);
     },
   };
 }
@@ -34,6 +72,9 @@ export interface FakeArchiveOptions {
   readonly active?: readonly ChatRef[];
   readonly archived?: readonly ChatRef[];
   readonly session?: Session;
+  readonly records?: Readonly<Record<string, unknown>>;
+  readonly media?: Readonly<Record<string, Uint8Array | Error>>;
+  readonly mediaHandler?: (path: string) => Promise<Uint8Array>;
 }
 
 export function createFakeArchive(options: FakeArchiveOptions = {}): ChatgptArchive {
@@ -49,7 +90,8 @@ export function createFakeArchive(options: FakeArchiveOptions = {}): ChatgptArch
       return items;
     },
     async record(id) {
-      return { id };
+      const custom = options.records?.[id];
+      return custom === undefined ? { id } : custom;
     },
     withinTimeframe(value, sinceMs, untilMs, field: TimeField) {
       const time = field === "created" ? value.createdMs : value.updatedMs;
@@ -67,6 +109,13 @@ export function createFakeArchive(options: FakeArchiveOptions = {}): ChatgptArch
         recordSha256: "sha-" + value.id,
         record,
       } satisfies ArchivedRecord;
+    },
+    async getMediaBytes(path) {
+      if (options.mediaHandler !== undefined) return options.mediaHandler(path);
+      const value = options.media?.[path];
+      if (value instanceof Error) throw value;
+      if (value === undefined) throw new Error("No fake media for " + path);
+      return value;
     },
     encodeRecordLine(record) {
       return JSON.stringify(record);

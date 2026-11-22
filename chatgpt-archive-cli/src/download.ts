@@ -2,10 +2,12 @@ import { join } from "node:path";
 import type {
   ChatgptArchive,
   ChatRef,
+  MediaManifest,
   Session,
 } from "../../chatgpt-archive-core/src/index.ts";
 import type { ProgressReporter } from "../../lib/progress.ts";
 import type { DownloadOptions } from "./args.ts";
+import { collectMediaJobs, downloadMediaJobs } from "./media.ts";
 import { sha256Hex, splitLines, type ArchiveFs } from "./storage.ts";
 
 export interface RunInput {
@@ -28,6 +30,7 @@ export interface DownloadSummary {
   readonly outputDir: string;
   readonly recordsPath: string;
   readonly manifestPath: string;
+  readonly media: MediaManifest;
 }
 
 function readRecords(fs: ArchiveFs, path: string, archive: ChatgptArchive): Map<string, string> {
@@ -107,6 +110,19 @@ export async function runDownload(input: RunInput, deps: RunDeps): Promise<Downl
   }
   reporter.update({ phase: "records", done: todo.length, total: todo.length });
 
+  let media: MediaManifest = { downloaded: 0, failed: 0, skipped: 0, errors: [] };
+  if (options.noMedia) {
+    reporter.update({ phase: "media", done: 0, total: 0, note: "disabled" });
+  } else {
+    media = await downloadMediaJobs({
+      fs,
+      archive,
+      reporter,
+      outputDir,
+      jobs: collectMediaJobs(fs, recordsPath, archive),
+    });
+  }
+
   const content = fs.readText(recordsPath) ?? "";
   const lineCount = splitLines(content).length;
   const sha256OfRecords = await sha256Hex(content);
@@ -123,6 +139,7 @@ export async function runDownload(input: RunInput, deps: RunDeps): Promise<Downl
     total: lineCount,
     archived: archivedCount,
     sha256OfRecords,
+    media,
   });
   fs.writeText(manifestPath, manifest);
   reporter.update({ phase: "manifest", done: 1, total: 1 });
@@ -136,12 +153,18 @@ export async function runDownload(input: RunInput, deps: RunDeps): Promise<Downl
     outputDir,
     recordsPath,
     manifestPath,
+    media,
   };
-  reporter.finish(`archived ${summary.written}, skipped ${summary.skipped}, output ${outputDir}`);
+  reporter.finish(`archived ${summary.written}, skipped ${summary.skipped}, media ${media.downloaded}/${media.failed}/${media.skipped}, output ${outputDir}`);
   return summary;
 }
 
 export function formatSummary(summary: DownloadSummary): string {
+  const { downloaded, failed, skipped, errors } = summary.media;
+  const failures = errors.length === 0
+    ? ""
+    : ` Failed media: ${errors.map((failure) => `${failure.id} (${failure.error})`).join("; ")}.`;
   return `Archived ${summary.written} conversation(s), skipped ${summary.skipped} already saved. `
-    + `Timeframe: ${summary.timeframe}. Output: ${summary.outputDir}`;
+    + `Media: ${downloaded} downloaded, ${failed} failed, ${skipped} skipped.${failures}`
+    + ` Timeframe: ${summary.timeframe}. Output: ${summary.outputDir}`;
 }

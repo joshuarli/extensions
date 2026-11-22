@@ -19,6 +19,7 @@ node chatgpt-archive-cli/src/cli.ts download [options]
 | `--time-field created\|updated` | Which chat timestamp the range compares (default `updated`). |
 | `--out DIR` | Downloads root (default `~/.local/share/chatgpt-archive/downloads`, or `CHATGPT_ARCHIVE_DOWNLOADS` / `XDG_DATA_HOME`). |
 | `--include-archived` | Include the Archived section alongside active chats. |
+| `--no-media` | Skip media downloads; only conversation JSON is archived. |
 | `--limit N` | Write at most *N* new records in this run, for timeboxed spikes. |
 | `--backend helium\|bctl` | `helium` (default) attaches to a local Helium instance; `bctl` uses a dedicated session. |
 | `--session NAME` | bctl session name (default `chatgpt-archive`, or `CHATGPT_ARCHIVE_SESSION`). |
@@ -56,8 +57,10 @@ optional.
 Each calendar day writes to `DIR/chatgpt-YYYY-MM-DD/`:
 
 - `records.jsonl` — one encoded `ArchivedRecord` per line, append-only.
+- `media/` — downloaded media files, one per referenced file id.
 - `manifest.json` — rewritten at the end of each run, covering every record
-  in that day's file, including `sha256OfRecords` of the records file.
+  in that day's file, including `sha256OfRecords` of the records file and a
+  `media` object with `downloaded`, `failed`, `skipped` and `errors`.
 
 On a rerun, the CLI decodes existing lines, skips ids already present, and
 appends only missing records. A `--limit` run can therefore be repeated to
@@ -68,18 +71,37 @@ only meaningful when `--include-archived` was passed.
 
 ### Media
 
-Only conversation JSON is archived. Images, files, attachments and other media
-referenced by conversations are **not** downloaded.
+By default the CLI also downloads media referenced by the archived records.
+It extracts `file-service://<id>` pointers (including object `asset_pointer`
+values) and `library_file_id` references from `message.metadata.content_references`,
+then requests `GET /backend-api/files/{id}/download` through the signed-in
+browser page. Bytes are written to `media/<sanitized-name>-<hash>.bin` through a
+`.part` file that is renamed into place only after a complete response. Existing
+complete files are skipped and never overwritten; a rerun therefore fills in
+only what is missing. Up to four downloads run at once, and the `media` phase
+plus the final summary report downloaded, failed and skipped counts.
+
+Downloads are **best-effort**: an individual failure never fails the archive.
+Failures are recorded in `manifest.json` as `{ "id": "…", "error": "…" }` and
+include library files that no longer resolve, expired or rotated download
+links, and non-2xx responses or JSON error bodies from the endpoint. The bytes
+are not interpreted, so a non-image response can still be stored as a `.bin`
+file if the endpoint returns it without an error status; a human should verify
+the files when a record had unusual attachments. Pass `--no-media` to skip the
+whole step. No cookies, access tokens or request headers are written to disk;
+filenames are derived from file ids and optional pointer file names only.
 
 ## Design
 
 - `src/args.ts` — `parseCliArgs`-based flags, validation and usage text.
 - `src/backend.ts` — `createBackendResolver` configured for this CLI.
 - `src/browser.ts` — CDP attach/page discovery and the `ChatgptTransport`
-  implementation backed by in-page `fetch`.
+  implementation backed by in-page `fetch`, including `getBytes` for media.
 - `src/download.ts` — selection, resume, append-only writes, progress phases
-  (`session`, `list active`, `list archived`, `records`, `manifest`) and the
-  final summary.
+  (`session`, `list active`, `list archived`, `records`, `media`, `manifest`)
+  and the final summary.
+- `src/media.ts` — media job collection from saved records, bounded-concurrency
+  downloads, atomic `.part` rename and failure collection.
 - `src/storage.ts` — small filesystem seam plus Web Crypto SHA-256.
 - `src/cli.ts` — entry point, interrupt handling and exit codes.
 
@@ -89,6 +111,8 @@ referenced by conversations are **not** downloaded.
 pnpm exec vitest run chatgpt-archive-cli --maxWorkers=1
 ```
 
-The tests cover flag parsing, resume with an in-memory filesystem, and
-timeframe/archived selection with a fake archive. They do not contact the
-network or launch a browser.
+The tests cover flag parsing, resume with an in-memory filesystem,
+timeframe/archived selection with a fake archive, and media extraction,
+skip-existing, atomic writes, failure reporting, concurrency and `--no-media`
+with fake transport and fake filesystem. They do not contact the network or
+launch a browser.
