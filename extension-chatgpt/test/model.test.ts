@@ -164,7 +164,7 @@ describe("jobs and commands", () => {
   it("maps every run status to exactly one set of controls", () => {
     const expected: Record<RunStatus, string> = {
       backup: "working", running: "working", waiting: "working", verifying: "working",
-      saving: "save-backup", paused: "paused", stopped: "finished", done: "finished",
+      saving: "save-backup", paused: "paused", stopped: "finished", attention: "finished", done: "finished",
     };
     for (const [status, controls] of Object.entries(expected)) {
       expect(runControls({ status } as Run), status).toBe(controls);

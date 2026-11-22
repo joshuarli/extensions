@@ -484,7 +484,7 @@ let toolbarKey = "";
 
 function renderToolbar(): void {
   const run = journal?.run ?? null;
-  const controls = runControls(run);
+  const controls = runner ? runControls(run) : "idle";
   const total = queueCount();
   ui.counts.textContent = `${total} queued · ${selected.size} selected`;
   ui.status.textContent = blocked || progress || statusText(run) || activity[0] || inventoryNote || (compatOk ? "Ready" : "");

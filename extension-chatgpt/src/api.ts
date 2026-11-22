@@ -1,4 +1,4 @@
-import { Schema } from "effect";
+import { Option, Schema } from "effect";
 import { TriageError } from "./errors.ts";
 import {
   checkList,
@@ -118,7 +118,7 @@ const AuthSessionSchema = Schema.Struct({
 const NotFoundSchema = Schema.Struct({ detail: Schema.Literal("conversation_not_found") });
 const AcknowledgementSchema = Schema.Struct({ success: Schema.Boolean });
 const decodeAuthSession = Schema.decodeUnknownSync(AuthSessionSchema);
-const decodeAcknowledgement = Schema.decodeUnknownSync(AcknowledgementSchema, { onExcessProperty: "error" });
+const decodeAcknowledgement = Schema.decodeUnknownOption(AcknowledgementSchema, { onExcessProperty: "error" });
 
 export interface ChatList {
   chats: Chat[];
@@ -292,15 +292,10 @@ export function createApiClient(deps: ApiDeps): ApiClient {
       throw new TriageError("http", `HTTP ${response.status}${detail}`);
     }
     if (mutation) {
-      let acknowledgement: Schema.Schema.Type<typeof AcknowledgementSchema>;
-      try {
-        if (contentType !== "application/json") {
-          throw new TriageError("compat", "Expected a JSON acknowledgement.");
-        }
-        acknowledgement = decodeAcknowledgement(data);
-      } catch {
-        throw new TriageError("transient", "ChatGPT returned an unfamiliar change acknowledgement.");
-      }
+      const acknowledgement = response.status === 200 && contentType === "application/json"
+        ? Option.getOrNull(decodeAcknowledgement(data))
+        : null;
+      if (!acknowledgement) throw new TriageError("transient", "ChatGPT returned an unfamiliar change acknowledgement.");
       if (!acknowledgement.success) throw new TriageError("http", "ChatGPT said the change didn't go through.");
     }
     state.calm += 1;

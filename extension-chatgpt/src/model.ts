@@ -76,7 +76,7 @@ export interface Job {
   markAt?: number;
 }
 
-export type ResultStatus = "pending" | "verified" | "unverified" | "held" | "failed" | "unconfirmed";
+export type ResultStatus = "pending" | "verified" | "unverified" | "held" | "failed" | "mismatch";
 
 export interface Result {
   id: string;
@@ -98,6 +98,7 @@ export type RunStatus =
   | "verifying"
   | "paused"
   | "stopped"
+  | "attention"
   | "done";
 
 export type RunPhase = "backup" | "save" | "write" | "verify";
@@ -114,6 +115,7 @@ export interface SavedBackup {
   file: string;
   sha256: string;
   ids: string[];
+  recordDigests?: Record<string, string>;
   verification: "file" | "confirmed";
   at: number;
 }
@@ -190,6 +192,7 @@ export function runControls(run: Run | null): RunControls {
     case "verifying": return "working";
     case "paused": return "paused";
     case "stopped":
+    case "attention":
     case "done": return "finished";
   }
 }
@@ -437,7 +440,12 @@ export function describeConversation(data: unknown): Coverage {
     const content = message["content"];
     const type = isRecord(content) ? content["content_type"] : null;
     const author = message["author"];
-    if (isRecord(author) && author["role"] === "tool") unrendered.add("tool output");
+    const role = isRecord(author) ? author["role"] : null;
+    if (role !== "user" && role !== "assistant" && role !== "system" && role !== "developer") {
+      unrendered.add("tool output or unknown author");
+    }
+    const recipient = message["recipient"];
+    if (typeof recipient === "string" && recipient !== "all") unrendered.add("tool call");
     if (type !== "text" && type !== "multimodal_text") {
       unrendered.add(typeof type === "string" && type ? type : "unknown content");
     } else if (!isRecord(content) || !Array.isArray(content["parts"])
@@ -594,15 +602,17 @@ export function isMutatingAction(action: Action): action is MutatingAction {
 function sortKeys(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(sortKeys);
   if (!isRecord(value)) return value;
-  const out: Record<string, unknown> = {};
-  for (const key of Object.keys(value).sort()) out[key] = sortKeys(value[key]);
-  return out;
+  return Object.fromEntries(Object.keys(value).sort().map((key) => [key, sortKeys(value[key])]));
 }
 
 export async function sha256Hex(data: string | ArrayBuffer): Promise<string> {
   const bytes = typeof data === "string" ? new TextEncoder().encode(data) : new Uint8Array(data);
   const digest = await crypto.subtle.digest("SHA-256", bytes);
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+export function backupRecordDigest(record: unknown): Promise<string> {
+  return sha256Hex(JSON.stringify(sortKeys(record)));
 }
 
 export interface BackupEntry {
@@ -617,6 +627,7 @@ export interface BuiltBackup {
   text: string;
   sha256: string;
   ids: string[];
+  recordDigests: Record<string, string>;
 }
 
 export const BACKUP_FORMAT = "chatgpt-organizer-backup";
@@ -654,7 +665,12 @@ export async function buildBackup(
     excludes: BACKUP_EXCLUDES,
     conversations,
   }, null, 2)}\n`;
-  return { text, sha256: await sha256Hex(text), ids: entries.map((entry) => entry.id) };
+  return {
+    text,
+    sha256: await sha256Hex(text),
+    ids: conversations.map((entry) => entry.id),
+    recordDigests: Object.fromEntries(conversations.map((entry) => [entry.id, entry.recordSha256])),
+  };
 }
 
 export interface PlanInput {

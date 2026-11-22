@@ -163,6 +163,8 @@ describe("PATCH acknowledgements", () => {
     ["malformed JSON", () => new Response("{", { headers: { "content-type": "application/json" } })],
     ["empty", () => new Response(null, { status: 204 })],
     ["empty object", () => jsonResponse(200, {})],
+    ["202 Accepted", () => jsonResponse(202, { success: true })],
+    ["206 Partial Content", () => jsonResponse(206, { success: true })],
     ["redirect", () => new Response(null, { status: 307, headers: { location: "/login" } })],
     ["followed redirect", () => Object.defineProperty(jsonResponse(200, { success: true }), "redirected", { value: true })],
   ] as const)("treats %s as an uncertain outcome and blocks redirect following", async (_label, response) => {
@@ -175,4 +177,30 @@ describe("PATCH acknowledgements", () => {
     expect(failure.kind).toBe("transient");
     expect(redirect).toBe("error");
   });
+});
+
+it("checks authorization again before a PATCH retry after 401", async () => {
+  let sent = 0;
+  let checks = 0;
+  const { client } = harness(async () => {
+    sent += 1;
+    return jsonResponse(401, { detail: "Expired" });
+  });
+  const failure = await expectFailure(client.change({
+    accountId: "u1",
+    authorize() {
+      checks += 1;
+      if (checks === 2) throw new TriageError("auth", "Lease closed");
+      return { action: "archive", id: "c1" };
+    },
+  }));
+  expect(failure.message).toBe("Lease closed");
+  expect(sent).toBe(1);
+});
+
+it("distinguishes a missing conversation from an unfamiliar 404 response", async () => {
+  const missing = harness(async () => jsonResponse(404, { detail: "conversation_not_found" }));
+  const unrelated = harness(async () => new Response("<h1>Not found</h1>", { status: 404 }));
+  expect((await expectFailure(missing.client.probe("u1", "c1"))).kind).toBe("notfound");
+  expect((await expectFailure(unrelated.client.probe("u1", "c1"))).kind).toBe("transient");
 });

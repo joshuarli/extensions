@@ -45,7 +45,7 @@ const ResultSchema = Schema.Struct({
   newTitle: NullableString,
   project: Schema.String,
   projectName: Schema.String,
-  status: Schema.Literals(["done", "pending", "verified", "unverified", "held", "failed", "unconfirmed"]),
+  status: Schema.Literals(["done", "unconfirmed", "pending", "verified", "unverified", "held", "failed", "mismatch"]),
   note: Schema.String,
   at: Schema.Number,
 });
@@ -58,6 +58,7 @@ const BackupStateSchema = Schema.Struct({
       file: Schema.String,
       sha256: Schema.String,
       ids: Schema.Array(Schema.String),
+      recordDigests: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
       verification: Schema.Literals(["file", "confirmed"]),
       at: Schema.Number,
     }),
@@ -68,7 +69,7 @@ const BackupStateSchema = Schema.Struct({
 const RunSchema = Schema.Struct({
   id: Schema.String,
   accountId: Schema.String,
-  status: Schema.Literals(["backup", "saving", "running", "waiting", "verifying", "paused", "stopped", "done"]),
+  status: Schema.Literals(["backup", "saving", "running", "waiting", "verifying", "paused", "stopped", "attention", "done"]),
   phase: Schema.Literals(["backup", "save", "write", "verify"]),
   jobs: Schema.Array(JobSchema),
   i: Schema.Number,
@@ -113,9 +114,8 @@ export function decodeJournal(value: unknown, accountId: string): Journal {
     throw new TriageError("compat", "The saved run belongs to a different account, so changes are switched off.");
   }
   const run = decoded.run;
-  const legacy = run?.jobs.some((job) => job.markAt === undefined);
   const results = run?.results.map((result): Result => {
-    if (result.status === "done" || (legacy && result.status === "unconfirmed")) {
+    if (result.status === "done" || result.status === "unconfirmed") {
       return { ...result, status: "unverified" as const, note: "This result was recorded before verification outcomes were tracked." };
     }
     return { ...result, status: result.status };

@@ -1,11 +1,13 @@
 import { failureOf, mayHaveApplied, TriageError } from "./errors.ts";
 import {
   applyToInventory,
+  backupRecordDigest,
   buildBackup,
   clamp,
   describeConversation,
   isIncomplete,
   isRunActive,
+  runControls,
   jobOf,
   satisfies,
   type BackupEntry,
@@ -125,7 +127,7 @@ export class QueueRunner {
       await this.deps.persist();
       return true;
     } catch (error) {
-      if (run && this.run === run && (isRunActive(run) || run.status === "done")) {
+      if (run && this.run === run && run.status !== "stopped") {
         run.status = "paused";
         run.note = `Couldn't save progress, so nothing more will be sent. ${failureOf(error).message}`;
         run.nextAt = 0;
@@ -206,7 +208,7 @@ export class QueueRunner {
 
   async stop(): Promise<void> {
     const run = this.run;
-    if (!run || run.status === "done" || run.status === "stopped") return;
+    if (!run || runControls(run) === "finished") return;
     this.resumeAfter = false;
     run.status = "stopped";
     run.note = run.inflight ? "Stopped while a change was in flight; check that chat in ChatGPT." : "";
@@ -242,6 +244,7 @@ export class QueueRunner {
       file: proof.file,
       sha256: proof.sha256,
       ids: [...pending.ids],
+      recordDigests: { ...pending.recordDigests },
       verification: proof.verification,
       at: this.deps.now(),
     };
@@ -372,12 +375,13 @@ export class QueueRunner {
       if (!live()) return;
       this.changed();
       if (!(await this.verify(run, live)) || !live()) return;
-      run.status = "done";
-      run.note = "";
+      const mismatch = run.results.some((result) => result.status === "mismatch");
+      run.status = mismatch ? "attention" : "done";
+      run.note = mismatch ? "ChatGPT did not show every requested change. Review any remaining marks before trying again." : "";
       run.finishedAt = this.deps.now();
       const verified = run.results.filter((result) => result.status === "verified").length;
       const attention = run.results.length - verified;
-      if (await this.save() && run.status === "done") {
+      if (await this.save()) {
         this.note(`Finished. ${plural(verified, "change")} verified${attention ? `, ${attention} need attention` : ""}.`);
       }
     } catch (error) {
@@ -433,6 +437,31 @@ export class QueueRunner {
       if (!live()) return false;
       set("running");
       run.nextAt = 0;
+      if (job.action === "delete" && run.backup.required) {
+        let held: string | null;
+        try {
+          held = await this.checkSavedRecord(run, job);
+        } catch (error) {
+          if (!live()) return false;
+          const failure = failureOf(error);
+          if (failure.kind === "ratelimit" || failure.kind === "cooldown") {
+            this.deps.journal.cooldownUntil = Math.max(this.deps.journal.cooldownUntil, failure.until);
+            if (!(await this.save())) return false;
+            continue;
+          }
+          if (failure.kind === "auth") throw failure;
+          held = `Couldn't recheck the saved backup against ChatGPT. ${failure.message}`;
+        }
+        if (!live()) return false;
+        if (held) {
+          this.record(run, job, "held", held);
+          run.i += 1;
+          if (!(await this.save())) return false;
+          this.changed();
+          continue;
+        }
+        if (this.withdrawn(job)) continue;
+      }
       run.inflight = { id: job.id, sentAt: this.deps.now(), outcome: "sent" };
       if (!(await this.save())) {
         run.inflight = null;
@@ -529,6 +558,15 @@ export class QueueRunner {
       && (job.action !== "move" || mark.project === job.project);
   }
 
+  private async checkSavedRecord(run: Run, job: Job): Promise<string | null> {
+    const expected = run.backup.saved?.recordDigests?.[job.id];
+    if (!expected) return "Review this chat again to save a backup with a verified record digest.";
+    const current = await this.deps.transport.fetchRecord(job.id);
+    return await backupRecordDigest(current) === expected
+      ? null
+      : "The chat changed since its backup was collected. Review it again and save a new backup before deleting.";
+  }
+
   private async collectBackup(
     run: Run,
     signal: AbortSignal,
@@ -618,6 +656,7 @@ export class QueueRunner {
       return false;
     }
     const jobs = new Map(run.jobs.map((job) => [job.id, job]));
+    const confirmed: Job[] = [];
     for (const result of pending) {
       if (!live()) return false;
       const job = jobs.get(result.id) ?? jobOf(result);
@@ -625,22 +664,21 @@ export class QueueRunner {
       if (!live()) return false;
       if (settled === "applied") {
         result.status = "verified";
+        confirmed.push(job);
         if (this.matchesMark(job)) delete this.deps.journal.marks[job.id];
       } else if (settled === "unknown") {
         result.status = "unverified";
         result.note = "ChatGPT could not confirm the result.";
       } else {
-        result.status = "unconfirmed";
+        result.status = "mismatch";
         result.note = settled === "gone" ? "ChatGPT could no longer find this chat." : "ChatGPT did not show the requested change.";
       }
     }
     const listed = new Set(fresh.map((chat) => chat.id));
-    const tracked = new Set(run.results.filter((result) => result.status !== "held" && result.status !== "failed").map((result) => result.id));
+    const tracked = new Set(pending.map((result) => result.id));
     const keep = this.deps.chats.filter((chat) => !listed.has(chat.id) && (!complete || chat.archived || tracked.has(chat.id)));
     const merged = [...fresh, ...keep];
-    for (const result of run.results) {
-      if (result.status === "verified") applyToInventory(merged, jobOf(result), this.deps.now());
-    }
+    for (const job of confirmed) applyToInventory(merged, job, this.deps.now());
     this.deps.chats.splice(0, this.deps.chats.length, ...merged);
     if (run.results.some(needsVerification)) {
       await this.pause("Some changes remain unverified. Retry verification to check them again.");

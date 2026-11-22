@@ -577,7 +577,8 @@ describe("verification", () => {
     });
     await env.start(false);
     await env.runner.waitUntilIdle();
-    expect(env.journal.run?.results[0]?.status).toBe("unconfirmed");
+    expect(env.journal.run?.results[0]?.status).toBe("mismatch");
+    expect(env.journal.run?.status).toBe("attention");
     expect(env.journal.marks["a"]?.action).toBe("archive");
   });
 
@@ -593,7 +594,7 @@ describe("verification", () => {
     });
     await env.start(false);
     await env.runner.waitUntilIdle();
-    expect(env.journal.run?.results.map((result) => result.status)).toEqual(["unconfirmed", "unconfirmed"]);
+    expect(env.journal.run?.results.map((result) => result.status)).toEqual(["mismatch", "mismatch"]);
   });
 
   it("probes every change when ChatGPT's list is incomplete, rather than trusting absence", async () => {
@@ -615,7 +616,7 @@ describe("verification", () => {
     await env.start(false);
     await env.runner.waitUntilIdle();
     expect(probed).toContain("a");
-    expect(env.journal.run?.results[0]?.status).toBe("unconfirmed");
+    expect(env.journal.run?.results[0]?.status).toBe("mismatch");
     expect(env.chats.map((chat) => chat.id).sort()).toEqual(["a", "b"]);
   });
 
@@ -767,6 +768,7 @@ describe("final qualification", () => {
     ["video", { author: { role: "user" }, content: { content_type: "video", asset_pointer: "file-service://video" } }],
     ["generated media", { author: { role: "assistant" }, content: { content_type: "multimodal_text", parts: [{ content_type: "generated_media", text: "caption", asset_pointer: "file-service://media" }] } }],
     ["tool output", { author: { role: "tool" }, content: { content_type: "text", parts: ["Result"], output_file: "file-service://output" } }],
+    ["unknown tool speaker", { author: { role: "python" }, content: { content_type: "text", parts: ["Result"] } }],
     ["unknown content", { author: { role: "assistant" }, content: { content_type: "future_content", payload: { asset: "file-service://future" } } }],
   ] as const)("holds %s in ordinary backup mode while allowing a text-only delete", async (_label, message) => {
     const env = makeEnv({
@@ -780,4 +782,92 @@ describe("final qualification", () => {
     expect(env.journal.run?.backup.saved?.ids).toEqual(["b"]);
     expect(env.journal.run?.results[0]?.status).toBe("held");
   });
+});
+
+it("preserves a later server edit when retrying verification of a different chat", async () => {
+  let probeB = false;
+  const env = makeEnv({
+    chats: [makeChat("a"), makeChat("b")],
+    marks: { a: mark("rename", "Chat a"), b: mark("archive", "Chat b") },
+    probe: (id, server) => {
+      if (id === "b" && !probeB) throw new TriageError("offline", "Detail unavailable");
+      const chat = server.get(id);
+      if (!chat) throw new Error("Missing test conversation");
+      return chat;
+    },
+  });
+  await env.start(false);
+  await env.runner.waitUntilIdle();
+  expect(env.journal.run?.status).toBe("paused");
+  const a = env.server.get("a");
+  if (!a) throw new Error("Missing test conversation");
+  a.title = "Edited in ChatGPT";
+  probeB = true;
+  await env.runner.resume();
+  await env.runner.waitUntilIdle();
+  expect(env.writes).toEqual(["rename:a", "archive:b"]);
+  expect(env.chats.find((chat) => chat.id === "a")?.title).toBe("Edited in ChatGPT");
+});
+
+it("holds a delete when the record has changed since its backup was saved", async () => {
+  let changed = false;
+  const env = makeEnv({
+    chats: [makeChat("a")],
+    marks: { a: mark("delete", "Chat a") },
+    fetchRecord: (id) => changed ? record(id, {
+      mapping: { m1: { message: { author: { role: "user" }, content: { content_type: "video" } } } },
+    }) : record(id),
+    persist: (call) => {
+      if (call === 3) {
+        changed = true;
+        void env.runner.pause("Pause after saving the backup.");
+      }
+    },
+  });
+  await env.start(true);
+  await saveBackupWhenAsked(env);
+  expect(env.journal.run?.status).toBe("paused");
+  await env.runner.resume();
+  await env.runner.waitUntilIdle();
+  expect(env.writes).toEqual([]);
+  expect(env.journal.run?.results[0]).toMatchObject({ status: "held", note: expect.stringContaining("changed since") });
+});
+
+it("requires a fresh review for unsent jobs from a saved run without mark timestamps", async () => {
+  const chat = makeChat("a");
+  const first = makeEnv({
+    chats: [chat],
+    marks: { a: mark("archive", "Chat a") },
+    persist: (call) => { if (call === 1) void first.runner.pause("Paused in an older build."); },
+  });
+  await first.start(false);
+  await first.runner.waitUntilIdle();
+  const legacy = structuredClone(first.journal);
+  const job = legacy.run?.jobs[0];
+  if (!job) throw new Error("Missing test job");
+  delete job.markAt;
+  const reopened = makeEnv({ chats: [chat], marks: {}, journal: decodeJournal(legacy, "u1") });
+  await reopened.runner.resume();
+  await reopened.runner.waitUntilIdle();
+  expect(reopened.writes).toEqual([]);
+  expect(reopened.journal.run?.results[0]?.status).toBe("held");
+  expect(reopened.journal.marks["a"]?.action).toBe("archive");
+});
+
+it("reopens a legacy completed run with unverified evidence for a read-only recheck", async () => {
+  const chat = makeChat("a");
+  const first = makeEnv({ chats: [chat], marks: { a: mark("archive", "Chat a") } });
+  await first.start(false);
+  await first.runner.waitUntilIdle();
+  const run = first.journal.run;
+  const result = run?.results[0];
+  if (!run || !result) throw new Error("Missing test result");
+  const legacy = { ...first.journal, run: { ...run, results: [{ ...result, status: "done" }] } };
+  const decoded = decodeJournal(legacy, "u1");
+  expect(decoded.run).toMatchObject({ status: "paused", phase: "verify", results: [{ status: "unverified" }] });
+  const reopened = makeEnv({ chats: [chat], marks: {}, journal: decoded, server: first.server });
+  await reopened.runner.resume();
+  await reopened.runner.waitUntilIdle();
+  expect(reopened.writes).toEqual([]);
+  expect(reopened.journal.run).toMatchObject({ status: "done", results: [{ status: "verified" }] });
 });
