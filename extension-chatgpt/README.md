@@ -12,27 +12,28 @@ This is not a separately installable extension. It is composed into `extension-s
 1. Run `pnpm run build` (development) or `pnpm run dist` (production).
 2. Open `chrome://extensions`, enable Developer mode, and choose **Load unpacked**.
 3. Select `build/extension-suite` or `dist/extension-suite`.
-4. Sign in at [chatgpt.com](https://chatgpt.com). Open the toolbar popup and choose **Open organizer** under **ChatGPT Organizer**.
+4. Sign in at [chatgpt.com](https://chatgpt.com) once. Open the toolbar popup and choose **Open organizer** under **ChatGPT Organizer**. No ChatGPT tab needs to stay open.
 
 ## Architecture
 
 ```
 dashboard.html/.ts/.css  full-page review UI (filters, multi-select, preview, queue)
-        ↕ chrome.tabs.sendMessage, Schema-validated messages
-content.ts               isolated content script on chatgpt.com; ephemeral token only
-        ↕ same-origin fetch
+        ↕ chrome.runtime.sendMessage / runtime.connect, Schema-validated messages
+suite service worker     background-api.ts + operator.ts + api.ts; token kept in memory
+        ↕ authenticated fetch (bearer token, cookies only for the session)
 ChatGPT web backend      undocumented, untrusted, subject to change
 
 background.ts            opens the dashboard from the suite popup; no global listeners
-manifest.fragment.ts     contributes the content script, host access and storage permission
+manifest.fragment.ts     contributes host access and storage permission
 ```
 
 - `api.ts` — paced, typed client. Handles `429` with `Retry-After` and a cooldown ladder, refreshes the token once on `401`/`403`, and refuses unfamiliar list rows and conversation records. It keeps the bearer token to itself.
-- `operator.ts` — the content script's request handler. Each run is armed with an exact command per chat (`delete`, `archive`, `unarchive`, `rename` to a title, `move` to a project) for one account, and only while the dashboard holds that run's lease port. A `change` identifies the chat, run, account and lease. The content script builds the PATCH body from the armed command.
+- `operator.ts` — the service worker's request handler. Each run is armed with an exact command per chat (`delete`, `archive`, `unarchive`, `rename` to a title, `move` to a project) for one account, and only while the dashboard holds that run's lease port. A `change` identifies the chat, run, account and lease. The worker builds the PATCH body from the armed command.
 - `safety.ts` — the guard behind `operator.ts`. It starts disarmed, refuses a second run while one is armed, and caps attempts per chat.
 - `queue.ts` — resumable state machine. The queue saves the intent before sending each write and checks uncertain responses with ChatGPT before retrying. Deletes wait for a saved backup, chats that couldn't be backed up are held, and the end of a run re-checks every acknowledged change. If it cannot confirm the results, use **Retry verification** to check them again without sending another change.
 - `storage.ts` — Schema-validated, per-account journal with serialized writes. A journal it can't read switches changes off instead of being replaced.
 - `messages.ts` — Schema-validated message and wire contracts.
+- `list-cache.ts` — account-scoped, versioned snapshot of the chat list painted on reopen while a fresh list streams in.
 
 Only one dashboard runs at a time: each holds a Web Lock, and a second tab waits for the first to close.
 
@@ -59,7 +60,7 @@ This feature's manifest fragment adds only `storage` and `https://chatgpt.com/*`
 ## Tests
 
 - `pnpm exec vitest run extension-chatgpt/test --maxWorkers=1` covers the API client, the content-script boundary and guard, the queue (including a restart from every durable state of a run), storage, message contracts and model helpers.
-- `pnpm run build && pnpm run test:browser:chatgpt` installs the built suite in Chromium and drives its organizer dashboard against a routed fake `chatgpt.com`. It covers backup-gated deletion, cancelled and reloaded backups, lost responses and rate limits, a ChatGPT tab reload mid-run, two dashboards, focus and selection behavior, plan import, and a 3,200-chat account. CI runs it.
+- `pnpm run build && pnpm run test:browser:chatgpt` installs the built suite in Chromium and drives its organizer dashboard against a routed fake `chatgpt.com`. It covers backup-gated deletion, cancelled and reloaded backups, lost responses and rate limits, a lost background connection mid-run, two dashboards, focus and selection behavior, plan import, and a 3,200-chat account. CI runs it.
 
 [QUALIFICATION.md](QUALIFICATION.md) lists the safety invariants, fixed defects and their tests, remaining limits, and release blockers.
 

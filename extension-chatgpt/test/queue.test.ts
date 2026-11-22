@@ -344,7 +344,7 @@ describe("durable writes", () => {
     const env = makeEnv({
       chats: [makeChat("a")],
       marks: { a: mark("delete", "Chat a") },
-      afterApply: () => { throw new TriageError("offline", "The ChatGPT tab did not answer."); },
+      afterApply: () => { throw new TriageError("offline", "The background service did not answer."); },
       probe: (id, server) => {
         if (!probeWorks) throw new TriageError("transient", "Network error.");
         const chat = server.get(id);
@@ -509,7 +509,7 @@ describe("pause and stop", () => {
     const env = makeEnv({
       chats: [makeChat("a")],
       marks: { a: mark("delete", "Chat a") },
-      afterApply: () => { throw new TriageError("offline", "The ChatGPT tab did not answer."); },
+      afterApply: () => { throw new TriageError("offline", "The background service did not answer."); },
       probe: () => { throw new TriageError("transient", "Network error."); },
     });
     await env.start(false);

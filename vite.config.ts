@@ -87,9 +87,6 @@ export const suiteBundles: SuiteBundle[] = [
     { source: "inject/capture.ts", output: "capture" },
     { source: "inject/loader.ts", output: "loader" },
   ]),
-  ...injectedBundles("extension-chatgpt", [
-    { source: "content.ts", output: "content" },
-  ]),
 ];
 
 export { repositoryRoot, suiteOutputDirectory, suiteSourceDirectory };

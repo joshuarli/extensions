@@ -112,7 +112,6 @@ let streamRequestId: string | null = null;
 let cachedSnapshot: CachedList | null = null;
 let syncing = false;
 let projects: Project[] = [];
-let tabId: number | null = null;
 let scope: "active" | "archived" = "active";
 let filter: "all" | "unorganized" | "projects" | "marked" = "all";
 let projectFilter: string | null = null;
@@ -259,23 +258,10 @@ function toast(message: string): void {
   invalidate("toolbar", "footer");
 }
 
-// ---------- transport to the content script ----------
+// ---------- transport to the suite service worker ----------
 
 function nextRequestId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-}
-
-async function ensureTab(): Promise<number> {
-  if (tabId != null) {
-    const existing = await chrome.tabs.get(tabId).catch(() => null);
-    if (existing) return tabId;
-    tabId = null;
-  }
-  const tabs = await chrome.tabs.query({ url: "https://chatgpt.com/*" });
-  const id = tabs[0]?.id;
-  if (id == null) throw new TriageError("offline", "Open chatgpt.com in a tab, sign in, then reload this dashboard.");
-  tabId = id;
-  return id;
 }
 
 type RequestBody = ApiRequest extends infer R ? R extends ApiRequest ? Omit<R, "kind" | "requestId"> : never : never;
@@ -290,21 +276,20 @@ function signedIn(): string {
 }
 
 async function send(body: RequestBody, requestId: string = nextRequestId()): Promise<unknown> {
-  const id = await ensureTab();
   const request = { kind: "chatgpt/api", requestId, ...body } as ApiRequest;
   return new Promise<unknown>((resolve, reject) => {
     const timer = request.op === "list"
       ? null
-      : setTimeout(() => reject(new TriageError("offline", "The ChatGPT tab stopped answering.")), SINGLE_REQUEST_TIMEOUT_MS);
-    chrome.tabs.sendMessage(id, request, (response: unknown) => {
+      : setTimeout(() => reject(new TriageError("offline", "The background service stopped answering.")), SINGLE_REQUEST_TIMEOUT_MS);
+    chrome.runtime.sendMessage(request, (response: unknown) => {
       if (timer) clearTimeout(timer);
       if (chrome.runtime.lastError) {
-        reject(new TriageError("offline", chrome.runtime.lastError.message ?? "The ChatGPT tab did not answer."));
+        reject(new TriageError("offline", chrome.runtime.lastError.message ?? "The background service did not answer."));
         return;
       }
       const decoded = decodeApiResponse(response);
       if (!decoded) {
-        reject(new TriageError("offline", "The ChatGPT tab returned an unexpected response."));
+        reject(new TriageError("offline", "The background service returned an unexpected response."));
         return;
       }
       if (decoded.ok) {
@@ -386,15 +371,14 @@ function closeLease(): void {
 async function openLease(runId: string): Promise<void> {
   if (lease?.runId === runId) return;
   closeLease();
-  const id = await ensureTab();
   const leaseId = crypto.randomUUID();
-  const port = chrome.tabs.connect(id, { name: `${LEASE_PORT_PREFIX}${runId}:${leaseId}` });
+  const port = chrome.runtime.connect({ name: `${LEASE_PORT_PREFIX}${runId}:${leaseId}` });
   await new Promise<void>((resolve, reject) => {
     const fail = (error: TriageError): void => {
       port.disconnect();
       reject(error);
     };
-    const timer = setTimeout(() => fail(new TriageError("offline", "The ChatGPT tab didn't answer.")), 5000);
+    const timer = setTimeout(() => fail(new TriageError("offline", "The background service didn't answer.")), 5000);
     port.onMessage.addListener(function ready() {
       clearTimeout(timer);
       port.onMessage.removeListener(ready);
@@ -402,14 +386,14 @@ async function openLease(runId: string): Promise<void> {
     });
     port.onDisconnect.addListener(() => {
       clearTimeout(timer);
-      fail(new TriageError("offline", "The ChatGPT tab closed the connection. Reload it, then try again."));
+      fail(new TriageError("offline", "The background service closed the connection. Try again."));
     });
   });
   lease = { runId, id: leaseId, port };
   port.onDisconnect.addListener(() => {
     if (lease?.port !== port) return;
     lease = null;
-    if (runner?.isActive()) void runner.pause("The ChatGPT tab closed or reloaded, so changes were switched off. Resume to re-check and continue.");
+    if (runner?.isActive()) void runner.pause("The background connection closed, so changes were switched off. Resume to re-check and continue.");
   });
 }
 
