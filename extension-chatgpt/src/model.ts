@@ -1,3 +1,4 @@
+import { canonicalizeJson, sha256CanonicalJson } from "../../chatgpt-archive-core/src/hash.ts";
 import { TriageError } from "./errors.ts";
 
 export type Action = "delete" | "archive" | "unarchive" | "rename" | "move" | "protect";
@@ -613,12 +614,6 @@ export function isMutatingAction(action: Action): action is MutatingAction {
   return action !== "protect";
 }
 
-function sortKeys(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(sortKeys);
-  if (!isRecord(value)) return value;
-  return Object.fromEntries(Object.keys(value).sort().map((key) => [key, sortKeys(value[key])]));
-}
-
 export async function sha256Hex(data: string | ArrayBuffer): Promise<string> {
   const bytes = typeof data === "string" ? new TextEncoder().encode(data) : new Uint8Array(data);
   const digest = await crypto.subtle.digest("SHA-256", bytes);
@@ -626,7 +621,7 @@ export async function sha256Hex(data: string | ArrayBuffer): Promise<string> {
 }
 
 export function backupRecordDigest(record: unknown): Promise<string> {
-  return sha256Hex(JSON.stringify(sortKeys(record)));
+  return sha256CanonicalJson(record);
 }
 
 export interface BackupEntry {
@@ -657,13 +652,13 @@ export async function buildBackup(
 ): Promise<BuiltBackup> {
   const conversations = [];
   for (const entry of entries) {
-    const record = sortKeys(entry.record);
+    const record = canonicalizeJson(entry.record);
     conversations.push({
       id: entry.id,
       title: entry.title,
       createdAt: entry.createdMs ? new Date(entry.createdMs).toISOString() : null,
       url: `https://chatgpt.com/c/${entry.id}`,
-      recordSha256: await sha256Hex(JSON.stringify(record)),
+      recordSha256: await sha256CanonicalJson(entry.record),
       coverage: entry.coverage,
       transcript: parseConversation(entry.record).messages.map((message) => ({ role: message.role, text: message.text })),
       record,
