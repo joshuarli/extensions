@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { planBackend } from "../src/backend.ts";
+import { HELIUM_BACKEND, planBackend, resolveBackend } from "../src/backend.ts";
+import { parseArgs } from "../src/args.ts";
 
 const cleanEnv = { PATH: "/usr/bin" } as NodeJS.ProcessEnv;
 
@@ -36,5 +37,21 @@ describe("planBackend", () => {
 
   it("rejects an unknown backend with a clear error", () => {
     expect(() => planBackend({ backend: "smolvm" }, cleanEnv)).toThrow('Unknown backend "smolvm"');
+  });
+});
+
+describe("resolveBackend", () => {
+  it("attaches to Helium on 127.0.0.1:9222 by default", () => {
+    expect(resolveBackend({}, cleanEnv)).toEqual({ backend: HELIUM_BACKEND, cdpUrl: "http://127.0.0.1:9222" });
+  });
+
+  it("overrides the default endpoint with --cdp-url", () => {
+    const command = parseArgs(["download", "self", "--cdp-url", "http://127.0.0.1:9333"]);
+    expect(command.kind).toBe("download");
+    if (command.kind !== "download") return;
+    expect(resolveBackend({ cdpUrl: command.args.options.cdpUrl }, cleanEnv)).toEqual({
+      backend: HELIUM_BACKEND,
+      cdpUrl: "http://127.0.0.1:9333",
+    });
   });
 });

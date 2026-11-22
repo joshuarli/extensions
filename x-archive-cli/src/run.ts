@@ -36,6 +36,7 @@ import { downloadPostsMedia, filterCompletedMedia } from "./media.ts";
 import { writeJsonFile } from "./state.ts";
 import { syncContextThreads } from "./context.ts";
 import { seedFromHelium } from "./seed.ts";
+import { createProgressReporter, type ProgressReporter } from "../../lib/progress.ts";
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const RENDER_TOOL = join(REPO_ROOT, "extension-x-bookmarks", "tools", "render_archive.py");
@@ -65,21 +66,28 @@ export interface RunSummary {
 
 class StatusLog {
   private readonly entries: Array<{ text: string; at: string }> = [];
+  readonly progress: ProgressReporter;
+  constructor(progress: ProgressReporter) {
+    this.progress = progress;
+  }
   add(text: string): void {
-    process.stderr.write(text + "\n");
     this.entries.push({ text, at: new Date().toISOString() });
     if (this.entries.length > 40) this.entries.shift();
+  }
+  say(phase: string, text: string): void {
+    this.add(text);
+    this.progress.update({ phase, done: 0, total: null, note: text });
   }
   list(): Array<{ text: string; at: string }> {
     return [...this.entries];
   }
 }
 
-function progressLogger(label: string): ({ posts, pages }: { posts: number; pages: number }) => void {
+function progressLogger(progress: ProgressReporter, label: string): ({ posts, pages }: { posts: number; pages: number }) => void {
   let last = 0;
   return ({ posts, pages }) => {
-    if (posts >= last + 500 || posts < last) {
-      process.stderr.write("  " + label + ": " + posts + " posts, " + pages + " pages\n");
+    if (last === 0 || posts >= last + 500 || posts < last) {
+      progress.update({ phase: label, done: posts, total: null, note: pages + " pages" });
       last = posts;
     }
   };
@@ -99,7 +107,7 @@ async function resolveTargetUserId(
   }
   const authorization = credentials.authorization;
   if (!authorization) throw new Error("Captured credentials carry no authorization header. Open x.com in Helium once with the extension loaded.");
-  status.add("Resolving @" + screenName + " to an X user id…");
+  status.say("session", "Resolving @" + screenName + " to an X user id…");
   void queryId;
   const body = await Effect.runPromise(
     graphqlRequest(session.userId, credentials, "UserByScreenName", { screen_name: screenName }, AbortSignal.timeout(30_000), async () => cookieSession(session)),
@@ -152,13 +160,14 @@ async function finishExport(input: FinishExportInput): Promise<RunSummary> {
   const jobsAll = collectMediaJobs(posts);
   const missingFromArchive = jobsAll.missing + mediaFailedInArchive;
   const jobs = filterCompletedMedia(jobsAll.jobs, outDir);
-  status.add("Media: " + jobsAll.jobs.length + " items (" + missingFromArchive + " missing or unavailable); fetching " + jobs.length + ".");
+  status.say("media", "Media: " + jobsAll.jobs.length + " items (" + missingFromArchive + " missing or unavailable); fetching " + jobs.length + ".");
   const media = await downloadPostsMedia(jobs, {
     session,
     folder: outDir,
     onProgress: ({ downloaded, failed, total }) => {
-      if (downloaded % 25 === 0 || downloaded + failed === total) {
-        process.stderr.write("  media: " + (downloaded + failed) + "/" + total + " (" + downloaded + " done)\n");
+      const done = downloaded + failed;
+      if (done % 25 === 0 || done === total) {
+        status.progress.update({ phase: "media", done, total, note: downloaded + " downloaded" + (failed ? " · " + failed + " failed" : "") });
       }
     },
   });
@@ -186,8 +195,13 @@ async function finishExport(input: FinishExportInput): Promise<RunSummary> {
   writeJsonFile(join(outDir, "debug.json"), report, 0o644);
   let archiveHtml: string | null = null;
   if (options.render) {
-    if (await renderArchive(outDir)) archiveHtml = join(outDir, "archive.html");
-    else status.add("Rendering failed; the JSON archive is still complete.");
+    status.say("rendering", "Rendering archive.html…");
+    if (await renderArchive(outDir)) {
+      archiveHtml = join(outDir, "archive.html");
+      status.say("rendering", "Rendered archive.html.");
+    } else {
+      status.add("Rendering failed; the JSON archive is still complete.");
+    }
   }
   return {
     folder,
@@ -206,14 +220,14 @@ async function downloadBookmarks(session: XSession, credentials: Credentials, op
   const store = new FsBookmarksStore(session.userId);
   const deps = buildDeps(session, credentials);
   if (options.action !== "export") {
-    status.add("Scanning bookmarks (existing saved posts are retained)…");
+    status.say("collecting", "Scanning bookmarks (existing saved posts are retained)…");
     await collect({
       userId: session.userId,
       store,
       deps,
       signal: AbortSignal.timeout(SAFETY_TIMEOUT_MS),
       report: (text) => status.add(text),
-      onProgress: progressLogger("bookmarks"),
+      onProgress: progressLogger(status.progress, "bookmarks"),
     });
     if (options.action === "collect") {
       const state = await store.loadState();
@@ -227,6 +241,7 @@ async function downloadBookmarks(session: XSession, credentials: Credentials, op
   if (options.action === "export" && raw.length === 0) {
     throw new Error("The local bookmarks archive is empty. Run `x download self` without --export-only.");
   }
+  status.say("export", "Assembling bookmarks.json…");
   const archive = assembleBookmarkArchive(raw, await store.allFolders(), state, session.userId);
   const folder = bookmarksFolderName();
   const outDir = join(options.outRoot, folder);
@@ -250,14 +265,14 @@ async function downloadLikes(session: XSession, credentials: Credentials, option
   const store = new FsLikesStore(session.userId);
   const deps = buildDeps(session, credentials);
   if (options.action !== "export") {
-    status.add("Scanning likes (existing saved posts are retained)…");
+    status.say("collecting", "Scanning likes (existing saved posts are retained)…");
     await collectLikes({
       userId: session.userId,
       store,
       deps,
       signal: AbortSignal.timeout(SAFETY_TIMEOUT_MS),
       report: (text) => status.add(text),
-      onProgress: progressLogger("likes"),
+      onProgress: progressLogger(status.progress, "likes"),
     });
     if (options.action === "collect") {
       const state = await store.loadState();
@@ -271,6 +286,7 @@ async function downloadLikes(session: XSession, credentials: Credentials, option
   if (options.action === "export" && raw.length === 0) {
     throw new Error("The local likes archive is empty. Run `x download self` without --export-only.");
   }
+  status.say("export", "Assembling likes.json…");
   const archive = assembleLikesArchive(raw, state, session.userId);
   const folder = likesFolderName();
   const outDir = join(options.outRoot, folder);
@@ -294,40 +310,43 @@ export async function downloadProfile(handle: string, options: RunOptions): Prom
   if (!screenName) {
     throw new Error("Could not read a profile handle from \"" + handle + "\". Pass @handle, a bare handle, or an x.com profile URL.");
   }
+  const progress = createProgressReporter();
+  const status = new StatusLog(progress);
+  status.say("session", "Connecting to " + options.cdpUrl + "…");
   const session = await readBrowserSession(options.cdpUrl, options.backend);
+  status.say("session", "Reading captured X credentials…");
   const credentials = await readCapturedCredentials(session, options.cdpUrl, options.backend);
-  const status = new StatusLog();
   const targetUserId = await resolveTargetUserId(session, credentials, screenName, status);
   const profileDir = screenName.toLowerCase();
   const outDir = join(options.outRoot, profileDir);
   mkdirSync(outDir, { recursive: true });
   const store = new SqliteProfileStore(profileDbPath(outDir), targetUserId);
   if (options.backend.kind === "bctl") {
-    status.add("Seeding needs the Helium extension, which the bctl appliance does not have; continuing with the local store.");
+    status.say("session", "Seeding needs the Helium extension, which the bctl appliance does not have; continuing with the local store.");
   } else {
     try {
       const seed = await seedFromHelium(session, options.cdpUrl, { onlyProfileTarget: targetUserId, profileStore: store });
       const profile = seed.profiles[0];
-      if (profile) status.add("Seeded from Helium: " + profile.records + " saved posts" + (profile.already ? " (already up to date)" : " (merged)") + ".");
+      if (profile) status.say("session", "Seeded from Helium: " + profile.records + " saved posts" + (profile.already ? " (already up to date)" : " (merged)") + ".");
     } catch (error) {
-      status.add("Helium seeding unavailable: " + (error instanceof Error ? error.message : String(error)) + ". Continuing with the local store.");
+      status.say("session", "Helium seeding unavailable: " + (error instanceof Error ? error.message : String(error)) + ". Continuing with the local store.");
     }
   }
   const deps = buildDeps(session, credentials);
   if (options.action !== "export") {
-    status.add("Scanning @" + screenName + " (existing saved posts are retained)…");
+    status.say("collecting", "Scanning @" + screenName + " (existing saved posts are retained)…");
     await collectProfile({
       userId: session.userId,
       store,
       deps,
       signal: AbortSignal.timeout(SAFETY_TIMEOUT_MS),
       report: (text) => status.add(text),
-      onProgress: progressLogger(screenName),
+      onProgress: progressLogger(status.progress, screenName),
     });
     if (options.noContext) {
-      status.add("Skipping thread context fetch (--no-context).");
+      status.say("collecting", "Skipping thread context fetch (--no-context).");
     } else {
-      status.add("Fetching thread context — ancestors of archived replies (text only, no media)…");
+      status.say("collecting", "Fetching thread context — ancestors of archived replies (text only, no media)…");
       try {
         const context = await syncContextThreads({
           store,
@@ -335,13 +354,14 @@ export async function downloadProfile(handle: string, options: RunOptions): Prom
           signal: AbortSignal.timeout(SAFETY_TIMEOUT_MS),
           report: (text) => status.add(text),
         });
-        status.add("Context: " + context.stored + " posts stored (" + context.fetched + " pages fetched, " + context.failed + " failed, " + context.unreachable + " unreachable).");
+        status.say("collecting", "Context: " + context.stored + " posts stored (" + context.fetched + " pages fetched, " + context.failed + " failed, " + context.unreachable + " unreachable).");
       } catch (error) {
-        status.add("Context backfill failed: " + (error instanceof Error ? error.message : String(error)) + ". Re-running `x download " + screenName + "` resumes it; the archive exports with what it has.");
+        status.say("collecting", "Context backfill failed: " + (error instanceof Error ? error.message : String(error)) + ". Re-running `x download " + screenName + "` resumes it; the archive exports with what it has.");
       }
     }
     if (options.action === "collect") {
       const state = await store.loadState(targetUserId);
+      progress.finish();
       return { folder: "-", jsonFile: "-", posts: (await store.allRecords()).length,
         mediaTotal: 0, mediaDownloaded: 0, mediaFailed: 0, archiveHtml: null,
         collectionReason: state?.reason ?? "unknown", contextPosts: await store.contextCount() };
@@ -353,11 +373,12 @@ export async function downloadProfile(handle: string, options: RunOptions): Prom
     throw new Error("The local archive for @" + screenName + " under " + outDir + " is empty. Run `x download " + screenName + "` first.");
   }
   const rawContext = await store.allContextRecords();
+  status.say("export", "Assembling posts.json…");
   const archive = assembleProfileArchive(raw, state, session.userId, targetUserId, rawContext);
   const folder = profileDir;
   mkdirSync(outDir, { recursive: true });
   writeJsonFile(join(outDir, "posts.json"), archive, 0o644);
-  return finishExport({
+  const summary = await finishExport({
     session, credentials, options, status, outDir, folder,
     jsonFile: "posts.json",
     posts: archive.posts,
@@ -367,37 +388,43 @@ export async function downloadProfile(handle: string, options: RunOptions): Prom
     archiveMeta: archive.export_metadata,
     collectionReason: String(((archive.export_metadata as Record<string, unknown>)["collection"] as Record<string, unknown> | undefined)?.["reason"] ?? "unknown"),
   });
+  progress.finish();
+  return summary;
 }
 
 export async function downloadSelf(options: RunOptions): Promise<RunSummary[]> {
+  const progress = createProgressReporter();
+  const status = new StatusLog(progress);
+  status.say("session", "Connecting to " + options.cdpUrl + "…");
   const session = await readBrowserSession(options.cdpUrl, options.backend);
+  status.say("session", "Reading captured X credentials…");
   const credentials = await readCapturedCredentials(session, options.cdpUrl, options.backend);
-  const status = new StatusLog();
   if (options.backend.kind === "bctl") {
-    status.add("Seeding needs the Helium extension, which the bctl appliance does not have; continuing with the local store.");
+    status.say("session", "Seeding needs the Helium extension, which the bctl appliance does not have; continuing with the local store.");
   } else {
     try {
       const seed = await seedFromHelium(session, options.cdpUrl);
-      status.add("Seeded from Helium: bookmarks " + seed.bookmarks.records + " posts"
+      status.say("session", "Seeded from Helium: bookmarks " + seed.bookmarks.records + " posts"
         + (seed.bookmarks.already ? " (already up to date)" : " (merged)")
         + ", likes " + seed.likes.records + " posts"
         + (seed.likes.already ? " (already up to date)" : " (merged)")
         + (seed.profiles.length ? ", " + seed.profiles.length + " profile archive(s)" : "") + ".");
     } catch (error) {
-      status.add("Helium seeding unavailable: " + (error instanceof Error ? error.message : String(error)) + ". Continuing with the local store.");
+      status.say("session", "Helium seeding unavailable: " + (error instanceof Error ? error.message : String(error)) + ". Continuing with the local store.");
     }
   }
   const summaries: RunSummary[] = [];
   if (credentials.queryIds["Bookmarks"]) {
     summaries.push(await downloadBookmarks(session, credentials, options, status));
   } else {
-    status.add("Skipping bookmarks: never captured (open https://x.com/i/history in Helium once).");
+    status.say("collecting", "Skipping bookmarks: never captured (open https://x.com/i/history in Helium once).");
   }
   if (credentials.queryIds["Likes"]) {
     summaries.push(await downloadLikes(session, credentials, options, status));
   } else {
-    status.add("Skipping likes: never captured (open https://x.com/i/history/likes in Helium once).");
+    status.say("collecting", "Skipping likes: never captured (open https://x.com/i/history/likes in Helium once).");
   }
+  progress.finish();
   if (summaries.length === 0) {
     throw new Error("Nothing captured yet. Open https://x.com/i/history and https://x.com/i/history/likes in Helium once with the extension loaded.");
   }
