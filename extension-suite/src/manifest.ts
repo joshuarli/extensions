@@ -1,4 +1,5 @@
 import { allowRightClickManifest } from "../../extension-allow-right-click/src/manifest.fragment.ts";
+import { chatgptManifest } from "../../extension-chatgpt/src/manifest.fragment.ts";
 import { onefileManifest } from "../../extension-onefile/src/manifest.fragment.ts";
 import { xBookmarksManifest } from "../../extension-x-bookmarks/src/manifest.fragment.ts";
 import { youtubeTranscriptManifest } from "../../extension-youtube-transcript/src/manifest.fragment.ts";
@@ -9,8 +10,33 @@ import {
   suiteVersion,
 } from "./identity.ts";
 
+interface FeatureManifest {
+  readonly permissions: readonly chrome.runtime.ManifestPermission[];
+  readonly host_permissions?: readonly string[];
+}
+
+export const featureManifests: readonly FeatureManifest[] = [
+  allowRightClickManifest,
+  onefileManifest,
+  youtubeTranscriptManifest,
+  xBookmarksManifest,
+  chatgptManifest,
+];
+
 function unique<T>(values: readonly T[]): T[] {
   return [...new Set(values)];
+}
+
+function featurePermissions(): chrome.runtime.ManifestPermission[] {
+  return unique(featureManifests.flatMap((feature) => [...feature.permissions]));
+}
+
+function featureHostPermissions(): string[] {
+  return unique(
+    featureManifests.flatMap((feature) =>
+      "host_permissions" in feature ? [...feature.host_permissions] : [],
+    ),
+  );
 }
 
 export const manifest = {
@@ -40,16 +66,13 @@ export const manifest = {
     type: "module",
   },
   options_page: "options.html",
-  permissions: unique([
-    ...allowRightClickManifest.permissions,
-    ...onefileManifest.permissions,
-    ...youtubeTranscriptManifest.permissions,
-    ...xBookmarksManifest.permissions,
-  ]),
-  host_permissions: unique([
-    ...youtubeTranscriptManifest.host_permissions,
-    ...xBookmarksManifest.host_permissions,
-  ]),
+  permissions: featurePermissions(),
+  host_permissions: featureHostPermissions(),
+  content_scripts: chatgptManifest.content_scripts.map((script) => ({
+    ...script,
+    matches: [...script.matches],
+    js: [...script.js],
+  })),
   content_security_policy: youtubeTranscriptManifest.content_security_policy,
   externally_connectable: {
     matches: [...youtubeTranscriptManifest.externally_connectable.matches],

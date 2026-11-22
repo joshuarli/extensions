@@ -1,8 +1,9 @@
 import { isPingRequest } from "./messages.ts";
 
-const dashboardUrl = chrome.runtime.getURL("dashboard.html");
+export const chatgptDashboardPath = "features/chatgpt/dashboard.html";
 
-async function openDashboard(): Promise<void> {
+export async function openChatgptDashboard(): Promise<void> {
+  const dashboardUrl = chrome.runtime.getURL(chatgptDashboardPath);
   const tabs = await chrome.tabs.query({});
   const existing = tabs.find((tab) => tab.url === dashboardUrl);
   if (existing?.id != null) {
@@ -13,14 +14,6 @@ async function openDashboard(): Promise<void> {
   await chrome.tabs.create({ url: dashboardUrl, active: true });
 }
 
-chrome.action.onClicked.addListener(() => {
-  void openDashboard();
-});
-
-chrome.runtime.onInstalled.addListener((details) => {
-  if (details.reason === "install") void openDashboard();
-});
-
-chrome.runtime.onMessage.addListener((message) => {
+export function isChatgptMessage(message: unknown): boolean {
   return isPingRequest(message);
-});
+}

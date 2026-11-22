@@ -4,6 +4,7 @@ export const SuiteRequestSchema = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("allow-right-click/toggle"), tabId: Schema.Number }),
   Schema.Struct({ kind: Schema.Literal("allow-right-click/status"), tabId: Schema.Number }),
   Schema.Struct({ kind: Schema.Literal("onefile/save"), tabId: Schema.Number }),
+  Schema.Struct({ kind: Schema.Literal("chatgpt/open-dashboard") }),
   Schema.Struct({
     kind: Schema.Literal("x-bookmarks/run"),
     job: Schema.Literals(["profile", "bookmarks", "likes"]),

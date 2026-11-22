@@ -1,9 +1,10 @@
 import { expect, test, chromium, type BrowserContext, type Page } from "playwright/test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { resolve } from "node:path";
+import { chatgptDashboardPath } from "../../src/background.ts";
 import { FakeChatgpt } from "./fake-chatgpt.ts";
 
-const extensionPath = resolve("build/extension-chatgpt");
+const extensionPath = resolve("build/extension-suite");
 
 interface Saved {
   name: string;
@@ -54,9 +55,6 @@ async function withExtension(server: FakeChatgpt, body: (harness: Harness) => Pr
     await server.install(context);
     const worker = context.serviceWorkers()[0] ?? await context.waitForEvent("serviceworker");
     const extensionId = new URL(worker.url()).host;
-    const welcome = context.pages().find((page) => page.url().startsWith("chrome-extension://"))
-      ?? await context.waitForEvent("page", { predicate: (page) => page.url().startsWith("chrome-extension://"), timeout: 10_000 });
-    await welcome.close();
     const chatgpt = await context.newPage();
     await chatgpt.goto("https://chatgpt.com/");
     await expect(chatgpt).toHaveTitle("ChatGPT fixture");
@@ -67,7 +65,7 @@ async function withExtension(server: FakeChatgpt, body: (harness: Harness) => Pr
       chatgpt,
       async openDashboard() {
         const page = await opened.newPage();
-        await page.goto(`chrome-extension://${extensionId}/dashboard.html`);
+        await page.goto(`chrome-extension://${extensionId}/${chatgptDashboardPath}`);
         return page;
       },
     });

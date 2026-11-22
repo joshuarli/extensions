@@ -4,7 +4,7 @@ Use an unpacked build from the candidate commit and a dedicated Chromium profile
 
 ## Check the session and inventory
 
-1. Run `pnpm run build`, load `build/extension-chatgpt`, and sign in to the first test account. Open ChatGPT DevTools on the Network panel and enable **Preserve log**.
+1. Run `pnpm run build`, load `build/extension-suite`, sign in to the first test account, and open the organizer from the toolbar popup. Open ChatGPT DevTools on the Network panel and enable **Preserve log**.
 2. Open the organizer. Compare its Active and Archived inventories against the native UI while the account is idle. Check counts, unique conversation IDs, and representative entries from the start and end of each list. Check one account with enough conversations to require a second page before accepting pagination.
 3. Confirm that each list exhausts its pages and that any reported total matches the unique record count. Record any missing-conversation signal from ChatGPT or incomplete-inventory warning from the organizer. Compare Project names and representative assigned and unassigned conversations against ChatGPT.
 4. Open the preview of a text-only test conversation and of a test conversation containing media. Inspect their detail response in DevTools. Check `mapping` against the expected branches, and record field presence and types for `title`, `is_archived`, `is_visible`, `gizmo_id` and `conversation_template_id`. Record the content types, part types, tool roles and attachment metadata shape without copying message text or asset URLs. Reload the organizer without editing either chat. Open both previews again and record any fields that differ in the new detail responses.

@@ -2,15 +2,11 @@ import { cpSync, mkdirSync, readdirSync, rmSync, statSync, watch, writeFileSync 
 import { relative, resolve } from "node:path";
 import { build } from "vite";
 import {
-  chatgptOutputDirectory,
-  chatgptSourceDirectory,
-  createChatgptBuildConfigs,
   createSuiteBuildConfigs,
   repositoryRoot,
   suiteOutputDirectory,
   suiteSourceDirectory,
 } from "../vite.config.ts";
-import { chatgptManifest } from "../extension-chatgpt/src/manifest.ts";
 import { manifest } from "../extension-suite/src/manifest.ts";
 import { createRebuildQueue } from "./rebuild-queue.ts";
 
@@ -47,29 +43,7 @@ async function buildSuite() {
   console.log(`Built extension-suite in ${suiteOutputDirectory}`);
 }
 
-async function buildChatgpt() {
-  rmSync(chatgptOutputDirectory, { recursive: true, force: true });
-  mkdirSync(chatgptOutputDirectory, { recursive: true });
-
-  for (const bundleConfig of createChatgptBuildConfigs()) {
-    await build({ ...bundleConfig, configFile: false });
-  }
-
-  copyStaticSource(chatgptSourceDirectory, chatgptOutputDirectory);
-  writeFileSync(
-    resolve(chatgptOutputDirectory, "manifest.json"),
-    `${JSON.stringify(chatgptManifest, null, 2)}\n`,
-  );
-
-  console.log(`Built extension-chatgpt in ${chatgptOutputDirectory}`);
-}
-
-async function buildAll() {
-  await buildSuite();
-  await buildChatgpt();
-}
-
-await buildAll();
+await buildSuite();
 
 if (process.argv.includes("--watch")) {
   const sourceDirectories = [
@@ -87,7 +61,7 @@ if (process.argv.includes("--watch")) {
   function scheduleRebuild() {
     clearTimeout(rebuildTimer);
     rebuildTimer = setTimeout(() => {
-      enqueueRebuild(buildAll);
+      enqueueRebuild(buildSuite);
     }, 200);
   }
 

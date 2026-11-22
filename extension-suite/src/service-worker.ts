@@ -1,5 +1,6 @@
 import { Schema } from "effect";
 import { createAllowRightClickBackground } from "../../extension-allow-right-click/src/background.ts";
+import { isChatgptMessage, openChatgptDashboard } from "../../extension-chatgpt/src/background.ts";
 import { createOnefileBackground } from "../../extension-onefile/src/background.ts";
 import {
   clearYouTubeTranscriptCaches,
@@ -82,6 +83,10 @@ async function handleSuiteRequest(request: SuiteRequest): Promise<SuiteResponse>
       void onefile.save(tab);
       return { ok: true };
     }
+    case "chatgpt/open-dashboard": {
+      await openChatgptDashboard();
+      return { ok: true };
+    }
     case "x-bookmarks/run": {
       if (request.action === "stop") {
         return stopXArchiveRun();
@@ -123,6 +128,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (allowRightClick.isMessage(message)) {
     allowRightClick.handleMessage(message, sender);
+    sendResponse({ ok: true });
+    return false;
+  }
+
+  if (isChatgptMessage(message)) {
     sendResponse({ ok: true });
     return false;
   }

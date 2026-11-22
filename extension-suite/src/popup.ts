@@ -19,6 +19,7 @@ const [tab] = await chrome.tabs.query({ active: true, currentWindow: true }),
   arcToggle = requiredElement<HTMLButtonElement>(document, "[data-arc-toggle]", popupContext),
   arcState = requiredElement<HTMLElement>(document, "[data-arc-state]", popupContext),
   onefileSave = requiredElement<HTMLButtonElement>(document, "[data-onefile-save]", popupContext),
+  chatgptDashboard = requiredElement<HTMLButtonElement>(document, "[data-chatgpt-dashboard]", popupContext),
   openOptions = requiredElement<HTMLAnchorElement>(document, "[data-open-options]", popupContext),
   ytSection = requiredElement<HTMLElement>(document, "[data-yt-section]", popupContext),
   xProfileState = requiredElement<HTMLElement>(document, "[data-x-profile]", popupContext),
@@ -42,6 +43,8 @@ openOptions.addEventListener("click", (event) => {
   event.preventDefault();
   void chrome.runtime.openOptionsPage();
 });
+
+wireChatgpt();
 
 if (tabId === undefined) {
   setStatus(statusElement, "No active tab.", true);
@@ -78,6 +81,12 @@ function wireAllowRightClick(tabId: number): void {
 function wireOnefile(tabId: number): void {
   onefileSave.addEventListener("click", () => {
     runSuiteAction(onefileSave, { kind: "onefile/save", tabId });
+  });
+}
+
+function wireChatgpt(): void {
+  chatgptDashboard.addEventListener("click", () => {
+    runSuiteAction(chatgptDashboard, { kind: "chatgpt/open-dashboard" });
   });
 }
 

@@ -1,7 +1,21 @@
 import assert from "node:assert/strict";
-import { test } from "vitest";
-import { manifest } from "../../extension-suite/src/manifest.ts";
+import { readdirSync } from "node:fs";
+import { expect, test } from "vitest";
+import { featureManifests, manifest } from "../../extension-suite/src/manifest.ts";
 import { suiteBundles } from "../../vite.config.ts";
+
+test("composes a manifest fragment from every extension package", () => {
+  const packages = readdirSync(new URL("../..", import.meta.url), { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && /^extension-(?!suite$)/u.test(entry.name));
+  expect(packages.map((entry) => entry.name).sort()).toEqual([
+    "extension-allow-right-click",
+    "extension-chatgpt",
+    "extension-onefile",
+    "extension-x-bookmarks",
+    "extension-youtube-transcript",
+  ]);
+  expect(featureManifests).toHaveLength(packages.length);
+});
 
 test("composes one manifest from the feature fragments", () => {
   assert.equal(manifest.manifest_version, 3);
@@ -34,6 +48,14 @@ test("composes one manifest from the feature fragments", () => {
     "https://youtube.com/*",
     "https://youtu.be/*",
     "https://x.com/*",
+    "https://chatgpt.com/*",
+  ]);
+  assert.deepEqual(manifest.content_scripts, [
+    {
+      matches: ["https://chatgpt.com/*"],
+      js: ["inject/chatgpt/content.js"],
+      run_at: "document_idle",
+    },
   ]);
   assert.deepEqual(manifest.declarative_net_request, {
     rule_resources: [
@@ -76,13 +98,20 @@ test("builds one worker, one UI bundle, and namespaced classic injections", () =
       { entryFileName: "inject/allow-right-click/listen/main.js", format: "iife" },
       { entryFileName: "inject/onefile/capture.js", format: "iife" },
       { entryFileName: "inject/onefile/loader.js", format: "iife" },
+      { entryFileName: "inject/chatgpt/content.js", format: "iife" },
     ],
   );
-
 
   const onefileOffscreen = suiteBundles.find(
     (bundle) => bundle.entryFileName === "offscreen.js",
   );
   assert.ok(onefileOffscreen);
   assert.match(onefileOffscreen.outputDirectory, /features\/onefile$/u);
+
+  const chatgptDashboard = suiteBundles.find((bundle) =>
+    typeof bundle.input === "object" && "dashboard" in bundle.input,
+  );
+  assert.ok(chatgptDashboard);
+  assert.equal(chatgptDashboard.format, "es");
+  assert.match(chatgptDashboard.outputDirectory, /features\/chatgpt$/u);
 });

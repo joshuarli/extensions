@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { chatgptManifest } from "../src/manifest.ts";
+import { chatgptManifest } from "../src/manifest.fragment.ts";
 
 const sourceDirectory = fileURLToPath(new URL("../src", import.meta.url));
 

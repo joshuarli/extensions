@@ -34,7 +34,11 @@ test("accepts namespaced suite requests", () => {
       action: "export",
     }),
   ).toEqual({ kind: "x-bookmarks/run", job: "bookmarks", action: "export" });
+  expect(
+    Schema.decodeUnknownSync(SuiteRequestSchema)({ kind: "chatgpt/open-dashboard" }),
+  ).toEqual({ kind: "chatgpt/open-dashboard" });
   expect(isSuiteRequest({ kind: "allow-right-click/status", tabId: 7 })).toBe(true);
+  expect(isSuiteRequest({ kind: "chatgpt/open-dashboard" })).toBe(true);
   expect(isSuiteRequest({ kind: "x-bookmarks/run", job: "profile", action: "download" })).toBe(true);
   expect(isSuiteRequest({ kind: "x-bookmarks/run", job: "profile", action: "destroy" })).toBe(false);
   expect(isSuiteRequest({ kind: "x-bookmarks/run", job: "other", action: "collect" })).toBe(false);
@@ -44,6 +48,7 @@ test("rejects unknown or malformed suite requests", () => {
   expect(isSuiteRequest({ kind: "youtube-transcript/copy", tabId: 7 })).toBe(false);
   expect(isSuiteRequest({ kind: "onefile/save", tabId: "7" })).toBe(false);
   expect(isSuiteRequest({ kind: "x-bookmarks/run", job: "profile", action: "download", tabId: 7 })).toBe(false);
+  expect(isSuiteRequest({ kind: "chatgpt/open-dashboard", tabId: 7 })).toBe(false);
   expect(() =>
     Schema.decodeUnknownSync(SuiteRequestSchema)({ kind: "allow-right-click/toggle" }),
   ).toThrow();

@@ -65,7 +65,7 @@ jobs:
           export TMPDIR="$PWD/.work/tmp"
           make build
           pnpm run test:browser extension-onefile/test/browser/extension-runtime.spec.ts extension-onefile/test/browser/capture.spec.ts --output="$PWD/.work/tmp/playwright-results"
-      - name: Exercise the installed ChatGPT organizer through its dashboard
+      - name: Exercise the ChatGPT organizer in the installed suite
         run: |
           export TMPDIR="$PWD/.work/tmp"
           pnpm run test:browser:chatgpt --output="$PWD/.work/tmp/playwright-results-chatgpt"
