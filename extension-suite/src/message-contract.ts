@@ -5,13 +5,6 @@ export const SuiteRequestSchema = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("allow-right-click/status"), tabId: Schema.Number }),
   Schema.Struct({ kind: Schema.Literal("onefile/save"), tabId: Schema.Number }),
   Schema.Struct({ kind: Schema.Literal("chatgpt/open-dashboard") }),
-  Schema.Struct({
-    kind: Schema.Literal("x-bookmarks/run"),
-    job: Schema.Literals(["profile", "bookmarks", "likes"]),
-    action: Schema.Literals(["collect", "export", "download", "stop", "dismiss"]),
-    screenName: Schema.optional(Schema.String),
-    targetUserId: Schema.optional(Schema.String),
-  }),
 ]);
 
 export type SuiteRequest = Schema.Schema.Type<typeof SuiteRequestSchema>;

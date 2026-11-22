@@ -225,7 +225,7 @@ async function downloadBookmarks(session: XSession, credentials: Credentials, op
   const state = await store.loadState();
   const raw = await store.allRecords();
   if (options.action === "export" && raw.length === 0) {
-    throw new Error("The local bookmarks archive is empty and Helium could not be read. Run the extension's Collect bookmarks once, or `x download self` without --export-only.");
+    throw new Error("The local bookmarks archive is empty. Run `x download self` without --export-only.");
   }
   const archive = assembleBookmarkArchive(raw, await store.allFolders(), state, session.userId);
   const folder = bookmarksFolderName();
@@ -269,7 +269,7 @@ async function downloadLikes(session: XSession, credentials: Credentials, option
   const state = await store.loadState();
   const raw = await store.allRecords();
   if (options.action === "export" && raw.length === 0) {
-    throw new Error("The local likes archive is empty and Helium could not be read. Run the extension's Collect likes once, or `x download self` without --export-only.");
+    throw new Error("The local likes archive is empty. Run `x download self` without --export-only.");
   }
   const archive = assembleLikesArchive(raw, state, session.userId);
   const folder = likesFolderName();

@@ -1,7 +1,8 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { Effect } from "effect";
 import { buildGraphqlUrl, graphqlRequest, RequestFailure } from "../src/api.ts";
-import type { Credentials } from "../src/capture.ts";
+import { parseUserId, type Credentials } from "../src/capture.ts";
+import type { XSessionProvider } from "../src/session.ts";
 
 const credentials: Credentials = {
   authorization: "Bearer token",
@@ -9,21 +10,12 @@ const credentials: Credentials = {
   features: { Bookmarks: '{"ok":true}' },
 };
 
-function stubChromeCookies(twid: string | null, csrf: string | null): void {
-  (globalThis as Record<string, unknown>)["chrome"] = {
-    cookies: {
-      get: async ({ name }: { name: string }) => {
-        if (name === "twid") return twid === null ? null : { value: twid };
-        if (name === "ct0") return csrf === null ? null : { value: csrf };
-        return null;
-      },
-    },
-  };
+function session(twid: string | null, csrf: string | null): XSessionProvider {
+  return async () => ({
+    userId: twid === null ? null : parseUserId(twid),
+    csrfToken: csrf,
+  });
 }
-
-afterEach(() => {
-  delete (globalThis as Record<string, unknown>)["chrome"];
-});
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status });
@@ -35,12 +27,11 @@ function run(
   csrf: string | null = "csrf-value",
   operation: "Bookmarks" | "BookmarkFoldersSlice" = "Bookmarks",
 ): Promise<unknown> {
-  stubChromeCookies(twid, csrf);
   const originalFetch = globalThis.fetch;
   (globalThis as Record<string, unknown>)["fetch"] = fetcher;
   const controller = new AbortController();
   return Effect.runPromise(
-    graphqlRequest("123", credentials, operation, { count: 100 }, controller.signal),
+    graphqlRequest("123", credentials, operation, { count: 100 }, controller.signal, session(twid, csrf)),
   ).finally(() => {
     (globalThis as Record<string, unknown>)["fetch"] = originalFetch;
   });
@@ -110,11 +101,10 @@ describe("graphql request edge", () => {
       (error: unknown) => failureOf(error),
     );
     expect(noCsrf.kind).toBe("auth");
-    stubChromeCookies("u=123", "csrf-value");
     const controller = new AbortController();
     controller.abort();
     const stopped = await Effect.runPromise(
-      graphqlRequest("123", credentials, "Bookmarks", {}, controller.signal).pipe(Effect.flip),
+      graphqlRequest("123", credentials, "Bookmarks", {}, controller.signal, session("u=123", "csrf-value")).pipe(Effect.flip),
     );
     expect(stopped).toBeInstanceOf(RequestFailure);
     expect((stopped as RequestFailure).kind).toBe("stopped");
@@ -126,8 +116,7 @@ describe("graphql request edge", () => {
 });
 
 describe("fieldToggles and graphql error bodies", () => {
-  it("appends fieldToggles only when captured or on renamed timeline operations", async () => {
-    const { buildGraphqlUrl } = await import("../src/api.ts");
+  it("appends fieldToggles only when captured or on renamed timeline operations", () => {
     const withToggles = buildGraphqlUrl("q", "UserOriginalsTimeline", { userId: "1" }, undefined, '{"withPayments":false,"withArticlePlainText":false}');
     expect(withToggles).toContain("fieldToggles=%7B%22withPayments%22%3Afalse%2C%22withArticlePlainText%22%3Afalse%7D");
     const withoutToggles = buildGraphqlUrl("q", "Bookmarks", { count: 100 }, undefined, undefined);
@@ -137,7 +126,6 @@ describe("fieldToggles and graphql error bodies", () => {
   });
 
   it("includes the graphql error message in 422 failures", async () => {
-    stubChromeCookies("u=123", "csrf-value");
     const originalFetch = globalThis.fetch;
     (globalThis as Record<string, unknown>)["fetch"] = (async () => new Response(
       JSON.stringify({ errors: [{ message: "Variable $withQuickPromoteEligibilityTweetFields of required type Boolean! was not provided." }] }),
@@ -145,7 +133,7 @@ describe("fieldToggles and graphql error bodies", () => {
     )) as typeof fetch;
     try {
       const outcome = await Effect.runPromise(
-        graphqlRequest("123", credentials, "Bookmarks", { count: 100 }, new AbortController().signal).pipe(
+        graphqlRequest("123", credentials, "Bookmarks", { count: 100 }, new AbortController().signal, session("u=123", "csrf-value")).pipe(
           Effect.map(() => "ok" as const),
           Effect.catch((error: unknown) => Effect.succeed(error)),
         ),

@@ -108,91 +108,6 @@ a:hover {
   text-align: center;
 }
 
-.xrun {
-  background: color-mix(in srgb, #1a73e8 8%, transparent);
-  border-radius: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 8px 10px;
-}
-
-.xrun-line {
-  display: flex;
-  font-size: 12px;
-  gap: 8px;
-  justify-content: space-between;
-}
-
-.xrun-counts {
-  color: #5f6368;
-  font-variant-numeric: tabular-nums;
-}
-
-.xprogress {
-  background: #e0e0e0;
-  border-radius: 3px;
-  height: 6px;
-  overflow: hidden;
-}
-
-.xprogress-fill {
-  background: #1a73e8;
-  height: 100%;
-  transition: width 0.2s ease;
-  width: 25%;
-}
-
-.xprogress-fill.indeterminate {
-  animation: xpulse 1.2s ease-in-out infinite;
-  width: 100%;
-}
-
-@keyframes xpulse {
-  0%, 100% { opacity: 0.35; }
-  50% { opacity: 1; }
-}
-
-.note {
-  color: #188038;
-  font-size: 11px;
-  overflow-wrap: anywhere;
-}
-
-.note.error {
-  color: #c5221f;
-}
-
-.xfield {
-  color: #5f6368;
-  display: flex;
-  flex-direction: column;
-  font-size: 11px;
-  gap: 3px;
-}
-
-.xfield select {
-  background: Canvas;
-  border: 1px solid color-mix(in srgb, CanvasText 30%, transparent);
-  border-radius: 6px;
-  color: CanvasText;
-  font: inherit;
-  padding: 6px 8px;
-}
-
-.xlink-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 10px;
-  justify-content: space-between;
-}
-
-.xrun[hidden],
-.note[hidden],
-.xfield[hidden] {
-  display: none;
-}
-
 @media (prefers-color-scheme: dark) {
   .feature,
   .settings-link {
@@ -202,14 +117,5 @@ a:hover {
   .state,
   a {
     color: #9aa0a6;
-  }
-
-  .xrun-counts,
-  .xfield {
-    color: #9aa0a6;
-  }
-
-  .xprogress {
-    background: #3c4043;
   }
 }

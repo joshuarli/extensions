@@ -4,7 +4,7 @@ This repository builds one Chromium Manifest V3 extension with five features:
 
 - **Allow Right-Click** toggles right-click, text selection, copy, paste, and drag support on the current tab.
 - **YouTube Transcript Copier** copies a video's transcript or SRT subtitles and supports a preferred transcript language. See the [YouTube user guide](extension-youtube-transcript/README.md).
-- **X Archive** exports X bookmarks and any profile's full post history (posts, reposts, replies, with media files) to a local cumulative archive. See the [X Archive guide](extension-x-bookmarks/README.md).
+- **X Archive support** passively captures X GraphQL credentials for `x-archive-cli`; it has no user interface. See the [support guide](extension-x-bookmarks/README.md).
 - **Onefile** saves the active tab as an offline-openable universal self-extracting ZIP (`.u.zip.html`). See the [Onefile guide](extension-onefile/README.md).
 - **ChatGPT Organizer** reviews, marks and bulk-organizes ChatGPT conversations with a resumable queue and a backup before deletion. See the [ChatGPT Organizer guide](extension-chatgpt/README.md).
 
@@ -32,5 +32,4 @@ Click the toolbar icon to open the feature hub:
 - **Onefile** saves the active tab as a `.u.zip.html` file.
 - **ChatGPT Organizer** opens the review dashboard in a new tab. Sign in at chatgpt.com first.
 - **YouTube Transcript** appears on YouTube pages and copies the transcript or SRT subtitles.
-- **X Archive** archives any profile's full post history or your bookmarks — download, progress, and stop all live in the popup.
 - **All settings** opens the preferred transcript language options.

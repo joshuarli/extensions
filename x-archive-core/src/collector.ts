@@ -354,7 +354,7 @@ export async function collectLikes(options: CollectionOptions<LikesStore>): Prom
     state.likes = "complete";
     state.reason = "complete";
     await persist();
-    report("Likes collection complete. Use Download likes archive to save JSON and media.");
+    report("Likes collection complete. Run `x download self` to export JSON and media.");
     return state;
   } catch (error) {
     state.reason = error instanceof Error ? error.message : String(error);
@@ -473,7 +473,7 @@ export async function collectProfile(
   }
   if (!target) {
     throw new RequestFailure("query",
-      "No profile is captured. Visit a profile on x.com, or open the toolbar popup and click Download archive.");
+      "No profile is captured. Open the profile on x.com once with the extension loaded, then retry.");
   }
   const targetUserId = target.targetUserId!;
   const credentials = await options.deps.credentials(userId);
@@ -591,7 +591,7 @@ export async function collectProfile(
       report("Only the Replies tab was captured. Open the Posts tab on x.com, then collect again to include posts.");
     }
     await persist();
-    report("Profile collection complete. Use Download archive to save JSON and media.");
+    report("Profile collection complete. Run `x download <handle>` to export JSON and media.");
     return state;
   } catch (error) {
     state.reason = error instanceof Error ? error.message : String(error);

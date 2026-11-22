@@ -9,16 +9,7 @@ import {
   handleInternalMessage,
 } from "../../extension-youtube-transcript/src/background.ts";
 import { isYouTubeTranscriptMessage } from "../../extension-youtube-transcript/src/message-contract.ts";
-import {
-  clearArchiveBadge,
-  handleXBookmarksContextMenuClick,
-  handleXBookmarksRequest,
-  installArchiveRunBadge,
-  installXBookmarksContextMenus,
-  installXBookmarksHeaderRule,
-  xBookmarksRequestFilter,
-} from "../../extension-x-bookmarks/src/background.ts";
-import { startXArchiveRun, stopXArchiveRun } from "../../extension-x-bookmarks/src/archive-engine.ts";
+import { handleXBookmarksRequest, xBookmarksRequestFilter } from "../../extension-x-bookmarks/src/background.ts";
 import { createActionStatus } from "./action-status.ts";
 import { suiteName } from "./identity.ts";
 import {
@@ -87,27 +78,6 @@ async function handleSuiteRequest(request: SuiteRequest): Promise<SuiteResponse>
       await openChatgptDashboard();
       return { ok: true };
     }
-    case "x-bookmarks/run": {
-      if (request.action === "stop") {
-        return stopXArchiveRun();
-      }
-      if (request.action === "dismiss") {
-        clearArchiveBadge();
-        return { ok: true };
-      }
-      const screenName = request.screenName && /^[A-Za-z0-9_]{1,15}$/u.test(request.screenName)
-        ? request.screenName
-        : undefined;
-      const targetUserId = request.targetUserId && /^\d+$/u.test(request.targetUserId)
-        ? request.targetUserId
-        : undefined;
-      const result = await startXArchiveRun(
-        request.action,
-        request.job,
-        { ...(screenName ? { screenName } : {}), ...(targetUserId ? { targetUserId } : {}) },
-      );
-      return result.ok ? { ok: true } : { ok: false, error: result.error ?? "Archive run did not start." };
-    }
   }
 }
 
@@ -147,8 +117,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return false;
 });
 
-installArchiveRunBadge();
-
 chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) =>
   handleExternalMessage(message, sender, sendResponse),
 );
@@ -174,9 +142,3 @@ chrome.webRequest.onSendHeaders.addListener(
   xBookmarksRequestFilter,
   ["requestHeaders", "extraHeaders"],
 );
-
-chrome.runtime.onInstalled.addListener(installXBookmarksHeaderRule);
-chrome.runtime.onStartup.addListener(installXBookmarksHeaderRule);
-chrome.runtime.onInstalled.addListener(installXBookmarksContextMenus);
-chrome.runtime.onStartup.addListener(installXBookmarksContextMenus);
-chrome.contextMenus.onClicked.addListener(handleXBookmarksContextMenuClick);

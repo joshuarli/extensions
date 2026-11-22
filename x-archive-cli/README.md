@@ -1,8 +1,8 @@
 # x-archive-cli
 
-`x` archives your X data to local folders you own — the same cumulative
-archives the X Archive browser extension produces, driven from the
-terminal instead of a toolbar click.
+`x` archives your X data to local folders you own — cumulative archives driven
+entirely from the terminal. The installed extension only supplies captured X
+GraphQL credentials; it has no archive UI.
 
 It does not need a browser download pipeline (which keeps failing on
 long MV3 exports) and it never stores cookies on disk: the session is
@@ -81,10 +81,11 @@ retained either way.
   separate `context_posts` array (readers ignore the extra top-level key)
   and the archive page renders threads fully offline. `--no-context` skips
   the backfill; the first run takes a while, and re-running resumes it.
-- **Seeding**: on each run the CLI seeds bookmarks and likes from the
-  extension's IndexedDB by count, so the first CLI export contains
-  everything the extension already archived — no re-collection needed. A
-  profile archive is seeded the same way when you run
+- **Seeding**: on each run the CLI seeds bookmarks and likes from any legacy
+  extension IndexedDB archive still in the browser, by count, so earlier
+  extension archives carry over without re-collection. The extension no
+  longer writes those databases; fresh installs start from the CLI's own
+  filesystem store. A profile archive is seeded the same way when you run
   `x download <handle>`; `x download self` no longer pre-seeds profile
   archives.
 - **Collection**: same pagination, rate-limit handling, cursor
@@ -136,10 +137,10 @@ already-minted endpoint instead of launching) are supported.
 
 ## Notes
 
-- The CLI mirrors the X Archive extension's behavior by design: the
-  extension stays the one-click path for normal use; the CLI is for
-  scripted and unattended use. They share the archive format and the
-  update semantics (`render_archive.py`, export folders, `debug.json`).
+- The CLI inherits the old extension's archive format and update semantics
+  (`render_archive.py`, export folders, `debug.json`); collection and export
+  now happen only here. The extension's remaining job is to capture fresh X
+  GraphQL query IDs, features, and authorization from normal browsing.
   Profile stores written before the per-folder SQLite store landed live
   under `~/.local/state/x-archive/stores/<account>/profile/<target>/` and
   are no longer read.

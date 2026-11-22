@@ -1,7 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import { handleXBookmarksRequest } from "../src/background.ts";
 import { captureRequest, mergeCapture, parseProfileScreenName, parseUserId } from "../src/capture.ts";
 
 const bookmarkUrl = "https://x.com/i/api/graphql/AbC_123/Bookmarks?features=%7B%22enabled%22%3Atrue%7D";
+
+afterEach(() => {
+  delete (globalThis as Record<string, unknown>)["chrome"];
+});
 
 describe("session and request capture", () => {
   it("parses large X numeric account IDs without truncating", () => {
@@ -71,6 +76,32 @@ describe("session and request capture", () => {
   });
 });
 
+describe("credential capture handler", () => {
+  it("stores captured query IDs and authorization under the account-scoped key", async () => {
+    const stored: Record<string, unknown> = {};
+    (globalThis as Record<string, unknown>)["chrome"] = {
+      cookies: { get: async () => ({ value: "u=123" }) },
+      storage: {
+        local: {
+          get: async (key: string) => ({ [key]: stored[key] }),
+          set: async (items: Record<string, unknown>) => Object.assign(stored, items),
+        },
+      },
+    };
+    handleXBookmarksRequest({
+      url: bookmarkUrl,
+      initiator: "https://x.com",
+      requestHeaders: [{ name: "Authorization", value: "Bearer actual" }],
+    } as chrome.webRequest.OnSendHeadersDetails);
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(stored["x_bookmarks_credentials_123"]).toMatchObject({
+      queryIds: { Bookmarks: "AbC_123" },
+      authorization: "Bearer actual",
+      features: { Bookmarks: '{"enabled":true}' },
+    });
+  });
+});
+
 describe("profile URL targeting", () => {
   it("reads the handle from bare profile URLs and known profile subpages", () => {
     expect(parseProfileScreenName("https://x.com/token___garden")).toBe("token___garden");
@@ -129,19 +160,5 @@ describe("fieldToggles capture", () => {
     const captured = captureRequest(url, "https://x.com", headers);
     const merged = mergeCapture({ queryIds: {}, features: {} }, captured!);
     expect(merged.fieldToggles).toEqual({ UserOriginalsTimeline: '{"withPayments":false}' });
-  });
-});
-
-describe("renamed profile timeline variables", () => {
-  it("sends withVoice/withCommunity and fieldToggles defaults for the renamed operations", async () => {
-    const { profileTimelineVariables } = await import("../src/collector.ts");
-    expect(profileTimelineVariables("UserOriginalsTimeline", "44196397", null))
-      .toMatchObject({ userId: "44196397", withVoice: true, withQuickPromoteEligibilityTweetFields: true });
-    expect(profileTimelineVariables("UserRepliesTimeline", "44196397", null))
-      .toMatchObject({ userId: "44196397", withVoice: true, withCommunity: true });
-    expect(profileTimelineVariables("UserRepliesTimeline", "44196397", "cursor-x"))
-      .toMatchObject({ cursor: "cursor-x" });
-    expect(profileTimelineVariables("UserTweets", "44196397", null))
-      .toEqual({ userId: "44196397", count: 20, includePromotedContent: false });
   });
 });
