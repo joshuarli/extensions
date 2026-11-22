@@ -93,6 +93,25 @@ describe("list", () => {
     expect(sleepCalls).toEqual([7, 7, 7]);
   });
 
+  it("normalizes ISO-8601 timestamps and null titles from the live list shape", async () => {
+    const transport = new FakeTransport().add(ACTIVE_PAGE_0, page([
+      {
+        id: "iso", title: null,
+        create_time: "2026-11-19T12:00:00.000Z",
+        update_time: "2026-11-22T12:00:00.000Z",
+        is_archived: false,
+      },
+    ], 1));
+    const archive = createChatgptArchive(makeDeps(transport).deps);
+    archive.setToken("tok");
+    expect(await archive.list("active")).toEqual([{
+      id: "iso", title: "",
+      createdMs: Date.parse("2026-11-19T12:00:00.000Z"),
+      updatedMs: Date.parse("2026-11-22T12:00:00.000Z"),
+      archived: false,
+    }]);
+  });
+
   it("rejects a malformed row instead of dropping it", async () => {
     const transport = new FakeTransport().add(ACTIVE_PAGE_0, page([
       { id: "a", title: "Chat a", update_time: 1, is_archived: false },

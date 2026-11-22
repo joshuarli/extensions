@@ -21,13 +21,23 @@ export const SessionResponseSchema = Schema.Struct({
   accessToken: Schema.String,
 });
 
+const RowTimeSchema = Schema.Union([Schema.Number, Schema.String]);
+
 export const ConversationRowSchema = Schema.Struct({
   id: Schema.String,
-  title: Schema.String,
-  create_time: Schema.NullOr(Schema.Number),
-  update_time: Schema.NullOr(Schema.Number),
+  title: Schema.Union([Schema.String, Schema.Null]),
+  create_time: Schema.NullOr(RowTimeSchema),
+  update_time: Schema.NullOr(RowTimeSchema),
   is_archived: Schema.Boolean,
 });
+
+function toEpochMs(value: number | string | null): number {
+  if (value === null) return 0;
+  if (typeof value === "number") return Math.round(value * 1000);
+  const parsed = Date.parse(value);
+  if (!Number.isFinite(parsed)) throw new Error("Invalid conversation timestamp: " + value);
+  return parsed;
+}
 
 export const ConversationsPageSchema = Schema.Struct({
   items: Schema.Array(Schema.Unknown),
@@ -53,13 +63,11 @@ export function parseSession(value: unknown): Session {
 export function normalizeRow(raw: unknown, index: number, offset: number): ChatRef {
   try {
     const row = Schema.decodeUnknownSync(ConversationRowSchema)(raw);
-    const createdMs = row.create_time === null ? 0 : Math.round(row.create_time * 1000);
-    const updatedMs = row.update_time === null ? 0 : Math.round(row.update_time * 1000);
     return {
       id: row.id,
-      title: row.title,
-      createdMs,
-      updatedMs,
+      title: row.title ?? "",
+      createdMs: toEpochMs(row.create_time),
+      updatedMs: toEpochMs(row.update_time),
       archived: row.is_archived,
     };
   } catch {

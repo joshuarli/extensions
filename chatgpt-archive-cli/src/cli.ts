@@ -16,7 +16,7 @@ async function download(options: DownloadOptions): Promise<number> {
   const connection = await connectChatgpt(resolved.cdpUrl);
   try {
     const archive = createChatgptArchive({
-      transport: createPageTransport(connection.page),
+      transport: createPageTransport(connection),
       sleep: (ms) => new Promise<void>((resolve) => { setTimeout(resolve, ms); }),
       now: () => Date.now(),
     });
