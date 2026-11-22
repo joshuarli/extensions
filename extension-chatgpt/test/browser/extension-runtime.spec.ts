@@ -94,14 +94,10 @@ async function reviewAndRun(page: Page, expectRows: string[]): Promise<void> {
 }
 
 async function sendRaw(page: Page, message: Record<string, unknown>): Promise<{ ok: boolean; error: { kind: string } | null }> {
-  return page.evaluate(async (body) => {
-    const tabs = await chrome.tabs.query({ url: "https://chatgpt.com/*" });
-    const id = tabs[0]?.id;
-    if (id === undefined) throw new Error("No ChatGPT tab");
-    return new Promise((done) => {
-      chrome.tabs.sendMessage(id, { kind: "chatgpt/api", requestId: "raw", ...body }, done);
-    });
-  }, message);
+  return page.evaluate(async (body) =>
+    new Promise((done) => {
+      chrome.runtime.sendMessage({ kind: "chatgpt/api", requestId: "raw", ...body }, done);
+    }), message);
 }
 
 const fixture = () => new FakeChatgpt([
@@ -248,9 +244,9 @@ test("an uncertain or rate-limited write is reconciled instead of repeated", asy
   });
 });
 
-test("a ChatGPT tab reload mid-run switches changes off until a deliberate resume", async () => {
+test("a lost background connection mid-run switches changes off until a deliberate resume", async () => {
   const server = fixture();
-  await withExtension(server, async ({ openDashboard, chatgpt }) => {
+  await withExtension(server, async ({ openDashboard }) => {
     const page = await openDashboard();
     await expect(page.locator(".row")).toHaveCount(4, { timeout: 20_000 });
     for (const title of ["Sourdough starter", "Kubernetes basics", "Trip to Lisbon"]) {
@@ -259,9 +255,9 @@ test("a ChatGPT tab reload mid-run switches changes off until a deliberate resum
     }
     await reviewAndRun(page, ["1 Sourdough starter Moved to Archived", "2 Kubernetes basics Moved to Archived", "3 Trip to Lisbon Moved to Archived"]);
     await expect.poll(() => server.patches.length, { timeout: 20_000 }).toBe(1);
-    await chatgpt.reload();
+    await page.reload();
     await expect(page.getByRole("button", { name: "Resume" })).toBeVisible({ timeout: 20_000 });
-    await expect(page.locator(".status")).toContainText("closed or reloaded");
+    await expect(page.locator(".status")).toContainText("Interrupted");
     const paused = server.patches.length;
     await page.waitForTimeout(4000);
     expect(server.patches.length).toBe(paused);

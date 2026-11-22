@@ -22,11 +22,6 @@ describe("security boundary", () => {
     expect(chatgptManifest.host_permissions).toEqual(["https://chatgpt.com/*"]);
   });
 
-  it("injects the content script only on chatgpt.com", () => {
-    const matches = (chatgptManifest.content_scripts ?? []).flatMap((script) => [...script.matches]);
-    expect(matches).toEqual(["https://chatgpt.com/*"]);
-  });
-
   it("does not request privileged APIs, broad host access or remote code", () => {
     const serialized = JSON.stringify(chatgptManifest);
     for (const forbidden of ["cookies", "webRequest", "debugger", "<all_urls>", "externally_connectable"]) {
@@ -39,9 +34,9 @@ describe("security boundary", () => {
     const xmlNamespaces = new Set(["http://www.w3.org/2000/svg"]);
     for (const file of typescriptFiles(sourceDirectory)) {
       const source = readFileSync(file, "utf8");
-      for (const match of source.matchAll(/https?:\/\/[^\s"'`)]+/gu)) {
+      for (const match of source.matchAll(/https?:\/\/[^\s"'`)${}]+/gu)) {
         if (xmlNamespaces.has(match[0])) continue;
-        expect(match[0], `${file}: ${match[0]}`).toMatch(/^https:\/\/chatgpt\.com\//u);
+        expect(match[0], `${file}: ${match[0]}`).toMatch(/^https:\/\/chatgpt\.com(?:\/|$)/u);
       }
     }
   });

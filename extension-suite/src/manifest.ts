@@ -68,11 +68,6 @@ export const manifest = {
   options_page: "options.html",
   permissions: featurePermissions(),
   host_permissions: featureHostPermissions(),
-  content_scripts: chatgptManifest.content_scripts.map((script) => ({
-    ...script,
-    matches: [...script.matches],
-    js: [...script.js],
-  })),
   content_security_policy: youtubeTranscriptManifest.content_security_policy,
   externally_connectable: {
     matches: [...youtubeTranscriptManifest.externally_connectable.matches],

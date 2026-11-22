@@ -48,13 +48,7 @@ test("composes one manifest from the feature fragments", () => {
     "https://x.com/*",
     "https://chatgpt.com/*",
   ]);
-  assert.deepEqual(manifest.content_scripts, [
-    {
-      matches: ["https://chatgpt.com/*"],
-      js: ["inject/chatgpt/content.js"],
-      run_at: "document_idle",
-    },
-  ]);
+  assert.ok(!("content_scripts" in manifest));
   assert.deepEqual(manifest.declarative_net_request, {
     rule_resources: [
       {
@@ -96,7 +90,6 @@ test("builds one worker, one UI bundle, and namespaced classic injections", () =
       { entryFileName: "inject/allow-right-click/listen/main.js", format: "iife" },
       { entryFileName: "inject/onefile/capture.js", format: "iife" },
       { entryFileName: "inject/onefile/loader.js", format: "iife" },
-      { entryFileName: "inject/chatgpt/content.js", format: "iife" },
     ],
   );
 

@@ -1,5 +1,6 @@
 import { Schema } from "effect";
 import { createAllowRightClickBackground } from "../../extension-allow-right-click/src/background.ts";
+import { createChatgptApi, isApiRequest } from "../../extension-chatgpt/src/background-api.ts";
 import { isChatgptMessage, openChatgptDashboard } from "../../extension-chatgpt/src/background.ts";
 import { createOnefileBackground } from "../../extension-onefile/src/background.ts";
 import {
@@ -18,6 +19,8 @@ import {
   type SuiteRequest,
   type SuiteResponse,
 } from "./message-contract.ts";
+
+const chatgptApi = createChatgptApi();
 
 const actionStatus = createActionStatus(suiteName, {
   setTitle: (tabId, title) => chrome.action.setTitle({ tabId, title }),
@@ -82,6 +85,11 @@ async function handleSuiteRequest(request: SuiteRequest): Promise<SuiteResponse>
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (isApiRequest(message)) {
+    void chatgptApi.handle(message).then(sendResponse);
+    return true;
+  }
+
   if (isSuiteRequest(message)) {
     void handleSuiteRequest(message).then(
       (response) => sendResponse(Schema.decodeUnknownSync(SuiteResponseSchema)(response)),
@@ -115,6 +123,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   return false;
+});
+
+chrome.runtime.onConnect.addListener((port) => {
+  const lease = chatgptApi.parseLeaseName(port.name);
+  if (!lease) return;
+  const revoke = chatgptApi.leaseOpened(lease.runId, lease.leaseId);
+  port.onDisconnect.addListener(revoke);
+  port.postMessage({ kind: "chatgpt/lease:ready" });
 });
 
 chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) =>
