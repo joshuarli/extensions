@@ -769,6 +769,8 @@ describe("final qualification", () => {
     ["generated media", { author: { role: "assistant" }, content: { content_type: "multimodal_text", parts: [{ content_type: "generated_media", text: "caption", asset_pointer: "file-service://media" }] } }],
     ["tool output", { author: { role: "tool" }, content: { content_type: "text", parts: ["Result"], output_file: "file-service://output" } }],
     ["unknown tool speaker", { author: { role: "python" }, content: { content_type: "text", parts: ["Result"] } }],
+    ["asset pointer in metadata", { author: { role: "assistant" }, content: { content_type: "text", parts: ["Caption"] }, metadata: { asset_pointer: "file-service://generated" } }],
+    ["nested asset pointer in metadata", { author: { role: "assistant" }, content: { content_type: "text", parts: ["Transcript"] }, metadata: { results: [{ audio: { asset_pointer: "file-service://audio" } }] } }],
     ["unknown content", { author: { role: "assistant" }, content: { content_type: "future_content", payload: { asset: "file-service://future" } } }],
   ] as const)("holds %s in ordinary backup mode while allowing a text-only delete", async (_label, message) => {
     const env = makeEnv({

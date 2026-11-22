@@ -413,6 +413,13 @@ export interface Coverage {
   unrendered: string[];
 }
 
+function hasMediaReference(value: unknown): boolean {
+  if (typeof value === "string") return value.startsWith("file-service://");
+  if (Array.isArray(value)) return value.some(hasMediaReference);
+  return isRecord(value) && Object.entries(value).some(([key, entry]) =>
+    (key === "asset_pointer" && entry != null) || hasMediaReference(entry));
+}
+
 // Describes what a backup of this record contains and what it cannot contain.
 export function describeConversation(data: unknown): Coverage {
   if (!isRecord(data) || !isRecord(data["mapping"])) {
@@ -464,6 +471,9 @@ export function describeConversation(data: unknown): Coverage {
       const files = metadata["attachments"];
       if (Array.isArray(files)) attachments += files.length;
       else if (files != null) unrendered.add("unknown attachments");
+      if (hasMediaReference(metadata)) unrendered.add("media reference in message metadata");
+    } else if (metadata != null) {
+      unrendered.add("unknown message metadata");
     }
   }
   if (!messages) unrendered.add("no readable messages");
