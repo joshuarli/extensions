@@ -36,9 +36,11 @@ describe("security boundary", () => {
   });
 
   it("makes no third-party network requests in source", () => {
+    const xmlNamespaces = new Set(["http://www.w3.org/2000/svg"]);
     for (const file of typescriptFiles(sourceDirectory)) {
       const source = readFileSync(file, "utf8");
       for (const match of source.matchAll(/https?:\/\/[^\s"'`)]+/gu)) {
+        if (xmlNamespaces.has(match[0])) continue;
         expect(match[0], `${file}: ${match[0]}`).toMatch(/^https:\/\/chatgpt\.com\//u);
       }
     }
