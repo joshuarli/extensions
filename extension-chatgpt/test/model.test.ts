@@ -83,6 +83,20 @@ describe("conversation records", () => {
     expect(conversation.messages.map((message) => message.text)).toEqual(["Explain it", "[image]\nWhy?", "Two thirds"]);
   });
 
+  it("drops withheld plugin and tool output without losing the rest of a message", () => {
+    const withheld = {
+      title: "Withheld",
+      current_node: "a2",
+      mapping: {
+        root: { id: "root", message: null, parent: null },
+        u1: { id: "u1", parent: "root", message: { author: { role: "user" }, content: { content_type: "text", parts: ["Question"] } } },
+        a1: { id: "a1", parent: "u1", message: { author: { role: "assistant" }, content: { content_type: "text", parts: ["The output of this plugin was redacted.", "Kept answer."] } } },
+        a2: { id: "a2", parent: "a1", message: { author: { role: "assistant" }, content: { content_type: "text", parts: ["The output of this tool was redacted."] } } },
+      },
+    };
+    expect(parseConversation(withheld).messages.map((message) => message.text)).toEqual(["Question", "Kept answer."]);
+  });
+
   it("describes branches, images, attachments and unrendered content", () => {
     expect(describeConversation(branching)).toEqual({
       messages: 5, branches: 2, images: 1, attachments: 1, unrendered: ["code"],

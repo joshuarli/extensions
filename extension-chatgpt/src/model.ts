@@ -317,6 +317,10 @@ function isImagePart(part: unknown): boolean {
   return isRecord(part) && /image/iu.test(String(part["content_type"] ?? ""));
 }
 
+function isWithheldOutput(text: string): boolean {
+  return /^the output of this (?:plugin|tool) was redacted\.?$/iu.test(text.trim());
+}
+
 function textOf(content: unknown): string {
   if (!isRecord(content)) return "";
   if (content["content_type"] !== "text" && content["content_type"] !== "multimodal_text") return "";
@@ -330,7 +334,7 @@ function textOf(content: unknown): string {
       }
       return "";
     })
-    .filter(Boolean)
+    .filter((part) => part !== "" && !isWithheldOutput(part))
     .join("\n");
 }
 

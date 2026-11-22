@@ -64,9 +64,38 @@ function h(tag: string, props: Props | null, ...children: unknown[]): HTMLElemen
   return element;
 }
 
+const SVG_NS = "http://www.w3.org/2000/svg";
+const CHATGPT_ICON_PATH = "M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.071.071 0 0 1 .038.052v5.5826a4.504 4.504 0 0 1-4.4945 4.4944zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7581a.791.791 0 0 0 .7854 0l5.8428-3.3685v2.3324a.0756.0756 0 0 1-.0309.0615l-4.8317 2.786a4.4944 4.4944 0 0 1-6.156-1.6602zm-1.2156-8.1754a4.484 4.484 0 0 1 2.3714-1.9728v5.6467a.7664.7664 0 0 0 .3879.6765l5.8146 3.3543-2.0201 1.1685a.0756.0756 0 0 1-.0706.0024l-4.8269-2.786a4.4944 4.4944 0 0 1-1.656-6.1356zm16.1155 3.7417L13.1038 9.71l2.02-1.1648a.0756.0756 0 0 1 .0706-.0024l4.8269 2.791a4.4944 4.4944 0 0 1-.676 8.1046v-5.6467a.79.79 0 0 0-.3854-.6825zm2.0011-3.0073l-.142-.0852-4.7735-2.7818a.791.791 0 0 0-.7854 0L9.609 12.784V10.451a.0682.0682 0 0 1 .0309-.0615l4.8269-2.786a4.4944 4.4944 0 0 1 6.6594 4.6682zM8.2134 12.895l-2.02-1.1635a.071.071 0 0 1-.038-.052V6.0936a4.4944 4.4944 0 0 1 7.3757-3.4537l-.142.0804L8.606 5.4782a.7948.7948 0 0 0-.3927.6813z";
+
+function chatgptIcon(): SVGElement {
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("focusable", "false");
+  const use = document.createElementNS(SVG_NS, "use");
+  use.setAttribute("href", "#chatgpt-logo");
+  svg.append(use);
+  return svg;
+}
+
+function installChatgptIcon(): void {
+  const sprite = document.createElementNS(SVG_NS, "svg");
+  sprite.setAttribute("aria-hidden", "true");
+  sprite.setAttribute("class", "icon-sprite");
+  const symbol = document.createElementNS(SVG_NS, "symbol");
+  symbol.setAttribute("id", "chatgpt-logo");
+  symbol.setAttribute("viewBox", "0 0 24 24");
+  const path = document.createElementNS(SVG_NS, "path");
+  path.setAttribute("d", CHATGPT_ICON_PATH);
+  symbol.append(path);
+  sprite.append(symbol);
+  document.body.append(sprite);
+}
+
 const foundApp = document.querySelector<HTMLDivElement>("#app");
 if (!foundApp) throw new Error("Missing #app element");
 const app: HTMLDivElement = foundApp;
+installChatgptIcon();
 
 const LOCK_NAME = "chatgpt-organizer:dashboard";
 const store = createChromeJournalStore(chrome.storage);
@@ -574,6 +603,11 @@ const rowViews = new Map<string, RowView>();
 let shownIds: string[] = [];
 const emptyList = h("div", { class: "empty" });
 
+function projectName(id: string | null): string | null {
+  if (!id) return null;
+  return projects.find((project) => project.id === id)?.name ?? "Project";
+}
+
 function rowView(id: string): RowView {
   const existing = rowViews.get(id);
   if (existing) return existing;
@@ -585,7 +619,16 @@ function rowView(id: string): RowView {
   }) as HTMLInputElement;
   const title = h("span", { class: "name" });
   const tags = h("span", { class: "tags" });
-  const meta = h("div", { class: "meta" });
+  const meta = h("span", { class: "date" });
+  const open = h("a", {
+    class: "open",
+    href: `https://chatgpt.com/c/${encodeURIComponent(id)}`,
+    target: "_blank",
+    rel: "noopener noreferrer",
+    title: "Open in ChatGPT",
+    "aria-label": "Open in ChatGPT",
+    onclick: (event) => event.stopPropagation(),
+  }, chatgptIcon()) as HTMLAnchorElement;
   const el = h("div", {
     class: "row",
     role: "option",
@@ -594,7 +637,7 @@ function rowView(id: string): RowView {
       if ((event as MouseEvent).shiftKey && focusId) selectRange(focusId, id);
       focusChat(id);
     },
-  }, box, h("div", { class: "title" }, title, tags), meta);
+  }, box, h("div", { class: "title" }, title, tags), h("div", { class: "meta" }, meta, open));
   const view = { el, box, title, tags, meta, sig: "" };
   rowViews.set(id, view);
   return view;
@@ -605,7 +648,8 @@ function syncRow(view: RowView, chat: Chat): void {
   const protection = journal?.protect[chat.id];
   const focused = focusId === chat.id;
   const chosen = selected.has(chat.id);
-  const sig = `${focused}|${chosen}|${chat.title}|${chat.createdMs}|${protection ? 1 : 0}|${mark ? changeLabel(mark) : ""}`;
+  const project = projectName(chat.projectId);
+  const sig = `${focused}|${chosen}|${chat.title}|${chat.createdMs}|${project ?? ""}|${protection ? 1 : 0}|${mark ? changeLabel(mark) : ""}`;
   if (sig === view.sig) return;
   view.sig = sig;
   view.el.classList.toggle("focus", focused);
@@ -615,6 +659,7 @@ function syncRow(view: RowView, chat: Chat): void {
   view.title.textContent = chat.title || "Untitled";
   const tags: HTMLElement[] = [];
   if (isUntitled(chat.title)) tags.push(h("span", { class: "badge", text: "untitled" }));
+  if (project) tags.push(h("span", { class: "badge project", text: project }));
   if (protection) tags.push(h("span", { class: "badge protect", text: "Protected" }));
   else if (mark) tags.push(h("span", { class: `badge ${mark.action}`, text: changeLabel(mark) }));
   view.tags.replaceChildren(...tags);
@@ -672,8 +717,7 @@ function renderPreview(): void {
     h("h2", { text: conversation.title || "Untitled" }),
     h("div", { class: "meta", text: `${conversation.messages.length} messages` }),
     ...conversation.messages.map((message) => h("div", { class: `msg ${message.role}` },
-      h("div", { class: "who", text: message.role === "user" ? "You" : "ChatGPT" }),
-      h("div", { class: "body", text: message.text }),
+      h("div", { class: "body", "aria-label": message.role === "user" ? "You" : "ChatGPT", text: message.text }),
     )),
   );
   ui.preview.scrollTop = 0;

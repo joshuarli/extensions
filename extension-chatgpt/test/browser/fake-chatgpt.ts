@@ -9,6 +9,7 @@ export interface FakeChat {
   visible: boolean;
   pinned: boolean;
   image: boolean;
+  redacted: boolean;
 }
 
 export interface Patch {
@@ -61,6 +62,7 @@ export class FakeChatgpt {
         visible: chat.visible ?? true,
         pinned: chat.pinned ?? false,
         image: chat.image ?? false,
+        redacted: chat.redacted ?? false,
       });
     });
   }
@@ -103,7 +105,7 @@ export class FakeChatgpt {
       is_archived: chat.archived,
       gizmo_id: chat.projectId,
       conversation_template_id: chat.projectId,
-      current_node: "a1",
+      current_node: chat.redacted ? "a3" : "a1",
       mapping: {
         root: { id: "root", parent: null, children: ["u1"], message: null },
         u1: {
@@ -111,9 +113,19 @@ export class FakeChatgpt {
           message: { author: { role: "user" }, create_time: iso, content: { content_type: chat.image ? "multimodal_text" : "text", parts }, metadata: {} },
         },
         a1: {
-          id: "a1", parent: "u1", children: [],
+          id: "a1", parent: "u1", children: chat.redacted ? ["a2"] : [],
           message: { author: { role: "assistant" }, create_time: iso, content: { content_type: "text", parts: [`Notes on ${chat.title}.`] }, metadata: {} },
         },
+        ...(chat.redacted ? {
+          a2: {
+            id: "a2", parent: "a1", children: ["a3"],
+            message: { author: { role: "assistant" }, create_time: iso, content: { content_type: "text", parts: ["The output of this plugin was redacted.", "Real note after redaction."] }, metadata: {} },
+          },
+          a3: {
+            id: "a3", parent: "a2", children: [],
+            message: { author: { role: "assistant" }, create_time: iso, content: { content_type: "text", parts: ["The output of this plugin was redacted."] }, metadata: {} },
+          },
+        } : {}),
       },
     };
   }

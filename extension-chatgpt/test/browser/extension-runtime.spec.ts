@@ -112,6 +112,31 @@ const fixture = () => new FakeChatgpt([
   { id: "c5", title: "Old archived chat", archived: true },
 ]);
 
+test("rows link to their chat and show Projects; previews hide withheld tool output", async () => {
+  const server = new FakeChatgpt([
+    { id: "c1", title: "Sourdough starter" },
+    { id: "c3", title: "Tax questions", projectId: "g-p-work" },
+    { id: "c6", title: "Redacted output", redacted: true },
+  ]);
+  await withExtension(server, async ({ openDashboard }) => {
+    const page = await openDashboard();
+    await expect(page.locator(".row")).toHaveCount(3, { timeout: 20_000 });
+
+    const sourdough = row(page, "Sourdough starter");
+    await expect(sourdough.locator("a.open")).toHaveAttribute("href", "https://chatgpt.com/c/c1");
+    await expect(sourdough.locator("a.open use")).toHaveAttribute("href", "#chatgpt-logo");
+    await expect(sourdough.locator(".badge.project")).toHaveCount(0);
+    await expect(row(page, "Tax questions").locator(".badge.project")).toHaveText("Work");
+
+    await row(page, "Redacted output").click();
+    const preview = page.locator("#preview");
+    await expect(preview.locator(".msg .who")).toHaveCount(0);
+    await expect(preview).not.toContainText("was redacted");
+    await expect(preview.locator(".msg.assistant .body")).toHaveText(["Notes on Redacted output.", "Real note after redaction."]);
+    await expect(preview.locator(".msg.user .body")).toHaveCount(1);
+  });
+});
+
 test("deletes only after a verified backup is saved, and only the reviewed changes", async () => {
   const server = fixture();
   await withExtension(server, async ({ openDashboard }) => {
