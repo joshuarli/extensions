@@ -1,4 +1,5 @@
 import { Effect } from "effect";
+import { installInterrupt } from "../../lib/cli.ts";
 import { help, parseArgs, UsageError } from "./args.ts";
 import { save } from "./save.ts";
 
@@ -24,5 +25,7 @@ async function main(argv: string[]): Promise<number> {
     return error instanceof UsageError ? 2 : 1;
   }
 }
+
+installInterrupt("Interrupted.");
 
 process.exitCode = await main(process.argv.slice(2));

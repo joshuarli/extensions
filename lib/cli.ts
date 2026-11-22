@@ -93,3 +93,61 @@ export function createBackendResolver(config: BackendConfig): BackendResolver {
 
   return { plan, resolve };
 }
+
+export interface ArgSchema {
+  readonly values: readonly string[];
+  readonly flags: readonly string[];
+  readonly maxPositionals: number;
+}
+
+export interface ParsedCliArgs {
+  readonly values: ReadonlyMap<string, string>;
+  readonly flags: ReadonlySet<string>;
+  readonly positional: readonly string[];
+}
+
+export function parseCliArgs(argv: readonly string[], schema: ArgSchema): ParsedCliArgs {
+  const values = new Map<string, string>();
+  const flags = new Set<string>();
+  const positional: string[] = [];
+  let optionsEnded = false;
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i]!;
+    if (!optionsEnded && arg === "--") {
+      optionsEnded = true;
+      continue;
+    }
+    if (!optionsEnded && arg.startsWith("-")) {
+      const body = arg.startsWith("--") ? arg.slice(2) : arg.slice(1);
+      const [name, ...pieces] = body.split("=");
+      if (!name) throw new UsageError(`Unknown option: ${arg}`);
+      if (schema.flags.includes(name)) {
+        if (pieces.length > 0) throw new UsageError(`Option --${name} does not take a value`);
+        if (flags.has(name)) throw new UsageError(`Repeated option: --${name}`);
+        flags.add(name);
+        continue;
+      }
+      if (schema.values.includes(name)) {
+        if (values.has(name)) throw new UsageError(`Repeated option: --${name}`);
+        const value = pieces.length > 0 ? pieces.join("=") : argv[i + 1];
+        if (value === undefined || value.length === 0 || (pieces.length === 0 && value.startsWith("-"))) {
+          throw new UsageError(`Missing value for --${name}`);
+        }
+        values.set(name, value);
+        if (pieces.length === 0) i++;
+        continue;
+      }
+      throw new UsageError(`Unknown option: ${arg}`);
+    }
+    if (positional.length >= schema.maxPositionals) throw new UsageError(`Unexpected argument: ${arg}`);
+    positional.push(arg);
+  }
+  return { values, flags, positional };
+}
+
+export function installInterrupt(message: string): void {
+  process.on("SIGINT", () => {
+    process.stderr.write(`\n${message}\n`);
+    process.exit(130);
+  });
+}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createBackendResolver, HELIUM_BACKEND, type BackendConfig } from "../cli.ts";
+import { createBackendResolver, HELIUM_BACKEND, parseCliArgs, type ArgSchema, type BackendConfig } from "../cli.ts";
 
 const xConfig: BackendConfig = {
   envPrefix: "X_ARCHIVE",
@@ -69,5 +69,46 @@ describe("createBackendResolver", () => {
 
   it("rejects an unknown backend", () => {
     expect(() => createBackendResolver(xConfig).plan({ backend: "smolvm" }, cleanEnv)).toThrow('Unknown backend "smolvm"');
+  });
+});
+
+const schema: ArgSchema = {
+  values: ["out", "backend"],
+  flags: ["no-render", "no-context"],
+  maxPositionals: 1,
+};
+
+describe("parseCliArgs", () => {
+  it("accepts both --name value and --name=value forms", () => {
+    const split = parseCliArgs(["self", "--out", "./saved", "--backend", "bctl"], schema);
+    const joined = parseCliArgs(["self", "--out=./saved", "--backend=bctl"], schema);
+    expect(split).toEqual(joined);
+    expect(split.values.get("out")).toBe("./saved");
+    expect(split.values.get("backend")).toBe("bctl");
+    expect(split.positional).toEqual(["self"]);
+  });
+
+  it("reads flags without values", () => {
+    const parsed = parseCliArgs(["self", "--no-render", "--no-context"], schema);
+    expect([...parsed.flags]).toEqual(["no-render", "no-context"]);
+  });
+
+  it("stops parsing options after --", () => {
+    const parsed = parseCliArgs(["--", "--out", "./saved"], { ...schema, maxPositionals: 2 });
+    expect(parsed.positional).toEqual(["--out", "./saved"]);
+    expect(parsed.values.size).toBe(0);
+  });
+
+  it("rejects unknown, repeated, and valueless options", () => {
+    expect(() => parseCliArgs(["--bad"], schema)).toThrow("Unknown option: --bad");
+    expect(() => parseCliArgs(["--out=a", "--out=b"], schema)).toThrow("Repeated option: --out");
+    expect(() => parseCliArgs(["--no-render", "--no-render"], schema)).toThrow("Repeated option: --no-render");
+    expect(() => parseCliArgs(["--out"], schema)).toThrow("Missing value for --out");
+    expect(() => parseCliArgs(["--out=--other"], schema)).not.toThrow();
+    expect(() => parseCliArgs(["--no-render=x"], schema)).toThrow("Option --no-render does not take a value");
+  });
+
+  it("caps positional arguments", () => {
+    expect(() => parseCliArgs(["one", "two"], schema)).toThrow("Unexpected argument: two");
   });
 });

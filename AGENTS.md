@@ -27,6 +27,7 @@ This repository builds one Chromium Manifest V3 extension from five feature pack
 - Shared setup, builds, and tests: [docs/development.md](docs/development.md)
 - Suite composition, manifest, and worker: [extension-suite](extension-suite)
 - Shared extension-page helpers: [lib](lib)
+- Shared CLI shell for both terminal CLIs: [lib/cli.ts](lib/cli.ts)
 - Allow Right-Click architecture: [docs/allow-right-click.md](docs/allow-right-click.md)
 - YouTube user and message API: [extension-youtube-transcript/README.md](extension-youtube-transcript/README.md)
 - X Archive credential capture for the CLI: [extension-x-bookmarks/README.md](extension-x-bookmarks/README.md)
@@ -45,7 +46,7 @@ This repository builds one Chromium Manifest V3 extension from five feature pack
 - YouTube messages: `extension-youtube-transcript/test/message-contract.test.ts`; HTTP and transcript parsing: `http.test.ts`, `transcript.test.ts` in that test directory.
 - Onefile capture messages: `extension-onefile/test/message-contract.test.ts`; ZIP and HTML formats: `zip.test.ts`, `polyglot.test.ts`, `archive-integrity.test.ts`; Chromium capture: `test/browser/capture.spec.ts`.
 - X GraphQL request and response handling: `x-archive-core/test/api.test.ts`, `parser.test.ts`, `merge.test.ts`, `collector.test.ts`, `debug.test.ts`; extension credential capture: `extension-x-bookmarks/test/capture.test.ts`.
-- X CLI flags and exit codes: none at process boundary; backend selection: `x-archive-cli/test/backend.test.ts`; filesystem state: `fs-store.test.ts`; cookie input: `netscape.test.ts`.
+- X CLI flags and exit codes: `x-archive-cli/test/args.test.ts`; backend selection: `x-archive-cli/test/backend.test.ts`; filesystem state: `fs-store.test.ts`; cookie input: `netscape.test.ts`.
 - X exported JSON/media/HTML complete end-to-end contract and live X/YouTube endpoints: none; tests use fixtures or mocks.
 - Performance workloads, entrypoint and budgets: [extension-onefile/PERFORMANCE.md](extension-onefile/PERFORMANCE.md); `make bench-list`, `make bench BENCH_ARGS='--tier=edit'`, Change workloads and `--budget=BASE,CAND`; Full is manual only.
 - ChatGPT organizer: `extension-chatgpt/test/{api,queue,storage,messages,model,security,safety}.test.ts`; installed-suite Chromium tests driving the real dashboard at `features/chatgpt/dashboard.html`: `extension-chatgpt/test/browser/extension-runtime.spec.ts` (`pnpm run test:browser:chatgpt`, run in CI). Invariants, regressions and release blockers: [extension-chatgpt/QUALIFICATION.md](extension-chatgpt/QUALIFICATION.md).
