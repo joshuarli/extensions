@@ -34,7 +34,7 @@ export interface Conversation {
 export interface ConversationProbe {
   archived: boolean;
   visible: boolean;
-  projectId: string | null;
+  projectId?: string | null;
   title: string | null;
 }
 
@@ -73,9 +73,10 @@ export interface Job {
   project: string;
   projectName: string;
   tries: number;
+  markAt?: number;
 }
 
-export type ResultStatus = "done" | "held" | "failed" | "unconfirmed";
+export type ResultStatus = "pending" | "verified" | "unverified" | "held" | "failed" | "unconfirmed";
 
 export interface Result {
   id: string;
@@ -396,7 +397,7 @@ export function probeFromDetail(data: unknown): ConversationProbe {
   return {
     archived: data["is_archived"],
     visible: data["is_visible"] !== false,
-    projectId: projectOf(data).projectId,
+    ...("gizmo_id" in data || "conversation_template_id" in data ? { projectId: projectOf(data).projectId } : {}),
     title: data["title"],
   };
 }
@@ -414,30 +415,56 @@ export function describeConversation(data: unknown): Coverage {
   if (!isRecord(data) || !isRecord(data["mapping"])) {
     throw new TriageError("compat", "ChatGPT returned a conversation record Triage doesn't recognize.");
   }
-  const map = mappingOf(data);
+  const map = data["mapping"];
   const parents = new Set<string>();
   let messages = 0;
   let images = 0;
   let attachments = 0;
   const unrendered = new Set<string>();
   for (const node of Object.values(map)) {
+    if (!isRecord(node)) {
+      unrendered.add("unknown conversation node");
+      continue;
+    }
     if (typeof node["parent"] === "string") parents.add(node["parent"]);
     const message = node["message"];
-    if (!isRecord(message)) continue;
+    if (message === null) continue;
+    if (!isRecord(message)) {
+      unrendered.add("unknown message");
+      continue;
+    }
     messages += 1;
     const content = message["content"];
-    const type = isRecord(content) ? String(content["content_type"] ?? "") : "";
-    if (type && type !== "text" && type !== "multimodal_text") unrendered.add(type);
-    images += partsOf(content).filter(isImagePart).length;
+    const type = isRecord(content) ? content["content_type"] : null;
+    const author = message["author"];
+    if (isRecord(author) && author["role"] === "tool") unrendered.add("tool output");
+    if (type !== "text" && type !== "multimodal_text") {
+      unrendered.add(typeof type === "string" && type ? type : "unknown content");
+    } else if (!isRecord(content) || !Array.isArray(content["parts"])
+      || Object.keys(content).some((key) => key !== "content_type" && key !== "parts")) {
+      unrendered.add("unknown content");
+    }
+    for (const part of partsOf(content)) {
+      if (isImagePart(part)) images += 1;
+      else if (typeof part !== "string") {
+        const partType = isRecord(part) ? part["content_type"] : null;
+        unrendered.add(typeof partType === "string" && partType ? partType : "unknown content part");
+      }
+    }
     const metadata = message["metadata"];
-    if (isRecord(metadata) && Array.isArray(metadata["attachments"])) attachments += metadata["attachments"].length;
+    if (isRecord(metadata)) {
+      const files = metadata["attachments"];
+      if (Array.isArray(files)) attachments += files.length;
+      else if (files != null) unrendered.add("unknown attachments");
+    }
   }
+  if (!messages) unrendered.add("no readable messages");
   const leaves = Object.keys(map).filter((id) => !parents.has(id)).length;
   return { messages, branches: Math.max(1, leaves), images, attachments, unrendered: [...unrendered].sort() };
 }
 
 export function isIncomplete(coverage: Coverage): boolean {
-  return coverage.images + coverage.attachments > 0;
+  return coverage.images + coverage.attachments + coverage.unrendered.length > 0;
 }
 
 export function whyNot(chat: Chat, action: Action, compatible: boolean, protectedIds: Record<string, Protection>): string | null {
@@ -484,6 +511,7 @@ export function buildJobs(journal: Journal, chats: Chat[]): { jobs: Job[]; skipp
       project: mark.action === "move" ? mark.project : "",
       projectName: mark.action === "move" ? mark.projectName : "",
       tries: 0,
+      markAt: mark.at,
     });
   }
   jobs.sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
@@ -528,17 +556,6 @@ export function satisfies(job: Job, probe: ConversationProbe): boolean {
     case "unarchive": return !probe.archived;
     case "rename": return probe.title === job.newTitle;
     case "move": return (probe.projectId ?? "") === job.project;
-  }
-}
-
-// Reads the active list only: an archived or deleted chat is absent from it.
-export function listedSatisfies(job: Job, listed: Chat | undefined): boolean {
-  switch (job.action) {
-    case "delete":
-    case "archive": return !listed;
-    case "unarchive": return Boolean(listed && !listed.archived);
-    case "rename": return listed?.title === job.newTitle;
-    case "move": return Boolean(listed) && (listed?.projectId ?? "") === job.project;
   }
 }
 
@@ -606,7 +623,7 @@ export const BACKUP_FORMAT = "chatgpt-organizer-backup";
 
 export const BACKUP_INCLUDES = "The complete conversation record ChatGPT returned for each chat: every message on every branch, message metadata, and the ids of attachments and images.";
 
-export const BACKUP_EXCLUDES = "The files behind attachments, uploaded or generated images, and other media. They are referenced by id but not downloaded, and are gone once the chat is deleted.";
+export const BACKUP_EXCLUDES = "Attachments and media are not downloaded. Tool output and unfamiliar content can also reference data the backup cannot recover.";
 
 // The same run and records always produce the same bytes, so the file hash identifies its content.
 export async function buildBackup(

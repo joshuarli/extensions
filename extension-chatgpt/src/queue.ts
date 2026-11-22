@@ -7,7 +7,6 @@ import {
   isIncomplete,
   isRunActive,
   jobOf,
-  listedSatisfies,
   satisfies,
   type BackupEntry,
   type BuiltBackup,
@@ -15,7 +14,6 @@ import {
   type ConversationProbe,
   type Job,
   type Journal,
-  type Mark,
   type Result,
   type Run,
   type RunStatus,
@@ -65,19 +63,12 @@ export interface BackupProof {
 
 type Settled = "applied" | "not-applied" | "gone" | "unknown";
 
-function markFor(job: Job, nowMs: number): Mark {
-  return {
-    action: job.action,
-    title: job.title,
-    newTitle: job.action === "rename" ? job.newTitle : null,
-    project: job.action === "move" ? job.project : "",
-    projectName: job.action === "move" ? job.projectName : "",
-    at: nowMs,
-  };
-}
-
 function plural(count: number, one: string, many = `${one}s`): string {
   return `${count} ${count === 1 ? one : many}`;
+}
+
+function needsVerification(result: Result): boolean {
+  return result.status === "pending" || result.status === "unverified";
 }
 
 const aborted = (): TriageError => new TriageError("aborted", "Stopped.");
@@ -129,12 +120,12 @@ export class QueueRunner {
   // A failed write leaves the journal unable to describe what is sent next, so the run
   // stops before sending anything more.
   private async save(): Promise<boolean> {
+    const run = this.run;
     try {
       await this.deps.persist();
       return true;
     } catch (error) {
-      const run = this.run;
-      if (run && isRunActive(run)) {
+      if (run && this.run === run && (isRunActive(run) || run.status === "done")) {
         run.status = "paused";
         run.note = `Couldn't save progress, so nothing more will be sent. ${failureOf(error).message}`;
         run.nextAt = 0;
@@ -231,7 +222,8 @@ export class QueueRunner {
   // A paused run with a change in flight must be resumed (to check it) or stopped first.
   canDismiss(): boolean {
     const run = this.run;
-    return Boolean(run) && !this.isActive() && !(run?.status === "paused" && run.inflight);
+    return Boolean(run) && !this.isActive()
+      && !(run?.status === "paused" && (run.inflight || run.results.some(needsVerification)));
   }
 
   async dismiss(): Promise<void> {
@@ -301,7 +293,10 @@ export class QueueRunner {
 
   private async settle(job: Job): Promise<Settled> {
     try {
-      return satisfies(job, await this.deps.transport.probe(job.id)) ? "applied" : "not-applied";
+      const probe = await this.deps.transport.probe(job.id);
+      if (!probe.visible && job.action !== "delete") return "gone";
+      if (job.action === "move" && probe.projectId === undefined) return "unknown";
+      return satisfies(job, probe) ? "applied" : "not-applied";
     } catch (error) {
       const failure = failureOf(error);
       if (failure.kind === "aborted") throw failure;
@@ -311,9 +306,7 @@ export class QueueRunner {
   }
 
   private complete(run: Run, job: Job, detail: string): void {
-    applyToInventory(this.deps.chats, job, this.deps.now());
-    delete this.deps.journal.marks[job.id];
-    this.record(run, job, "done", detail);
+    this.record(run, job, "pending", detail);
     run.i += 1;
     run.fails = 0;
     run.inflight = null;
@@ -378,14 +371,15 @@ export class QueueRunner {
       }
       if (!live()) return;
       this.changed();
-      await this.verify(run, live);
-      if (!live()) return;
+      if (!(await this.verify(run, live)) || !live()) return;
       run.status = "done";
       run.note = "";
       run.finishedAt = this.deps.now();
-      const failed = run.results.filter((result) => result.status !== "done").length;
-      this.note(`Finished. ${plural(run.results.length - failed, "change")} made${failed ? `, ${failed} need attention` : ""}.`);
-      await this.save();
+      const verified = run.results.filter((result) => result.status === "verified").length;
+      const attention = run.results.length - verified;
+      if (await this.save() && run.status === "done") {
+        this.note(`Finished. ${plural(verified, "change")} verified${attention ? `, ${attention} need attention` : ""}.`);
+      }
     } catch (error) {
       const failure = failureOf(error);
       if (failure.kind !== "aborted" && live()) await this.pause(failure.message);
@@ -448,6 +442,11 @@ export class QueueRunner {
         run.inflight = null;
         await this.save();
         return false;
+      }
+      if (this.withdrawn(job)) {
+        run.inflight = null;
+        if (!(await this.save())) return false;
+        continue;
       }
       this.changed();
 
@@ -518,8 +517,16 @@ export class QueueRunner {
     if (this.deps.journal.protect[job.id]) return "Not changed: it was protected after the run was reviewed.";
     const mark = this.deps.journal.marks[job.id];
     if (!mark) return "Not changed: its mark was cleared after the run was reviewed.";
-    if (mark.action !== job.action) return "Not changed: it was marked differently after the run was reviewed.";
+    if (job.markAt === undefined) return "Not changed: review this mark again after updating the organizer.";
+    if (!this.matchesMark(job)) return "Not changed: its mark changed after the run was reviewed.";
     return null;
+  }
+
+  private matchesMark(job: Job): boolean {
+    const mark = this.deps.journal.marks[job.id];
+    return mark != null && job.markAt === mark.at && mark.action === job.action
+      && (job.action !== "rename" || mark.newTitle?.trim() === job.newTitle)
+      && (job.action !== "move" || mark.project === job.project);
   }
 
   private async collectBackup(
@@ -542,7 +549,11 @@ export class QueueRunner {
         const record = await this.deps.transport.fetchRecord(job.id);
         const coverage = describeConversation(record);
         if (isIncomplete(coverage) && !run.backup.acceptIncomplete) {
-          held[job.id] = `It has ${plural(coverage.images + coverage.attachments, "attachment or image file", "attachment or image files")} the backup can't include.`;
+          const kinds = [
+            ...(coverage.images || coverage.attachments ? ["attachments or image files"] : []),
+            ...coverage.unrendered,
+          ];
+          held[job.id] = `The backup can't establish recovery of this content (${kinds.join(", ")}).`;
         } else {
           const createdMs = this.deps.chats.find((chat) => chat.id === job.id)?.createdMs ?? 0;
           entries.push({ id: job.id, title: job.title, createdMs, record, coverage });
@@ -589,9 +600,9 @@ export class QueueRunner {
     return (await this.save()) ? "saving" : "halt";
   }
 
-  private async verify(run: Run, live: () => boolean): Promise<void> {
-    const done = run.results.filter((result) => result.status === "done");
-    if (!done.length) return;
+  private async verify(run: Run, live: () => boolean): Promise<boolean> {
+    const pending = run.results.filter(needsVerification);
+    if (!pending.length) return true;
     run.note = "Double-checking with ChatGPT.";
     this.changed();
     let fresh: Chat[];
@@ -601,38 +612,41 @@ export class QueueRunner {
     } catch (error) {
       const failure = failureOf(error);
       if (failure.kind === "aborted") throw failure;
-      run.note = `Couldn't double-check: ${failure.message}`;
-      return;
+      if (!live()) return false;
+      for (const result of pending) result.status = "unverified";
+      await this.pause(`Couldn't verify changes: ${failure.message}`);
+      return false;
     }
-    const listed = new Map(fresh.map((chat) => [chat.id, chat]));
-    const confirmed: Result[] = [];
-    for (const result of done) {
-      if (!live()) throw aborted();
-      const job = jobOf(result);
-      // Absence from a partial list proves nothing, so each change is probed directly.
-      if (complete && listedSatisfies(job, listed.get(result.id))) {
-        confirmed.push(result);
-        continue;
-      }
+    const jobs = new Map(run.jobs.map((job) => [job.id, job]));
+    for (const result of pending) {
+      if (!live()) return false;
+      const job = jobs.get(result.id) ?? jobOf(result);
       const settled = await this.settle(job);
+      if (!live()) return false;
       if (settled === "applied") {
-        confirmed.push(result);
-        continue;
+        result.status = "verified";
+        if (this.matchesMark(job)) delete this.deps.journal.marks[job.id];
+      } else if (settled === "unknown") {
+        result.status = "unverified";
+        result.note = "ChatGPT could not confirm the result.";
+      } else {
+        result.status = "unconfirmed";
+        result.note = settled === "gone" ? "ChatGPT could no longer find this chat." : "ChatGPT did not show the requested change.";
       }
-      result.status = "unconfirmed";
-      if (settled === "unknown") {
-        result.note = "Couldn't re-check this change with ChatGPT. Check it there.";
-        continue;
-      }
-      result.note = "ChatGPT still shows this chat unchanged. It's marked again so you can retry.";
-      this.deps.journal.marks[result.id] = markFor(job, this.deps.now());
     }
-    const keep = this.deps.chats.filter((chat) => !listed.has(chat.id)
-      && (!complete || chat.archived || confirmed.some((result) => result.id === chat.id)));
+    const listed = new Set(fresh.map((chat) => chat.id));
+    const tracked = new Set(run.results.filter((result) => result.status !== "held" && result.status !== "failed").map((result) => result.id));
+    const keep = this.deps.chats.filter((chat) => !listed.has(chat.id) && (!complete || chat.archived || tracked.has(chat.id)));
     const merged = [...fresh, ...keep];
-    for (const result of confirmed) applyToInventory(merged, jobOf(result), this.deps.now());
+    for (const result of run.results) {
+      if (result.status === "verified") applyToInventory(merged, jobOf(result), this.deps.now());
+    }
     this.deps.chats.splice(0, this.deps.chats.length, ...merged);
-    run.note = "";
+    if (run.results.some(needsVerification)) {
+      await this.pause("Some changes remain unverified. Retry verification to check them again.");
+      return false;
+    }
+    return true;
   }
 }
 

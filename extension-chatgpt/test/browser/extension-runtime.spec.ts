@@ -141,10 +141,10 @@ test("deletes only after a verified backup is saved, and only the reviewed chang
     expect(parsed.conversations.map((entry) => entry.id)).toEqual(["c1"]);
     expect(Object.keys(parsed.conversations[0]?.record.mapping ?? {})).toEqual(["a1", "root", "u1"]);
 
-    const after = await sendRaw(page, { op: "change", runId: "anything", accountId: "u-e2e", id: "c3" });
+    const after = await sendRaw(page, { op: "change", runId: "anything", leaseId: "closed", accountId: "u-e2e", id: "c3" });
     expect(after.ok).toBe(false);
     expect(after.error?.kind).toBe("auth");
-    const armed = await sendRaw(page, { op: "arm", runId: "sneaky", accountId: "u-e2e", commands: [{ action: "delete", id: "c3" }] });
+    const armed = await sendRaw(page, { op: "arm", runId: "sneaky", leaseId: "closed", accountId: "u-e2e", commands: [{ action: "delete", id: "c3" }] });
     expect(armed.ok).toBe(false);
     expect(server.applied("c3")?.visible).toBe(true);
   });
@@ -317,5 +317,129 @@ test("a 3,200-chat account loads completely and stays responsive", async () => {
     expect(timing.perMove).toBeLessThan(50);
     await expect(page.locator(".row.focus")).toContainText("Generated chat");
     await expect(page.locator(".counts")).toContainText("1 queued");
+  });
+});
+
+async function queueRename(page: Page, current: string, replacement: string): Promise<void> {
+  await row(page, current).click();
+  await page.keyboard.press("r");
+  await page.getByRole("textbox", { name: "New title" }).fill(replacement);
+  await page.getByRole("button", { name: "Queue rename" }).click();
+}
+
+async function queueMove(page: Page, title: string, project: string): Promise<void> {
+  await row(page, title).click();
+  await page.keyboard.press("m");
+  await page.getByRole("combobox", { name: "Project" }).selectOption(project);
+  await page.getByRole("button", { name: "Queue move" }).click();
+}
+
+test("pause, edit and resume keeps replacement titles and Projects for a fresh review", async () => {
+  const server = fixture();
+  await withExtension(server, async ({ openDashboard }) => {
+    const page = await openDashboard();
+    await expect(page.locator(".row")).toHaveCount(4, { timeout: 20_000 });
+    await row(page, "Sourdough starter").click();
+    await page.keyboard.press("a");
+    await queueRename(page, "Kubernetes basics", "Reviewed title");
+    await queueMove(page, "Trip to Lisbon", "g-p-work");
+    await reviewAndRun(page, [
+      "1 Sourdough starter Moved to Archived",
+      "2 Kubernetes basics Renamed to “Reviewed title”",
+      "3 Trip to Lisbon Moved to Work",
+    ]);
+    await expect.poll(() => server.patches.length).toBe(1);
+    await page.getByRole("button", { name: "Pause", exact: true }).click();
+    await queueRename(page, "Kubernetes basics", "Replacement title");
+    await queueMove(page, "Trip to Lisbon", "g-p-home");
+    await page.getByRole("button", { name: "Resume", exact: true }).click();
+    await expect(page.locator(".status")).toContainText("done", { timeout: 20_000 });
+    expect(server.patches.map((patch) => patch.id)).toEqual(["c1"]);
+    await expect(page.locator(".queued-body .held")).toHaveCount(2);
+    await reviewAndRun(page, ["1 Kubernetes basics Renamed to “Replacement title”", "2 Trip to Lisbon Moved to Home"]);
+    await expect(page.locator(".queued-body .verified")).toHaveCount(2, { timeout: 20_000 });
+    await expect(page.locator(".status")).toContainText("done");
+    expect(server.patches.slice(1).map((patch) => patch.body)).toEqual([
+      { title: "Replacement title" },
+      { gizmo_id: "g-p-home" },
+    ]);
+  });
+});
+
+test("closing the dashboard lease during account validation prevents the next PATCH", async () => {
+  const server = fixture();
+  await withExtension(server, async ({ context, openDashboard }) => {
+    const page = await openDashboard();
+    await expect(page.locator(".row")).toHaveCount(4, { timeout: 20_000 });
+    for (const title of ["Sourdough starter", "Kubernetes basics"]) {
+      await row(page, title).click();
+      await page.keyboard.press("a");
+    }
+    await reviewAndRun(page, ["1 Sourdough starter Moved to Archived", "2 Kubernetes basics Moved to Archived"]);
+    await expect.poll(() => server.patches.length).toBe(1);
+    const validation = server.holdSession();
+    const outcome = await Promise.race([
+      validation.entered.then(() => "validating"),
+      context.waitForEvent("request", { predicate: (request) => request.method() === "PATCH", timeout: 15_000 }).then(() => "PATCH"),
+    ]);
+    try {
+      expect(outcome).toBe("validating");
+      await page.close();
+      const reopened = await openDashboard();
+      await expect(reopened.getByRole("button", { name: "Resume", exact: true })).toBeVisible({ timeout: 20_000 });
+      const rejected = context.waitForEvent("response", {
+        predicate: (response) => new URL(response.url()).pathname === "/api/auth/session",
+        timeout: 10_000,
+      });
+      validation.release();
+      await (await rejected).finished();
+      await row(reopened, "Kubernetes basics").click();
+      await expect(reopened.locator("#preview")).toContainText("About Kubernetes basics");
+      expect(server.patches.map((patch) => patch.id)).toEqual(["c1"]);
+      await reopened.getByRole("button", { name: "Resume", exact: true }).click();
+      await expect(reopened.locator(".status")).toContainText("done", { timeout: 20_000 });
+      expect(server.patches.map((patch) => patch.id)).toEqual(["c1", "c2"]);
+    } finally {
+      validation.release();
+    }
+  });
+});
+
+test("switching the session behind an open dashboard pauses an armed run", async () => {
+  const server = fixture();
+  await withExtension(server, async ({ openDashboard }) => {
+    const page = await openDashboard();
+    await expect(page.locator(".row")).toHaveCount(4, { timeout: 20_000 });
+    for (const title of ["Sourdough starter", "Kubernetes basics"]) {
+      await row(page, title).click();
+      await page.keyboard.press("a");
+    }
+    await reviewAndRun(page, ["1 Sourdough starter Moved to Archived", "2 Kubernetes basics Moved to Archived"]);
+    await expect.poll(() => server.patches.length).toBe(1);
+    server.accountId = "u-other";
+    await expect(page.locator(".status")).toContainText(/paused.*account/i, { timeout: 15_000 });
+    expect(server.patches.map((patch) => patch.id)).toEqual(["c1"]);
+  });
+});
+
+test("retry verification survives dashboard reload and sends no second PATCH", async () => {
+  const server = fixture();
+  server.unfamiliarAcknowledgement = true;
+  server.failListAfterPatch = true;
+  await withExtension(server, async ({ openDashboard }) => {
+    const page = await openDashboard();
+    await expect(page.locator(".row")).toHaveCount(4, { timeout: 20_000 });
+    await queueRename(page, "Kubernetes basics", "Replacement title");
+    await reviewAndRun(page, ["1 Kubernetes basics Renamed to “Replacement title”"]);
+    await expect(page.getByRole("button", { name: "Retry verification" })).toBeVisible({ timeout: 20_000 });
+    await expect(page.locator(".queued-body .unverified")).toContainText("uncertain response");
+    expect(server.patches).toHaveLength(1);
+
+    server.failListAfterPatch = false;
+    await page.reload();
+    await page.getByRole("button", { name: "Retry verification" }).click({ timeout: 20_000 });
+    await expect(page.locator(".status")).toContainText("done", { timeout: 20_000 });
+    await expect(page.locator(".queued-body .verified")).toContainText("Replacement title");
+    expect(server.patches).toHaveLength(1);
   });
 });

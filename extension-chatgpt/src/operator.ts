@@ -12,8 +12,7 @@ function failurePayload(error: unknown): FailurePayload {
 
 export interface Operator {
   handle(request: ApiRequest): Promise<ApiResponse>;
-  leaseOpened(runId: string): void;
-  leaseClosed(runId: string): void;
+  leaseOpened(runId: string, leaseId: string): () => void;
   armedRunId(): string | null;
 }
 
@@ -30,13 +29,13 @@ export function createOperator(
   onListProgress: (scope: "active" | "archived", found: number, total: number | null, waiting: boolean) => void,
 ): Operator {
   const guard = new MutationGuard();
-  const leases = new Map<string, number>();
+  const leases = new Map<string, string>();
 
   // Any sign that another account is signed in disarms the run before anything else happens.
   async function requireAccount(accountId: string): Promise<void> {
-    let current = client.accountId();
+    let current: string;
     try {
-      if (current == null) current = await signedInAccount(client);
+      current = await signedInAccount(client);
     } catch (error) {
       disarmAll();
       throw error;
@@ -61,23 +60,30 @@ export function createOperator(
           disarmAll();
           throw error;
         }
-      case "disarm":
-        guard.disarm(request.runId);
-        return true;
-      case "arm":
-        if (!leases.has(request.runId)) {
+      case "arm": {
+        if (leases.get(request.runId) !== request.leaseId) {
           throw new TriageError("auth", "The dashboard isn't holding this run open. No change was sent.");
         }
         await requireAccount(request.accountId);
-        if (!leases.has(request.runId)) {
+        if (leases.get(request.runId) !== request.leaseId) {
           throw new TriageError("auth", "The dashboard closed this run while it was being authorized. No change was sent.");
         }
         guard.arm(request.runId, request.accountId, request.commands);
         return true;
+      }
       case "change": {
-        const command = guard.authorize(request.runId, request.accountId, request.id);
-        await requireAccount(request.accountId);
-        await client.change(command);
+        if (leases.get(request.runId) !== request.leaseId) {
+          throw new TriageError("auth", "The dashboard's authorization for this change ended. No change was sent.");
+        }
+        const authorize = guard.permit(request.runId, request.accountId, request.id);
+        try {
+          await client.change({ accountId: request.accountId, authorize });
+        } catch (error) {
+          if (error instanceof TriageError && error.kind === "auth" && leases.get(request.runId) === request.leaseId) {
+            guard.disarm(request.runId);
+          }
+          throw error;
+        }
         return true;
       }
       default:
@@ -86,15 +92,15 @@ export function createOperator(
     await requireAccount(request.accountId);
     switch (request.op) {
       case "list":
-        return client.list(request.scope, (found, total, waiting) => onListProgress(request.scope, found, total, waiting));
+        return client.list(request.accountId, request.scope, (found, total, waiting) => onListProgress(request.scope, found, total, waiting));
       case "projects":
-        return client.projects();
+        return client.projects(request.accountId);
       case "conversation":
-        return client.conversation(request.id);
+        return client.conversation(request.accountId, request.id);
       case "record":
-        return client.record(request.id);
+        return client.record(request.accountId, request.id);
       case "probe":
-        return client.probe(request.id);
+        return client.probe(request.accountId, request.id);
     }
   }
 
@@ -107,17 +113,14 @@ export function createOperator(
         return { ...response, ok: false, value: null, error: failurePayload(error) };
       }
     },
-    leaseOpened(runId) {
-      leases.set(runId, (leases.get(runId) ?? 0) + 1);
-    },
-    leaseClosed(runId) {
-      const open = (leases.get(runId) ?? 1) - 1;
-      if (open > 0) {
-        leases.set(runId, open);
-        return;
-      }
-      leases.delete(runId);
+    leaseOpened(runId, leaseId) {
       guard.disarm(runId);
+      leases.set(runId, leaseId);
+      return () => {
+        if (leases.get(runId) !== leaseId) return;
+        leases.delete(runId);
+        guard.disarm(runId);
+      };
     },
     armedRunId() {
       return guard.armedRunId();

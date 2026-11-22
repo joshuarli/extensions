@@ -40,8 +40,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
 chrome.runtime.onConnect.addListener((port) => {
   if (!port.name.startsWith(LEASE_PORT_PREFIX)) return;
-  const runId = port.name.slice(LEASE_PORT_PREFIX.length);
-  operator.leaseOpened(runId);
+  const [runId, leaseId, extra] = port.name.slice(LEASE_PORT_PREFIX.length).split(":");
+  if (!runId || !leaseId || extra !== undefined) return;
+  const revoke = operator.leaseOpened(runId, leaseId);
+  port.onDisconnect.addListener(revoke);
   port.postMessage({ kind: "chatgpt/lease:ready" });
-  port.onDisconnect.addListener(() => operator.leaseClosed(runId));
 });

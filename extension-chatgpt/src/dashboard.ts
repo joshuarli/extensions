@@ -88,7 +88,8 @@ let inventoryNote = "";
 let blocked = "";
 const activity: string[] = [];
 let runner: QueueRunner | null = null;
-let lease: { runId: string; port: chrome.runtime.Port } | null = null;
+let lease: { runId: string; id: string; port: chrome.runtime.Port } | null = null;
+let arming = false;
 const previewCache = new Map<string, Conversation>();
 const previewErrors = new Map<string, string>();
 let previewTimer: ReturnType<typeof setTimeout> | null = null;
@@ -313,7 +314,14 @@ const transport: QueueTransport = {
     return send({ op: "record", accountId: signedIn(), id });
   },
   async writeChange(run, job) {
-    await send({ op: "change", runId: run.id, accountId: run.accountId, id: job.id });
+    const current = lease;
+    if (current?.runId !== run.id) throw new TriageError("auth", "This run's lease closed. No change was sent.");
+    try {
+      await send({ op: "change", runId: run.id, leaseId: current.id, accountId: run.accountId, id: job.id });
+    } catch (error) {
+      if (failureOf(error).kind === "offline" && lease === current) closeLease();
+      throw error;
+    }
   },
   async listActive() {
     return loadChats("active");
@@ -335,7 +343,8 @@ async function openLease(runId: string): Promise<void> {
   if (lease?.runId === runId) return;
   closeLease();
   const id = await ensureTab();
-  const port = chrome.tabs.connect(id, { name: `${LEASE_PORT_PREFIX}${runId}` });
+  const leaseId = crypto.randomUUID();
+  const port = chrome.tabs.connect(id, { name: `${LEASE_PORT_PREFIX}${runId}:${leaseId}` });
   await new Promise<void>((resolve, reject) => {
     const fail = (error: TriageError): void => {
       port.disconnect();
@@ -352,7 +361,7 @@ async function openLease(runId: string): Promise<void> {
       fail(new TriageError("offline", "The ChatGPT tab closed the connection. Reload it, then try again."));
     });
   });
-  lease = { runId, port };
+  lease = { runId, id: leaseId, port };
   port.onDisconnect.addListener(() => {
     if (lease?.port !== port) return;
     lease = null;
@@ -362,12 +371,8 @@ async function openLease(runId: string): Promise<void> {
 
 async function arm(run: { id: string; accountId: string; jobs: readonly Job[] }): Promise<void> {
   await openLease(run.id);
-  await send({ op: "arm", runId: run.id, accountId: run.accountId, commands: run.jobs.map(commandOf) });
-}
-
-async function disarm(runId: string): Promise<void> {
-  await send({ op: "disarm", runId }).catch(() => undefined);
-  if (lease?.runId === runId) closeLease();
+  if (lease?.runId !== run.id) throw new TriageError("auth", "This run's lease closed.");
+  await send({ op: "arm", runId: run.id, leaseId: lease.id, accountId: run.accountId, commands: run.jobs.map(commandOf) });
 }
 
 function makeRunner(loaded: Journal): QueueRunner {
@@ -381,52 +386,56 @@ function makeRunner(loaded: Journal): QueueRunner {
     onEvent: (event) => {
       if (event.type === "note" && event.message) toast(event.message);
       const run = loaded.run;
-      if (run && runControls(run) === "finished" && lease?.runId === run.id) void disarm(run.id);
+      if (run && !isRunActive(run) && lease?.runId === run.id) closeLease();
       invalidateAll();
     },
   });
 }
 
 async function startRun(jobs: Job[], options: { backup: boolean; acceptIncomplete: boolean; gap: number }): Promise<void> {
-  if (!journal || !runner) return;
+  if (!journal || !runner || arming) return;
+  arming = true;
   const runId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
   journal.settings.backup = options.backup;
   journal.settings.gap = clampGap(options.gap, CONFIG);
   try {
     await persistJournal();
     await arm({ id: runId, accountId: journal.accountId, jobs });
+    await runner.start(jobs, { runId, backup: options.backup, acceptIncomplete: options.acceptIncomplete });
   } catch (error) {
     closeLease();
     toast(`Changes stayed switched off; nothing was sent. ${failureOf(error).message}`);
-    return;
+  } finally {
+    arming = false;
   }
-  await runner.start(jobs, { runId, backup: options.backup, acceptIncomplete: options.acceptIncomplete });
 }
 
 async function resumeRun(): Promise<void> {
   const run = journal?.run;
-  if (!run || !runner) return;
+  if (!run || !runner || run.status !== "paused" || arming) return;
+  arming = true;
   try {
-    await arm(run);
+    if (run.phase !== "verify") await arm(run);
+    if (journal?.run === run && run.status === "paused") await runner.resume();
+    else if (lease?.runId === run.id) closeLease();
   } catch (error) {
+    closeLease();
     toast(`Changes stayed switched off; nothing was sent. ${failureOf(error).message}`);
-    return;
+  } finally {
+    arming = false;
   }
-  await runner.resume();
 }
 
 async function stopRun(): Promise<void> {
   const run = journal?.run;
   if (!run || !runner) return;
   await runner.stop();
-  await disarm(run.id);
 }
 
 async function dismissRun(): Promise<void> {
   const run = journal?.run;
   if (!run || !runner) return;
   await runner.dismiss();
-  await disarm(run.id);
 }
 
 // ---------- view state ----------
@@ -480,7 +489,8 @@ function renderToolbar(): void {
   ui.counts.textContent = `${total} queued · ${selected.size} selected`;
   ui.status.textContent = blocked || progress || statusText(run) || activity[0] || inventoryNote || (compatOk ? "Ready" : "");
   const canRun = Boolean(journal && runner && compatOk && total > 0);
-  const key = `${controls}|${canRun}|${journal ? 1 : 0}|${runner?.canDismiss() ? 1 : 0}`;
+  const verifyOnly = run?.phase === "verify";
+  const key = `${controls}|${canRun}|${journal ? 1 : 0}|${runner?.canDismiss() ? 1 : 0}|${verifyOnly}`;
   if (key === toolbarKey) return;
   toolbarKey = key;
   const buttons: HTMLElement[] = [];
@@ -494,7 +504,7 @@ function renderToolbar(): void {
       buttons.push(h("button", { class: "danger", onclick: () => void stopRun(), text: "Stop" }));
       break;
     case "paused":
-      buttons.push(h("button", { class: "primary", onclick: () => void resumeRun(), text: "Resume" }));
+      buttons.push(h("button", { class: "primary", onclick: () => void resumeRun(), text: verifyOnly ? "Retry verification" : "Resume" }));
       buttons.push(h("button", { class: "danger", onclick: () => void stopRun(), text: "Stop" }));
       if (runner?.canDismiss()) buttons.push(h("button", { class: "link", onclick: () => void dismissRun(), text: "Dismiss" }));
       break;
@@ -780,7 +790,7 @@ function marksChanged(): void {
 }
 
 function clearMarks(): void {
-  if (!journal) return;
+  if (!journal || !canEdit()) return;
   for (const id of targets()) delete journal.marks[id];
   marksChanged();
 }
@@ -795,6 +805,12 @@ function canEdit(): boolean {
     return false;
   }
   return true;
+}
+
+function markTimes(journal: Journal): (id: string) => number {
+  const reviewed = new Map(journal.run?.jobs.map((job) => [job.id, job.markAt]));
+  const now = Date.now();
+  return (id) => Math.max(now, (journal.marks[id]?.at ?? 0) + 1, (reviewed.get(id) ?? 0) + 1);
 }
 
 // Applies one action to every target as a single state change and a single write.
@@ -815,6 +831,7 @@ function setMarks(ids: readonly string[], action: Action, options: { newTitle?: 
     return;
   }
   const refused = new Map<string, number>();
+  const markTime = markTimes(journal);
   let marked = 0;
   for (const id of ids) {
     const chat = byId.get(id);
@@ -829,7 +846,7 @@ function setMarks(ids: readonly string[], action: Action, options: { newTitle?: 
       newTitle: action === "rename" ? options.newTitle ?? null : null,
       project: action === "move" ? options.project ?? "" : "",
       projectName: action === "move" ? options.projectName ?? "" : "",
-      at: Date.now(),
+      at: markTime(id),
     };
     marked += 1;
   }
@@ -967,7 +984,7 @@ function changeCell(job: Job): string {
 }
 
 function openReview(): void {
-  if (!journal || !runner || runControls(journal.run) === "working" || journal.run?.status === "paused") return;
+  if (!journal || !runner || isRunActive(journal.run) || journal.run?.status === "paused") return;
   const { jobs, skipped } = buildJobs(journal, chats);
   if (!jobs.length) {
     toast(skipped.length ? `None of the ${skipped.length} marks can run: ${skipped[0]?.reason ?? ""}` : "Nothing is queued.");
@@ -1003,7 +1020,7 @@ function openReview(): void {
     ) : null,
     deletes ? h("div", { class: "field" },
       h("label", {}, backupToggle, " Back up every chat before deleting it"),
-      h("label", {}, incompleteToggle, " Also delete chats whose attachment or image files the backup can't include"),
+      h("label", {}, incompleteToggle, " Also delete chats whose attachments, media or unfamiliar content the backup may not recover"),
       h("p", { class: "note", text: `The backup is a JSON file with each chat's full record. ${BACKUP_EXCLUDES} Without the second box, such chats are kept.` }),
     ) : null,
     h("div", { class: "field" }, h("label", { text: "Seconds between changes" }), gapInput),
@@ -1143,7 +1160,7 @@ function importPlan(): void {
     const file = input.files?.[0];
     if (!file || !journal) return;
     void file.text().then((text) => {
-      if (!journal) return;
+      if (!journal || !canEdit()) return;
       let check;
       try {
         const plan = decodeValue(PlanSchema, JSON.parse(text) as unknown);
@@ -1162,7 +1179,10 @@ function importPlan(): void {
         ), [{ label: "Close", primary: true }]);
         return;
       }
-      journal.marks = { ...journal.marks, ...check.marks };
+      const markTime = markTimes(journal);
+      for (const [id, mark] of Object.entries(check.marks)) {
+        journal.marks[id] = { ...mark, at: markTime(id) };
+      }
       journal.protect = { ...journal.protect, ...check.protect };
       marksChanged();
       toast(`Imported ${Object.keys(check.marks).length} planned changes.`);

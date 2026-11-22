@@ -114,9 +114,9 @@ input, select {
 .act { display: flex; flex-wrap: wrap; gap: 6px; }
 .result { padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 12px; }
 .result .s { font: 11px var(--mono); text-transform: uppercase; }
-.result.done .s { color: var(--green); }
+.result.verified .s { color: var(--green); }
 .result.failed .s, .result.held .s { color: var(--danger); }
-.result.unconfirmed .s { color: var(--amber); }
+.result.pending .s, .result.unverified .s, .result.unconfirmed .s { color: var(--amber); }
 .footer { display: flex; gap: 16px; padding: 8px 16px; border-top: 1px solid var(--line); background: var(--panel); color: var(--fg3); font: 11px var(--mono); max-height: 84px; overflow: auto; }
 .veil { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: grid; place-items: center; z-index: 10; }
 .modal { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 20px; width: min(680px, 94vw); max-height: 86vh; overflow: auto; }

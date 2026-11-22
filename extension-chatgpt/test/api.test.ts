@@ -1,16 +1,19 @@
 import { describe, expect, it } from "vitest";
 import { CONFIG, createApiClient, createApiState } from "../src/api.ts";
+import type { Command } from "../src/model.ts";
 import { TriageError } from "../src/errors.ts";
 import { createClock, jsonResponse, listItem } from "./helpers.ts";
 
 type Handler = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
-function harness(handler: Handler, scale = 1) {
+const defaultSession = () => jsonResponse(200, { accessToken: "t1", user: { id: "u1" } });
+
+function harness(handler: Handler, scale = 1, session = defaultSession) {
   const clock = createClock();
-  const state = createApiState();
+  const state = { ...createApiState(), accountId: "u1", token: "t1" };
   const config = { ...CONFIG, requestGap: 0 };
   const client = createApiClient({
-    fetch: handler as typeof fetch,
+    fetch: (input, init) => String(input) === "/api/auth/session" ? Promise.resolve(session()) : handler(input, init),
     state,
     now: clock.now,
     sleep: clock.sleep,
@@ -18,6 +21,10 @@ function harness(handler: Handler, scale = 1) {
     scale,
   });
   return { clock, state, client };
+}
+
+function mutation(command: Command) {
+  return { accountId: "u1", authorize: () => command };
 }
 
 function expectFailure(promise: Promise<unknown>): Promise<TriageError> {
@@ -45,7 +52,7 @@ describe("authenticated ChatGPT client", () => {
       const offset = new URL(String(input), "https://chatgpt.com").searchParams.get("offset");
       return jsonResponse(200, { items: offset === "0" ? [listItem("a")] : [], total: 1 });
     });
-    const { chats } = await client.list("active");
+    const { chats } = await client.list("u1", "active");
     expect(chats.map((chat) => chat.id)).toEqual(["a"]);
     expect(state.strikes).toBe(1);
     expect(state.cooldownUntil).toBeGreaterThan(0);
@@ -60,48 +67,36 @@ describe("authenticated ChatGPT client", () => {
       if (calls === 1) return jsonResponse(429, { detail: "too many" });
       return jsonResponse(200, { items: [], total: 0 });
     }, 0.001);
-    await client.list("active");
+    await client.list("u1", "active");
     expect(state.strikes).toBe(1);
     expect(state.cooldownUntil - start).toBe(120);
   });
 
   it("refreshes the token once after a 401 and retries with the new token", async () => {
     const seen: string[] = [];
-    const { client, state } = harness(async (input, init) => {
-      const path = String(input);
-      if (path.includes("/api/auth/session")) {
-        return jsonResponse(200, { accessToken: "new", user: { id: "u1" } });
-      }
+    let sessions = 0;
+    const { client, state } = harness(async (_input, init) => {
       const auth = new Headers(init?.headers).get("Authorization") ?? "";
+      expect(init?.credentials).toBe("omit");
       seen.push(auth);
       if (auth === "Bearer old") return jsonResponse(401, { detail: "Unauthorized" });
       return jsonResponse(200, { success: true });
-    });
-    state.token = "old";
-    await client.change({ action: "archive", id: "c1" });
+    }, 1, () => jsonResponse(200, { accessToken: ++sessions === 1 ? "old" : "new", user: { id: "u1" } }));
+    await client.change(mutation({ action: "archive", id: "c1" }));
     expect(seen).toEqual(["Bearer old", "Bearer new"]);
     expect(state.token).toBe("new");
   });
 
   it("stops after one expired retry when the refreshed token is still refused", async () => {
-    const { client } = harness(async (input) => {
-      if (String(input).includes("/api/auth/session")) {
-        return jsonResponse(200, { accessToken: "new", user: { id: "u1" } });
-      }
-      return jsonResponse(403, { detail: "Unauthorized" });
-    });
-    const failure = await expectFailure(client.change({ action: "delete", id: "c1" }));
+    const { client } = harness(async () => jsonResponse(403, { detail: "Unauthorized" }));
+    const failure = await expectFailure(client.change(mutation({ action: "delete", id: "c1" })));
     expect(failure.kind).toBe("auth");
   });
 
   it("refuses to continue when the signed-in account changes", async () => {
     let account = "u1";
-    const { client } = harness(async (input) => {
-      if (String(input).includes("/api/auth/session")) {
-        return jsonResponse(200, { accessToken: "t", user: { id: account } });
-      }
-      return jsonResponse(200, { success: true });
-    });
+    const { client } = harness(async () => jsonResponse(200, { success: true }), 1,
+      () => jsonResponse(200, { accessToken: "t", user: { id: account } }));
     expect((await client.session()).accountId).toBe("u1");
     account = "u2";
     const failure = await expectFailure(client.session());
@@ -116,7 +111,7 @@ describe("authenticated ChatGPT client", () => {
       const offset = new URL(String(input), "https://chatgpt.com").searchParams.get("offset");
       return jsonResponse(200, { items: offset === "0" ? [listItem("a")] : [], total: 1 });
     });
-    const { chats, complete } = await client.list("active");
+    const { chats, complete } = await client.list("u1", "active");
     expect(chats).toHaveLength(1);
     expect(complete).toBe(true);
     expect(calls).toBe(4);
@@ -124,7 +119,7 @@ describe("authenticated ChatGPT client", () => {
 
   it("refuses a list that does not look like ChatGPT's", async () => {
     const { client } = harness(async () => jsonResponse(200, { items: [{ title: "no id" }], total: 1 }));
-    const failure = await expectFailure(client.list("active"));
+    const failure = await expectFailure(client.list("u1", "active"));
     expect(failure.kind).toBe("compat");
   });
 
@@ -133,18 +128,18 @@ describe("authenticated ChatGPT client", () => {
       const offset = new URL(String(input), "https://chatgpt.com").searchParams.get("offset");
       return jsonResponse(200, { items: offset === "0" ? [listItem("a")] : [], total: 5 });
     });
-    const list = await client.list("active");
+    const list = await client.list("u1", "active");
     expect(list).toMatchObject({ complete: false, total: 5 });
   });
 
   it("reports a list as incomplete when a page only repeats chats already seen", async () => {
     const { client } = harness(async () => jsonResponse(200, { items: [listItem("a")], total: null }));
-    expect((await client.list("active")).complete).toBe(false);
+    expect((await client.list("u1", "active")).complete).toBe(false);
   });
 
   it("refuses to probe a record whose shape it doesn't recognize", async () => {
     const { client } = harness(async () => jsonResponse(200, { title: "a" }));
-    expect((await expectFailure(client.probe("c1"))).kind).toBe("compat");
+    expect((await expectFailure(client.probe("u1", "c1"))).kind).toBe("compat");
   });
 
   it("treats a 2xx response whose body was cut off as uncertain, not failed", async () => {
@@ -152,12 +147,32 @@ describe("authenticated ChatGPT client", () => {
       const body = new ReadableStream({ start(controller) { controller.error(new Error("connection reset")); } });
       return new Response(body, { status: 200 });
     });
-    expect((await expectFailure(client.change({ action: "delete", id: "c1" }))).kind).toBe("transient");
+    expect((await expectFailure(client.change(mutation({ action: "delete", id: "c1" })))).kind).toBe("transient");
   });
 
   it("treats an explicit success:false as a failed change", async () => {
     const { client } = harness(async () => jsonResponse(200, { success: false }));
-    const failure = await expectFailure(client.change({ action: "delete", id: "c1" }));
+    const failure = await expectFailure(client.change(mutation({ action: "delete", id: "c1" })));
     expect(failure.kind).toBe("http");
+  });
+});
+
+describe("PATCH acknowledgements", () => {
+  it.each([
+    ["HTML", () => new Response("<html>Sign in</html>", { headers: { "content-type": "text/html" } })],
+    ["malformed JSON", () => new Response("{", { headers: { "content-type": "application/json" } })],
+    ["empty", () => new Response(null, { status: 204 })],
+    ["empty object", () => jsonResponse(200, {})],
+    ["redirect", () => new Response(null, { status: 307, headers: { location: "/login" } })],
+    ["followed redirect", () => Object.defineProperty(jsonResponse(200, { success: true }), "redirected", { value: true })],
+  ] as const)("treats %s as an uncertain outcome and blocks redirect following", async (_label, response) => {
+    let redirect: RequestRedirect | undefined;
+    const { client } = harness(async (_input, init) => {
+      redirect = init?.redirect;
+      return response();
+    });
+    const failure = await expectFailure(client.change(mutation({ action: "archive", id: "c1" })));
+    expect(failure.kind).toBe("transient");
+    expect(redirect).toBe("error");
   });
 });

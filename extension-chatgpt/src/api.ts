@@ -1,3 +1,4 @@
+import { Schema } from "effect";
 import { TriageError } from "./errors.ts";
 import {
   checkList,
@@ -100,6 +101,25 @@ export interface Session {
   accountId: string | null;
 }
 
+interface ReadRequest {
+  path: string;
+  accountId: string;
+}
+
+interface Mutation {
+  accountId: string;
+  authorize(): Command;
+}
+
+const AuthSessionSchema = Schema.Struct({
+  accessToken: Schema.NonEmptyString,
+  user: Schema.Struct({ id: Schema.NonEmptyString }),
+});
+const NotFoundSchema = Schema.Struct({ detail: Schema.Literal("conversation_not_found") });
+const AcknowledgementSchema = Schema.Struct({ success: Schema.Boolean });
+const decodeAuthSession = Schema.decodeUnknownSync(AuthSessionSchema);
+const decodeAcknowledgement = Schema.decodeUnknownSync(AcknowledgementSchema, { onExcessProperty: "error" });
+
 export interface ChatList {
   chats: Chat[];
   complete: boolean;
@@ -108,13 +128,12 @@ export interface ChatList {
 
 export interface ApiClient {
   session(): Promise<Session>;
-  accountId(): string | null;
-  list(scope: "active" | "archived", onProgress?: (found: number, total: number | null, waiting: boolean) => void): Promise<ChatList>;
-  projects(): Promise<Project[]>;
-  conversation(id: string): Promise<Conversation>;
-  record(id: string): Promise<unknown>;
-  probe(id: string): Promise<ConversationProbe>;
-  change(command: Command): Promise<void>;
+  list(accountId: string, scope: "active" | "archived", onProgress?: (found: number, total: number | null, waiting: boolean) => void): Promise<ChatList>;
+  projects(accountId: string): Promise<Project[]>;
+  conversation(accountId: string, id: string): Promise<Conversation>;
+  record(accountId: string, id: string): Promise<unknown>;
+  probe(accountId: string, id: string): Promise<ConversationProbe>;
+  change(mutation: Mutation): Promise<void>;
   cooldownLeft(): number;
   log(): NetworkRecord[];
 }
@@ -147,40 +166,65 @@ export function createApiClient(deps: ApiDeps): ApiClient {
     }
   }
 
-  async function sessionRequest(): Promise<Session> {
+  async function sessionRequest(expectedAccount?: string): Promise<{ accountId: string; token: string }> {
     let response: Response;
     try {
-      response = await deps.fetch("/api/auth/session", { credentials: "include" });
+      response = await deps.fetch("/api/auth/session", { credentials: "include", cache: "no-store", redirect: "error" });
     } catch {
       throw new TriageError("offline", "Couldn't reach ChatGPT. Check your connection, then reload the page.");
     }
     record("GET", "/api/auth/session", response.status, 0);
-    if (!response.ok) {
+    if (!response.ok || response.redirected) {
       throw new TriageError("auth", `ChatGPT didn't return a session (HTTP ${response.status}). Make sure you're signed in.`);
     }
-    const data = await response.json().catch(() => null) as { accessToken?: unknown; user?: { id?: unknown } } | null;
-    if (!data || typeof data.accessToken !== "string" || !data.accessToken) {
-      throw new TriageError("auth", "You don't seem to be signed in. Sign in at chatgpt.com, then try again.");
+    let data: Schema.Schema.Type<typeof AuthSessionSchema>;
+    try {
+      data = decodeAuthSession(await response.json());
+    } catch {
+      throw new TriageError("auth", "Couldn't identify the signed-in ChatGPT account. Sign in at chatgpt.com, then try again.");
     }
-    const accountId = typeof data.user?.id === "string" ? data.user.id : null;
-    if (state.accountId != null && accountId !== state.accountId) {
+    const accountId = data.user.id;
+    if (accountId !== (expectedAccount ?? state.accountId ?? accountId)) {
       state.token = null;
       state.accountId = null;
       throw new TriageError("auth", "The signed-in ChatGPT account changed during a run. Reload the dashboard before making more changes.");
     }
     state.token = data.accessToken;
     state.accountId = accountId;
-    return { accountId };
+    return { accountId, token: data.accessToken };
   }
 
-  async function request(method: string, path: string, body?: Record<string, string | boolean>, retryAuth = true): Promise<unknown> {
+  async function request(target: ReadRequest | Mutation, retryAuth = true): Promise<unknown> {
     cooling();
     const slot = Math.max(deps.now(), state.lastAt + scaled(config.requestGap, scale));
     state.lastAt = slot;
     if (slot > deps.now()) await deps.sleep(slot - deps.now());
     cooling();
 
-    const headers: Record<string, string> = { Authorization: `Bearer ${state.token ?? ""}` };
+    const mutation = "authorize" in target;
+    const method = mutation ? "PATCH" : "GET";
+    let token = state.token ?? "";
+    if (mutation) {
+      try {
+        ({ token } = await sessionRequest(target.accountId));
+      } catch (error) {
+        const message = error instanceof TriageError ? error.message : "Couldn't validate the signed-in account.";
+        throw new TriageError("auth", `${message} No change was sent.`);
+      }
+      cooling();
+    } else if (state.accountId !== target.accountId || !token) {
+      throw new TriageError("auth", "The current account no longer matches this read.");
+    }
+    let path: string;
+    let body: Record<string, string | boolean> | null = null;
+    if ("path" in target) {
+      path = target.path;
+    } else {
+      const command = target.authorize();
+      path = `/backend-api/conversation/${encodeURIComponent(command.id)}`;
+      body = requestBodyFor(command);
+    }
+    const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
     if (body) headers["Content-Type"] = "application/json";
     const started = deps.now();
     let response: Response;
@@ -188,7 +232,9 @@ export function createApiClient(deps: ApiDeps): ApiClient {
       response = await deps.fetch(path, {
         method,
         headers,
-        credentials: "include",
+        credentials: "omit",
+        cache: "no-store",
+        redirect: "error",
         ...(body ? { body: JSON.stringify(body) } : {}),
       });
     } catch {
@@ -197,6 +243,9 @@ export function createApiClient(deps: ApiDeps): ApiClient {
     }
     record(method, path, response.status, deps.now() - started);
 
+    if (mutation && (response.redirected || (response.status >= 300 && response.status < 400))) {
+      throw new TriageError("transient", "ChatGPT redirected the change request.");
+    }
     if (response.status === 429) {
       const hint = parseRetryAfter(response.headers.get("retry-after"), deps.now());
       const wait = computeCooldownMs(state.strikes, hint, config, scale, deps.now());
@@ -207,13 +256,12 @@ export function createApiClient(deps: ApiDeps): ApiClient {
       throw new TriageError("ratelimit", "ChatGPT said: too many requests.", state.cooldownUntil);
     }
     if ((response.status === 401 || response.status === 403) && retryAuth) {
-      await sessionRequest();
-      return request(method, path, body, false);
+      if (!mutation) await sessionRequest(target.accountId);
+      return request(target, false);
     }
     if (response.status === 401 || response.status === 403) {
       throw new TriageError("auth", `ChatGPT refused the request (HTTP ${response.status}). Check that you're signed in.`);
     }
-    if (response.status === 404) throw new TriageError("notfound", "Chat not found.");
     if (response.status >= 500) throw new TriageError("transient", `ChatGPT had a server error (HTTP ${response.status}).`);
 
     let text: string;
@@ -230,14 +278,30 @@ export function createApiClient(deps: ApiDeps): ApiClient {
         data = null;
       }
     }
+    const contentType = response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase();
+    if (response.status === 404 && path.startsWith("/backend-api/conversation/")) {
+      if (contentType === "application/json" && Schema.is(NotFoundSchema)(data)) {
+        throw new TriageError("notfound", "Chat not found.");
+      }
+      throw new TriageError("transient", "ChatGPT returned an unfamiliar response for this chat.");
+    }
     if (!response.ok) {
       const detail = data && typeof data === "object" && "detail" in data
         ? `: ${String((data as { detail: unknown }).detail).slice(0, 140)}`
         : "";
       throw new TriageError("http", `HTTP ${response.status}${detail}`);
     }
-    if (data && typeof data === "object" && "success" in data && (data as { success: unknown }).success === false) {
-      throw new TriageError("http", "ChatGPT said the change didn't go through.");
+    if (mutation) {
+      let acknowledgement: Schema.Schema.Type<typeof AcknowledgementSchema>;
+      try {
+        if (contentType !== "application/json") {
+          throw new TriageError("compat", "Expected a JSON acknowledgement.");
+        }
+        acknowledgement = decodeAcknowledgement(data);
+      } catch {
+        throw new TriageError("transient", "ChatGPT returned an unfamiliar change acknowledgement.");
+      }
+      if (!acknowledgement.success) throw new TriageError("http", "ChatGPT said the change didn't go through.");
     }
     state.calm += 1;
     if (state.calm >= config.calmAfter && state.strikes) state.strikes = 0;
@@ -245,6 +309,7 @@ export function createApiClient(deps: ApiDeps): ApiClient {
   }
 
   async function listWithRetry(
+    accountId: string,
     path: string,
     onProgress?: (found: number, total: number | null, waiting: boolean) => void,
   ): Promise<{ items: Record<string, unknown>[]; total: number | null; complete: boolean }> {
@@ -257,7 +322,7 @@ export function createApiClient(deps: ApiDeps): ApiClient {
     for (let page = 0; page < config.maxPages; page += 1) {
       let data: unknown;
       try {
-        data = await request("GET", path.replace("{offset}", String(offset)).replace("{limit}", String(config.pageSize)));
+        data = await request({ path: path.replace("{offset}", String(offset)).replace("{limit}", String(config.pageSize)), accountId });
       } catch (error) {
         const failure = error instanceof TriageError ? error : null;
         if (failure && (failure.kind === "ratelimit" || failure.kind === "cooldown")) {
@@ -296,14 +361,15 @@ export function createApiClient(deps: ApiDeps): ApiClient {
 
   return {
     async session() {
-      return sessionRequest();
+      const { accountId } = await sessionRequest();
+      return { accountId };
     },
-    async list(scope, onProgress) {
+    async list(accountId, scope, onProgress) {
       const archived = scope === "archived" ? "&is_archived=true" : "";
-      const { items, total, complete } = await listWithRetry(`/backend-api/conversations?offset={offset}&limit={limit}&order=updated${archived}`, onProgress);
+      const { items, total, complete } = await listWithRetry(accountId, `/backend-api/conversations?offset={offset}&limit={limit}&order=updated${archived}`, onProgress);
       return { chats: items.map((item) => normalizeListItem(item, scope === "archived")), complete, total };
     },
-    async projects() {
+    async projects(accountId) {
       const found = new Map<string, Project>();
       let cursor: string | null = null;
       let tries = 0;
@@ -311,7 +377,7 @@ export function createApiClient(deps: ApiDeps): ApiClient {
         const query = `conversations_per_gizmo=0&limit=20&owned_only=false${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`;
         let data: unknown;
         try {
-          data = await request("GET", `/backend-api/gizmos/snorlax/sidebar?${query}`);
+          data = await request({ path: `/backend-api/gizmos/snorlax/sidebar?${query}`, accountId });
         } catch (error) {
           const failure = error instanceof TriageError ? error : null;
           if (failure && (failure.kind === "ratelimit" || failure.kind === "cooldown")) {
@@ -337,21 +403,18 @@ export function createApiClient(deps: ApiDeps): ApiClient {
       }
       return [...found.values()];
     },
-    async conversation(id) {
-      const data = await request("GET", `/backend-api/conversation/${encodeURIComponent(id)}`);
+    async conversation(accountId, id) {
+      const data = await request({ path: `/backend-api/conversation/${encodeURIComponent(id)}`, accountId });
       return parseConversation(data);
     },
-    async record(id) {
-      return request("GET", `/backend-api/conversation/${encodeURIComponent(id)}`);
+    async record(accountId, id) {
+      return request({ path: `/backend-api/conversation/${encodeURIComponent(id)}`, accountId });
     },
-    async probe(id) {
-      return probeFromDetail(await request("GET", `/backend-api/conversation/${encodeURIComponent(id)}`));
+    async probe(accountId, id) {
+      return probeFromDetail(await request({ path: `/backend-api/conversation/${encodeURIComponent(id)}`, accountId }));
     },
-    async change(command) {
-      await request("PATCH", `/backend-api/conversation/${encodeURIComponent(command.id)}`, requestBodyFor(command));
-    },
-    accountId() {
-      return state.accountId;
+    async change(mutation) {
+      await request(mutation);
     },
     cooldownLeft,
     log() {

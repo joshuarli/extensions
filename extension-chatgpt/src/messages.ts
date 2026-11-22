@@ -22,15 +22,15 @@ export const ApiRequestSchema = Schema.Union([
   Schema.Struct({ ...base, op: Schema.Literal("conversation"), accountId: Schema.String, id: Schema.String }),
   Schema.Struct({ ...base, op: Schema.Literal("record"), accountId: Schema.String, id: Schema.String }),
   Schema.Struct({ ...base, op: Schema.Literal("probe"), accountId: Schema.String, id: Schema.String }),
-  Schema.Struct({ ...base, op: Schema.Literal("change"), runId: Schema.String, accountId: Schema.String, id: Schema.String }),
+  Schema.Struct({ ...base, op: Schema.Literal("change"), runId: Schema.String, leaseId: Schema.NonEmptyString, accountId: Schema.String, id: Schema.String }),
   Schema.Struct({
     ...base,
     op: Schema.Literal("arm"),
     runId: Schema.String,
+    leaseId: Schema.NonEmptyString,
     accountId: Schema.String,
     commands: Schema.Array(CommandSchema),
   }),
-  Schema.Struct({ ...base, op: Schema.Literal("disarm"), runId: Schema.String }),
 ]);
 
 export type ApiRequest = Schema.Schema.Type<typeof ApiRequestSchema>;
@@ -92,7 +92,7 @@ export const ConversationSchema = Schema.Struct({
 export const ConversationProbeSchema = Schema.Struct({
   archived: Schema.Boolean,
   visible: Schema.Boolean,
-  projectId: NullableString,
+  projectId: Schema.optionalKey(NullableString),
   title: NullableString,
 });
 

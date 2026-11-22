@@ -254,7 +254,7 @@ describe("backup before deletion", () => {
     await env.start(true);
     await saveBackupWhenAsked(env);
     expect(env.writes).toEqual(["delete:b"]);
-    expect(env.journal.run?.results.map((result) => `${result.id}:${result.status}`)).toEqual(["a:held", "b:done"]);
+    expect(env.journal.run?.results.map((result) => `${result.id}:${result.status}`)).toEqual(["a:held", "b:verified"]);
     expect(env.journal.marks["a"]?.action).toBe("delete");
   });
 
@@ -321,7 +321,7 @@ describe("durable writes", () => {
     await env.start(false);
     await env.runner.waitUntilIdle();
     expect(env.writes).toEqual(["archive:a"]);
-    expect(env.journal.run?.results[0]?.status).toBe("done");
+    expect(env.journal.run?.results[0]?.status).toBe("verified");
     expect(env.journal.run?.results[0]?.note).toContain("uncertain response");
   });
 
@@ -336,7 +336,7 @@ describe("durable writes", () => {
     await env.start(false);
     await env.runner.waitUntilIdle();
     expect(env.writes).toEqual(["archive:a", "archive:a", "archive:a"]);
-    expect(env.journal.run?.results[0]?.status).toBe("done");
+    expect(env.journal.run?.results[0]?.status).toBe("verified");
   });
 
   it("pauses with an unknown outcome when the change can't be checked, and checks again on resume", async () => {
@@ -474,8 +474,10 @@ describe("pause and stop", () => {
     await env.runner.stop();
     await env.runner.dismiss();
     block = false;
+    expect(env.journal.marks["a"]?.action).toBe("archive");
     env.journal.marks["b"] = mark("archive", "Chat b");
-    await env.runner.start(buildJobs(env.journal, env.chats).jobs, { runId: "run-2", backup: false, acceptIncomplete: false });
+    const reviewed = buildJobs(env.journal, env.chats).jobs.filter((job) => job.id === "b");
+    await env.runner.start(reviewed, { runId: "run-2", backup: false, acceptIncomplete: false });
     unblock();
     await env.runner.waitUntilIdle();
     await env.runner.waitUntilIdle();
@@ -500,7 +502,7 @@ describe("pause and stop", () => {
     await env.runner.resume();
     await env.runner.waitUntilIdle();
     expect(env.writes).toEqual(["archive:a"]);
-    expect(env.journal.run?.results.map((result) => `${result.id}:${result.status}`)).toEqual(["a:done", "b:held", "c:held"]);
+    expect(env.journal.run?.results.map((result) => `${result.id}:${result.status}`)).toEqual(["a:verified", "b:held", "c:held"]);
   });
 
   it("can't be dismissed while paused with a change in flight", async () => {
@@ -564,7 +566,7 @@ describe("pause and stop", () => {
 });
 
 describe("verification", () => {
-  it("re-marks a change ChatGPT reported but didn't apply", async () => {
+  it("keeps the reviewed mark when ChatGPT reports a change it did not apply", async () => {
     const env = makeEnv({
       chats: [makeChat("a")],
       marks: { a: mark("archive", "Chat a") },
@@ -674,8 +676,108 @@ describe("crash consistency", () => {
       expect(server.get("b")?.archived, context).toBe(true);
       expect(server.get("c")?.title, context).toBe("Renamed");
       expect(server.get("d")?.projectId, context).toBe("g-p-work");
-      expect(env.journal.run?.results.every((result) => result.status === "done"), context).toBe(true);
+      expect(env.journal.run?.results.every((result) => result.status === "verified"), context).toBe(true);
       expect(Object.keys(env.journal.marks), context).toEqual([]);
     }
+  });
+});
+
+describe("final qualification", () => {
+  it.each([
+    ["rename", { newTitle: "A different title" }],
+    ["move", { project: "g-p-other" }],
+  ] as const)("withdraws a %s whose command was edited while paused", async (action, edit) => {
+    const env = makeEnv({
+      chats: [makeChat("a")],
+      marks: { a: mark(action, "Chat a") },
+      persist: (call) => { if (call === 1) void env.runner.pause("Review edits."); },
+    });
+    await env.start(false);
+    await env.runner.waitUntilIdle();
+    const newer = mark(action, "Chat a", { ...edit, at: env.clock.now() });
+    env.journal.marks["a"] = newer;
+    await env.runner.resume();
+    await env.runner.waitUntilIdle();
+    expect(env.writes).toEqual([]);
+    expect(env.journal.run?.results[0]?.status).toBe("held");
+    expect(env.journal.marks["a"]).toEqual(newer);
+  });
+
+  it("preserves a newer mark for the same command when an older write completes", async () => {
+    const newer = mark("rename", "Chat a", { at: 1 });
+    const env = makeEnv({
+      chats: [makeChat("a")],
+      marks: { a: mark("rename", "Chat a") },
+      afterApply: () => {
+        void env.runner.pause("Edit during response.");
+        env.journal.marks["a"] = newer;
+      },
+    });
+    await env.start(false);
+    await env.runner.waitUntilIdle();
+    await env.runner.resume();
+    await env.runner.waitUntilIdle();
+    expect(env.writes).toEqual(["rename:a"]);
+    expect(env.journal.marks["a"]).toEqual(newer);
+  });
+
+  it("persists failed verification and retries it after reopening without another write", async () => {
+    const chat = makeChat("a");
+    const env = makeEnv({
+      chats: [chat],
+      marks: { a: mark("rename", "Chat a") },
+      onList: async () => { throw new TriageError("offline", "List unavailable"); },
+    });
+    await env.start(false);
+    await env.runner.waitUntilIdle();
+    const stored = decodeJournal(env.snapshots.at(-1)?.journal, "u1");
+    recoverInterrupted(stored);
+    expect(stored.run).toMatchObject({
+      phase: "verify", status: "paused", results: [{ status: "unverified" }],
+    });
+    expect(stored.run?.note).toContain("List unavailable");
+    const reopened = makeEnv({ chats: [chat], marks: {}, journal: stored, server: env.server });
+    await reopened.runner.resume();
+    await reopened.runner.waitUntilIdle();
+    expect(reopened.writes).toEqual([]);
+    expect(reopened.journal.run?.status).toBe("done");
+  });
+
+  it("preserves the newer mark when a verification probe contradicts the acknowledgement", async () => {
+    const newer = mark("rename", "Chat a", { newTitle: "My replacement title", at: 1 });
+    const env = makeEnv({
+      chats: [makeChat("a")],
+      marks: { a: mark("rename", "Chat a") },
+      afterApply: (job) => {
+        const chat = env.server.get(job.id);
+        if (chat) chat.title = "Chat a";
+        void env.runner.pause("Edit during response.");
+        env.journal.marks["a"] = newer;
+      },
+    });
+    await env.start(false);
+    await env.runner.waitUntilIdle();
+    await env.runner.resume();
+    await env.runner.waitUntilIdle();
+    expect(env.journal.marks["a"]).toEqual(newer);
+  });
+
+  it.each([
+    ["audio", { author: { role: "user" }, content: { content_type: "multimodal_text", parts: [{ content_type: "audio_asset_pointer", transcript: "words", asset_pointer: "file-service://audio" }] } }],
+    ["video", { author: { role: "user" }, content: { content_type: "video", asset_pointer: "file-service://video" } }],
+    ["generated media", { author: { role: "assistant" }, content: { content_type: "multimodal_text", parts: [{ content_type: "generated_media", text: "caption", asset_pointer: "file-service://media" }] } }],
+    ["tool output", { author: { role: "tool" }, content: { content_type: "text", parts: ["Result"], output_file: "file-service://output" } }],
+    ["unknown content", { author: { role: "assistant" }, content: { content_type: "future_content", payload: { asset: "file-service://future" } } }],
+  ] as const)("holds %s in ordinary backup mode while allowing a text-only delete", async (_label, message) => {
+    const env = makeEnv({
+      chats: [makeChat("a"), makeChat("b")],
+      marks: { a: mark("delete", "Chat a"), b: mark("delete", "Chat b") },
+      fetchRecord: (id) => id === "b" ? record(id) : record(id, { mapping: { m1: { message } } }),
+    });
+    await env.start(true);
+    await saveBackupWhenAsked(env);
+    expect(env.writes).toEqual(["delete:b"]);
+    expect(env.journal.run?.backup.saved?.ids).toEqual(["b"]);
+    expect(env.journal.run?.results[0]?.status).toBe("held");
   });
 });

@@ -53,12 +53,26 @@ export class MutationGuard {
     return this.armed?.runId ?? null;
   }
 
-  authorize(runId: string, accountId: string, id: string): Command {
+  permit(runId: string, accountId: string, id: string): () => Command {
+    const armed = this.armed;
+    this.commandFor(runId, accountId, id);
+    return () => {
+      if (this.armed !== armed) throw refused("The authorization for this change ended.");
+      return this.authorize(runId, accountId, id);
+    };
+  }
+
+  private commandFor(runId: string, accountId: string, id: string): { armed: Armed; command: Command } {
     const armed = this.armed;
     if (!runId || armed?.runId !== runId) throw refused("No authorized run is armed.");
     if (armed.accountId !== accountId) throw refused("The run was authorized for a different account.");
     const command = armed.commands.get(id);
     if (!command) throw refused(`Chat ${id} was not authorized.`);
+    return { armed, command };
+  }
+
+  authorize(runId: string, accountId: string, id: string): Command {
+    const { armed, command } = this.commandFor(runId, accountId, id);
     const attempts = (armed.attempts.get(id) ?? 0) + 1;
     if (attempts > MAX_ATTEMPTS_PER_CHAT) throw refused(`Chat ${id} exceeded its attempt limit.`);
     armed.attempts.set(id, attempts);

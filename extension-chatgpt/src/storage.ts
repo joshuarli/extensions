@@ -1,6 +1,6 @@
 import { Schema } from "effect";
 import { TriageError } from "./errors.ts";
-import { createJournal, type Journal } from "./model.ts";
+import { createJournal, type Journal, type Result } from "./model.ts";
 
 const ActionSchema = Schema.Literals(["delete", "archive", "unarchive", "rename", "move", "protect"]);
 const MutatingActionSchema = Schema.Literals(["delete", "archive", "unarchive", "rename", "move"]);
@@ -35,6 +35,7 @@ const JobSchema = Schema.Struct({
   project: Schema.String,
   projectName: Schema.String,
   tries: Schema.Number,
+  markAt: Schema.optionalKey(Schema.Number),
 });
 
 const ResultSchema = Schema.Struct({
@@ -44,7 +45,7 @@ const ResultSchema = Schema.Struct({
   newTitle: NullableString,
   project: Schema.String,
   projectName: Schema.String,
-  status: Schema.Literals(["done", "held", "failed", "unconfirmed"]),
+  status: Schema.Literals(["done", "pending", "verified", "unverified", "held", "failed", "unconfirmed"]),
   note: Schema.String,
   at: Schema.Number,
 });
@@ -112,6 +113,14 @@ export function decodeJournal(value: unknown, accountId: string): Journal {
     throw new TriageError("compat", "The saved run belongs to a different account, so changes are switched off.");
   }
   const run = decoded.run;
+  const legacy = run?.jobs.some((job) => job.markAt === undefined);
+  const results = run?.results.map((result): Result => {
+    if (result.status === "done" || (legacy && result.status === "unconfirmed")) {
+      return { ...result, status: "unverified" as const, note: "This result was recorded before verification outcomes were tracked." };
+    }
+    return { ...result, status: result.status };
+  });
+  const recheck = run?.status === "done" && results?.some((result) => result.status === "unverified");
   return {
     accountId: decoded.accountId,
     marks: { ...decoded.marks },
@@ -121,7 +130,11 @@ export function decodeJournal(value: unknown, accountId: string): Journal {
       ? {
           ...run,
           jobs: run.jobs.map((job) => ({ ...job })),
-          results: run.results.map((result) => ({ ...result })),
+          status: recheck ? "paused" : run.status,
+          phase: recheck ? "verify" : run.phase,
+          finishedAt: recheck ? null : run.finishedAt,
+          note: recheck ? "Retry verification to check the saved results." : run.note,
+          results: results ?? [],
           inflight: run.inflight ? { ...run.inflight } : null,
           held: { ...run.held },
           backup: {

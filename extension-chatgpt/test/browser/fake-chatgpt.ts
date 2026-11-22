@@ -31,8 +31,21 @@ export class FakeChatgpt {
   readonly chats = new Map<string, FakeChat>();
   readonly patches: Patch[] = [];
   accountId = "u-e2e";
+  private sessionGate: (() => Promise<void>) | undefined;
+
+  holdSession(): { entered: Promise<void>; release: () => void } {
+    const entered = Promise.withResolvers<void>();
+    const released = Promise.withResolvers<void>();
+    this.sessionGate = () => {
+      entered.resolve();
+      return released.promise;
+    };
+    return { entered: entered.promise, release: released.resolve };
+  }
   // Apply the next PATCH to these chats, then answer 500 as if the response was lost.
   readonly loseResponseFor = new Set<string>();
+  unfamiliarAcknowledgement = false;
+  failListAfterPatch = false;
   // Answer the next N PATCHes with 429 and Retry-After: 1, without applying them.
   rateLimitPatches = 0;
 
@@ -119,9 +132,15 @@ export class FakeChatgpt {
       headers,
     });
     if (url.pathname === "/api/auth/session") {
+      const wait = this.sessionGate;
+      this.sessionGate = undefined;
+      await wait?.();
       return json(200, { user: { id: this.accountId, name: "Fixture" }, accessToken: `token-${this.accountId}`, expires: "2030-01-01T00:00:00Z" });
     }
     if (url.pathname === "/backend-api/conversations") {
+      if (this.failListAfterPatch && this.patches.length) {
+        return route.fulfill({ status: 200, contentType: "text/html", body: "<html>List unavailable</html>" });
+      }
       const offset = Number(url.searchParams.get("offset") ?? 0);
       const limit = Number(url.searchParams.get("limit") ?? 100);
       const archived = url.searchParams.get("is_archived") === "true";
@@ -156,6 +175,7 @@ export class FakeChatgpt {
           return json(500, { detail: "upstream timeout" });
         }
         this.patches.push({ id, body, status: 200 });
+        if (this.unfamiliarAcknowledgement) return json(200, {});
         return json(200, { success: true });
       }
       return json(200, this.detail(chat));

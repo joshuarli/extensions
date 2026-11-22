@@ -69,10 +69,25 @@ function contentBoundary(account = "u1") {
   const clock = createClock();
   const patches: { path: string; body: unknown }[] = [];
   let signedIn = account;
+  let sessionGate: (() => Promise<void>) | undefined;
+  function holdSession() {
+    const entered = Promise.withResolvers<void>();
+    const released = Promise.withResolvers<void>();
+    sessionGate = () => {
+      entered.resolve();
+      return released.promise;
+    };
+    return { entered: entered.promise, release: released.resolve };
+  }
   const client = createApiClient({
     fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input);
-      if (path.includes("/api/auth/session")) return jsonResponse(200, { accessToken: "secret-token", user: { id: signedIn } });
+      if (path.includes("/api/auth/session")) {
+        const wait = sessionGate;
+        sessionGate = undefined;
+        await wait?.();
+        return jsonResponse(200, { accessToken: "secret-token", user: { id: signedIn } });
+      }
       if (path.includes("/backend-api/conversation/") && init?.method !== "PATCH") {
         return jsonResponse(200, { title: "t", is_archived: false, mapping: {} });
       }
@@ -94,54 +109,54 @@ function contentBoundary(account = "u1") {
     expect(isApiRequest(request)).toBe(true);
     return operator.handle(request as ApiRequest);
   };
-  return { operator, client, patches, call, switchAccount: (id: string) => { signedIn = id; } };
+  return { operator, client, patches, call, holdSession, switchAccount: (id: string) => { signedIn = id; } };
 }
 
 describe("content-script boundary", () => {
   it("rejects a change that carries its own body", () => {
     expect(isApiRequest({
-      kind: "chatgpt/api", requestId: "1", op: "change", runId: "run-1", accountId: "u1", id: "c1",
+      kind: "chatgpt/api", requestId: "1", op: "change", runId: "run-1", leaseId: "lease-1", accountId: "u1", id: "c1",
       body: { is_visible: false },
     })).toBe(false);
   });
 
   it("writes the body of the armed command, so an archive can't become a delete", async () => {
     const boundary = contentBoundary();
-    boundary.operator.leaseOpened("run-1");
-    expect((await boundary.call({ op: "arm", runId: "run-1", accountId: "u1", commands: [{ action: "archive", id: "c1" }] })).ok).toBe(true);
-    expect((await boundary.call({ op: "change", runId: "run-1", accountId: "u1", id: "c1" })).ok).toBe(true);
+    boundary.operator.leaseOpened("run-1", "lease-1");
+    expect((await boundary.call({ op: "arm", runId: "run-1", leaseId: "lease-1", accountId: "u1", commands: [{ action: "archive", id: "c1" }] })).ok).toBe(true);
+    expect((await boundary.call({ op: "change", runId: "run-1", leaseId: "lease-1", accountId: "u1", id: "c1" })).ok).toBe(true);
     expect(boundary.patches).toEqual([{ path: "/backend-api/conversation/c1", body: { is_archived: true } }]);
   });
 
   it("arms only while the dashboard holds the run's lease, and disarms when it closes", async () => {
     const boundary = contentBoundary();
-    const arm = { op: "arm", runId: "run-1", accountId: "u1", commands: [{ action: "delete", id: "c1" }] };
+    const arm = { op: "arm", runId: "run-1", leaseId: "lease-1", accountId: "u1", commands: [{ action: "delete", id: "c1" }] };
     expect((await boundary.call(arm)).error?.kind).toBe("auth");
-    boundary.operator.leaseOpened("run-1");
+    const revoke = boundary.operator.leaseOpened("run-1", "lease-1");
     expect((await boundary.call(arm)).ok).toBe(true);
-    boundary.operator.leaseClosed("run-1");
+    revoke();
     expect(boundary.operator.armedRunId()).toBeNull();
-    const change = await boundary.call({ op: "change", runId: "run-1", accountId: "u1", id: "c1" });
+    const change = await boundary.call({ op: "change", runId: "run-1", leaseId: "lease-1", accountId: "u1", id: "c1" });
     expect(change.ok).toBe(false);
     expect(boundary.patches).toEqual([]);
   });
 
   it("refuses to arm a run reviewed for another account", async () => {
     const boundary = contentBoundary("u2");
-    boundary.operator.leaseOpened("run-1");
-    const armed = await boundary.call({ op: "arm", runId: "run-1", accountId: "u1", commands: [{ action: "delete", id: "c1" }] });
+    boundary.operator.leaseOpened("run-1", "lease-1");
+    const armed = await boundary.call({ op: "arm", runId: "run-1", leaseId: "lease-1", accountId: "u1", commands: [{ action: "delete", id: "c1" }] });
     expect(armed.ok).toBe(false);
     expect(armed.error?.message).toContain("account");
   });
 
   it("disarms and refuses to write once a session refresh shows another account", async () => {
     const boundary = contentBoundary();
-    boundary.operator.leaseOpened("run-1");
-    await boundary.call({ op: "arm", runId: "run-1", accountId: "u1", commands: [{ action: "delete", id: "c1" }] });
+    boundary.operator.leaseOpened("run-1", "lease-1");
+    await boundary.call({ op: "arm", runId: "run-1", leaseId: "lease-1", accountId: "u1", commands: [{ action: "delete", id: "c1" }] });
     boundary.switchAccount("u2");
     expect((await boundary.call({ op: "session" })).ok).toBe(false);
     expect(boundary.operator.armedRunId()).toBeNull();
-    const change = await boundary.call({ op: "change", runId: "run-1", accountId: "u1", id: "c1" });
+    const change = await boundary.call({ op: "change", runId: "run-1", leaseId: "lease-1", accountId: "u1", id: "c1" });
     expect(change.ok).toBe(false);
     expect(boundary.patches).toEqual([]);
   });
@@ -156,9 +171,9 @@ describe("content-script boundary", () => {
 
   it("doesn't arm a run whose lease closed while it was being authorized", async () => {
     const boundary = contentBoundary();
-    boundary.operator.leaseOpened("run-1");
-    const arming = boundary.call({ op: "arm", runId: "run-1", accountId: "u1", commands: [{ action: "delete", id: "c1" }] });
-    boundary.operator.leaseClosed("run-1");
+    const revoke = boundary.operator.leaseOpened("run-1", "lease-1");
+    const arming = boundary.call({ op: "arm", runId: "run-1", leaseId: "lease-1", accountId: "u1", commands: [{ action: "delete", id: "c1" }] });
+    revoke();
     expect((await arming).ok).toBe(false);
     expect(boundary.operator.armedRunId()).toBeNull();
   });
@@ -169,4 +184,53 @@ describe("content-script boundary", () => {
     expect(session.value).toEqual({ accountId: "u1" });
     expect(JSON.stringify(session)).not.toContain("secret-token");
   });
+});
+
+describe("authorization at dispatch", () => {
+  const arm = { op: "arm", runId: "run-1", leaseId: "lease-1", accountId: "u1", commands: [{ action: "archive", id: "c1" }] };
+  const change = { op: "change", runId: "run-1", leaseId: "lease-1", accountId: "u1", id: "c1" };
+
+  it("rejects an underlying session switch without an explicit session refresh", async () => {
+    const boundary = contentBoundary();
+    boundary.operator.leaseOpened("run-1", "lease-1");
+    expect((await boundary.call(arm)).ok).toBe(true);
+    boundary.switchAccount("u2");
+    expect((await boundary.call(change)).error?.kind).toBe("auth");
+    expect(boundary.patches).toEqual([]);
+    expect(boundary.operator.armedRunId()).toBeNull();
+  });
+
+  it("does not dispatch if its lease closes while account validation is pending", async () => {
+    const boundary = contentBoundary();
+    const revoke = boundary.operator.leaseOpened("run-1", "lease-1");
+    expect((await boundary.call(arm)).ok).toBe(true);
+    const validation = boundary.holdSession();
+    const changing = boundary.call(change);
+    const entered = await Promise.race([validation.entered.then(() => true), changing.then(() => false)]);
+    revoke();
+    validation.release();
+    expect((await changing).error?.kind).toBe("auth");
+    expect(boundary.patches).toEqual([]);
+    expect(entered).toBe(true);
+  });
+});
+
+it("invalidates a pending request when a replacement lease opens before the old disconnect arrives", async () => {
+  const boundary = contentBoundary();
+  const arm = { op: "arm", runId: "run-1", leaseId: "lease-1", accountId: "u1", commands: [{ action: "archive", id: "c1" }] };
+  const change = { op: "change", runId: "run-1", leaseId: "lease-1", accountId: "u1", id: "c1" };
+  const revoke = boundary.operator.leaseOpened("run-1", "lease-1");
+  expect((await boundary.call(arm)).ok).toBe(true);
+  const validation = boundary.holdSession();
+  const stale = boundary.call(change);
+  await validation.entered;
+  boundary.operator.leaseOpened("run-1", "lease-2");
+  revoke();
+  expect((await boundary.call({ ...arm, leaseId: "lease-2" })).ok).toBe(true);
+  validation.release();
+  expect((await stale).error?.kind).toBe("auth");
+  expect(boundary.patches).toEqual([]);
+  expect((await boundary.call(change)).error?.kind).toBe("auth");
+  expect((await boundary.call({ ...change, leaseId: "lease-2" })).ok).toBe(true);
+  expect(boundary.patches).toHaveLength(1);
 });

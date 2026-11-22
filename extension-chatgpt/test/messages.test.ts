@@ -10,12 +10,11 @@ describe("typed message boundary", () => {
       { kind: "chatgpt/api", requestId: "4", op: "conversation", accountId: "u1", id: "c1" },
       { kind: "chatgpt/api", requestId: "5", op: "record", accountId: "u1", id: "c1" },
       { kind: "chatgpt/api", requestId: "5b", op: "probe", accountId: "u1", id: "c1" },
-      { kind: "chatgpt/api", requestId: "6", op: "change", runId: "run-1", accountId: "u1", id: "c1" },
+      { kind: "chatgpt/api", requestId: "6", op: "change", runId: "run-1", leaseId: "lease-1", accountId: "u1", id: "c1" },
       {
-        kind: "chatgpt/api", requestId: "7", op: "arm", runId: "run-1", accountId: "u1",
+        kind: "chatgpt/api", requestId: "7", op: "arm", runId: "run-1", leaseId: "lease-1", accountId: "u1",
         commands: [{ action: "delete", id: "c1" }, { action: "rename", id: "c2", title: "T" }, { action: "move", id: "c3", project: "" }],
       },
-      { kind: "chatgpt/api", requestId: "8", op: "disarm", runId: "run-1" },
     ];
     for (const request of requests) expect(isApiRequest(request)).toBe(true);
   });
@@ -26,11 +25,11 @@ describe("typed message boundary", () => {
     expect(isApiRequest({ kind: "chatgpt/api", requestId: "1", op: "session", id: "extra" })).toBe(false);
     expect(isApiRequest({ kind: "chatgpt/api", requestId: "1", op: "change", id: "c1", body: { is_visible: false } })).toBe(false);
     expect(isApiRequest({
-      kind: "chatgpt/api", requestId: "1", op: "arm", runId: "r", accountId: "u1",
+      kind: "chatgpt/api", requestId: "1", op: "arm", runId: "r", leaseId: "lease-1", accountId: "u1",
       commands: [{ action: "archive", id: "c1", title: "smuggled" }],
     })).toBe(false);
     expect(isApiRequest({
-      kind: "chatgpt/api", requestId: "1", op: "arm", runId: "r", accountId: "u1",
+      kind: "chatgpt/api", requestId: "1", op: "arm", runId: "r", leaseId: "lease-1", accountId: "u1",
       commands: [{ action: "archive", id: "c1", body: { is_visible: false } }],
     })).toBe(false);
     expect(isApiRequest({ kind: "other", requestId: "1", op: "session" })).toBe(false);
