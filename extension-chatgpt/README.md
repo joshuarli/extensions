@@ -27,9 +27,9 @@ ChatGPT web backend      undocumented, untrusted, subject to change
 ```
 
 - `api.ts` — paced, typed client. Handles `429` with `Retry-After` and a cooldown ladder, refreshes the token once on `401`/`403`, and refuses unfamiliar list rows and conversation records. It keeps the bearer token to itself.
-- `operator.ts` — the content script's request handler. Each run is armed with an exact command per chat (`delete`, `archive`, `unarchive`, `rename` to a title, `move` to a project) for one account, and only while the dashboard holds that run's lease port. A `change` names a chat and nothing else; the PATCH body is built from the armed command.
+- `operator.ts` — the content script's request handler. Each run is armed with an exact command per chat (`delete`, `archive`, `unarchive`, `rename` to a title, `move` to a project) for one account, and only while the dashboard holds that run's lease port. A `change` identifies the chat, run, account and lease. The content script builds the PATCH body from the armed command.
 - `safety.ts` — the guard behind `operator.ts`. It starts disarmed, refuses a second run while one is armed, and caps attempts per chat.
-- `queue.ts` — resumable state machine. Each write is a transaction: its intent is saved before it is sent, and an uncertain response is checked with ChatGPT before any retry. Deletes wait for a saved backup, chats that couldn't be backed up are held, and the end of a run re-checks every change.
+- `queue.ts` — resumable state machine. The queue saves the intent before sending each write and checks uncertain responses with ChatGPT before retrying. Deletes wait for a saved backup, chats that couldn't be backed up are held, and the end of a run re-checks every acknowledged change. If it cannot confirm the results, use **Retry verification** to check them again without sending another change.
 - `storage.ts` — Schema-validated, per-account journal with serialized writes. A journal it can't read switches changes off instead of being replaced.
 - `messages.ts` — Schema-validated message and wire contracts.
 
@@ -44,8 +44,8 @@ The authenticated client runs in Chrome's **isolated** content-script world, not
 - Read a conversation before marking it; keyboard navigation, range selection and protected chats.
 - Mark delete, archive, unarchive, rename, move into a project, or protect.
 - Projects live in their own filter so a cleanup cannot empty a project by accident.
-- Rate-limit pacing, one-change-at-a-time writes, token refresh, and a backup that must be saved before any deletion starts. The backup is a JSON file with each chat's full record (all branches and metadata). It is written through a file handle and read back to check its hash. Attachment and image files are not included, so chats that have them are kept unless you accept that in the review.
-- Verification re-reads the list and probes suspicious chats directly; a change that cannot be confirmed is marked again rather than silently accepted.
+- Rate-limit pacing, one-change-at-a-time writes, token refresh, and a backup that must be saved before any deletion starts. The backup is a JSON file with each chat's full record (all branches and metadata). It is written through a file handle and read back to check its hash. Ordinary backup keeps chats with attachments, media, tool output or unfamiliar content whose recovery it cannot establish. The review has a separate opt-in for incomplete backups.
+- Verification reads each changed chat directly. The reviewed mark remains until the change is verified. Unavailable checks pause the run, and contradictory results need attention.
 - Marks and run state survive restarts; an interrupted run requires deliberate resumption and reconciles the in-flight change before repeating it.
 
 ## Deliberate differences

@@ -1,13 +1,13 @@
 # ChatGPT Organizer qualification
 
-This record covers the safety repair that followed the review of `31528575` (version 0.1.0). It lists the safety invariants, the defects that were fixed and the tests that cover them, how to rerun the checks, and what remains unproven.
+The final qualification started from `2fc662e568923f47c8ffa755a9cdf93af834658a`. The earlier safety repair followed the review of `31528575` (version 0.1.0).
 
 ## Safety invariants
 
-1. **Backup before deletion.** When backup protection is on, a delete is sent only if the journal's durable `run.backup.saved.ids` contains that chat. A file write that was read back and hash-checked, or an explicit confirmation on the fallback path, sets that field. The queue checks it before every delete, whatever the run's phase or status.
-2. **Exact authorization.** The content script sends a PATCH only for a chat in the armed run, for the armed account, with the body derived from that chat's armed command. The `change` message carries no body. A run can be armed only while the dashboard holds the run's lease port open, and closing the port disarms it. Every read also names its account: a request for any other account is refused, and a sign of another signed-in account disarms the run. A chat protected, unmarked or re-marked while its run is paused is left unchanged.
+1. **Backup before deletion.** When backup protection is on, a delete is sent only if the journal's durable `run.backup.saved.ids` contains that chat. A file write that was read back and hash-checked, or an explicit confirmation on the fallback path, sets that field. The queue checks it before every delete and re-reads the conversation to match its saved record digest. An unreadable or changed record is held for a fresh review.
+2. **Exact authorization.** Each PATCH uses the command in the reviewed run and a fresh session for the run's account. Backend calls use that account's bearer authorization and omit cookies. Arm and change messages name the specific lease port. After pacing and asynchronous session validation, the content script checks the same authorization immediately before calling fetch. A disconnected or replaced lease invalidates pending dispatches once Chrome delivers the port event. The queue withdraws jobs whose mark changed and clears only the matching reviewed mark after verification.
 3. **Intent before send.** `run.inflight` is durably saved before each PATCH. If saving fails, the run pauses and nothing more is sent.
-4. **Reconcile, then retry.** After a network error, 5xx or lost tab response, the queue probes the chat before sending again. If the probe can't decide, the run pauses with an `unknown` outcome, and the next resume probes again first.
+4. **Reconcile, then retry.** After a network error, 5xx, lost tab response, redirect, or unfamiliar successful PATCH response, the queue probes before sending again. An undecidable probe preserves the in-flight intent and pauses the run. An acknowledged write starts as `pending` and a detail probe determines whether the requested state is present. An unavailable probe leaves the result `unverified` and **Retry verification** uses read-only requests. A probe that contradicts the requested state produces a `mismatch` and the run finishes with status `attention`.
 5. **One runner.** A dashboard holds a Web Lock for its lifetime. A second dashboard waits and loads the journal only once the first closes.
 6. **Pause and stop hold.** A loop step changes the run only while its abort signal is live and the run is still active. A late completion records its outcome but never overwrites a pause or a stop, even one made while a start, resume or backup acknowledgement is being saved.
 7. **Credentials stay in the content script.** The session response carries the account id only. The extension requests only `storage` and `https://chatgpt.com/*`.
@@ -62,39 +62,52 @@ An independent adversarial review of the first repair found the following defect
 
 Mutation checks were run by hand against the queue: resuming the save phase into writing, removing the delete gate, dropping the durable intent, skipping reconciliation, letting completion overwrite a stop, and sending after a pause. Each made at least one test fail. After the review fixes, the same was done for each fix, and for removing the reconcile after a restart (the crash test's former blind spot). Mapping `saving` back to Pause/Stop failed the first browser test.
 
+## Final qualification regressions
+
+The baseline failed the focused queue, API, and operator cases for all six reported defects. The installed dashboard also reproduced the stale rename and Project move, the PATCH without fresh session validation, and the unnoticed session switch. The replacement-lease test failed after the first dispatch fix because a new connection could temporarily share the old run's authorization. Independent review also identified a misleading completed status after a contradictory probe, acceptance of unestablished successful HTTP statuses, and media pointers hidden in message metadata. Each has a regression case that failed before its fix.
+
+| Defect | Regression evidence |
+| --- | --- |
+| Reviewed command diverges from the mark | `queue.test.ts` covers paused rename and Project edits, re-marking the identical command, and preservation of a replacement mark after a conflicting probe. The installed dashboard pauses, edits both commands, resumes and reviews the replacements in a new run. |
+| Lease changes before dispatch | `safety.test.ts` holds validation between authorization and dispatch, then closes or replaces the lease. The installed dashboard closes while the real content script awaits the routed session response and resumes only after reopening. |
+| Verification fails | `queue.test.ts` restores the persisted unverified outcome and retries without writing. The installed dashboard reconciles an unfamiliar acknowledgement, survives a verification list failure and reload, then verifies the rename with one PATCH total. |
+| Underlying account changes | `safety.test.ts` and the installed dashboard switch the session behind an armed run without calling the session refresh operation. Both refuse the next PATCH. |
+| Backup contains potentially unrecoverable content | `queue.test.ts` holds audio, video, generated media, tool output, unknown content and nested metadata asset pointers in ordinary backup mode. Only the accompanying text-only chat enters the saved backup and reaches PATCH. A separate test adds unsupported content after the backup was written and verifies the digest check holds the delete. |
+| Successful HTTP response lacks a recognized acknowledgement | `api.test.ts` rejects HTML, broken JSON, empty bodies, empty objects, redirects, 202 and 206 as uncertain. The affirmative fixture uses HTTP 200 and JSON with exactly `success: true`. The installed dashboard confirms an applied rename with an empty JSON object response by reading its detail. |
+
 ## Verification
 
 ```sh
-pnpm exec vitest run extension-chatgpt/test --maxWorkers=1
-pnpm run typecheck && pnpm run lint
-pnpm run build && pnpm run test:browser:chatgpt
+pnpm run test --maxWorkers=1
+pnpm run typecheck
+pnpm run lint
+pnpm run build
+pnpm run test:browser --output="$PWD/.work/tmp/playwright-results"
+pnpm run test:browser:chatgpt --output="$PWD/.work/tmp/playwright-results-chatgpt"
 ```
 
-The CI `installed-browser` job runs the browser suite. On 2026-11-21 (macOS, headless Chromium) all 81 unit tests and all 8 browser tests passed, and the browser suite took 2.5 minutes. With 3,200 generated chats (about 2,900 active rows), moving focus cost 5.5 ms and selecting plus marking cost 11–20 ms across runs. At that cost the list does not need virtualization.
+On 2026-11-22, code revision `791ff3c` passed typecheck, type-aware lint, the development build and all 406 Node tests, including 111 organizer tests. Headless Chromium on macOS passed all 16 suite browser tests and all 12 organizer browser tests.
+
+The CI `installed-browser` job runs the organizer and suite browser fixtures. The organizer's 3,200-chat case exercises loading, selection, marking and response to keyboard input. Independent review confirmed the fixes for verification mismatches, unknown successful responses, and metadata media references. The conditional-mutation blocker below remains open.
 
 ## Unsupported and unproven
 
-- **Attempt limits reset when the ChatGPT tab reloads.** The guard lives in content-script memory. A reload disarms the run, which then needs a deliberate resume.
+- **Attempt limits are scoped to one armed lease.** A disconnect or replacement disarms the run. Resuming opens a new lease and resets its attempt count.
 - **Eventual consistency.** If ChatGPT accepts a write but a probe right afterwards still shows the old state, the queue sends the write again. All five writes set an absolute state, so a repeat converges to the same result; the attempt cap bounds repeats.
-- **Attachment and image files are not backed up.** The backup holds their ids only. Such chats are held unless the reviewer ticks the second box in the review dialog.
+- **Media files are not fetched.** Ordinary backup holds records with attachments, non-text parts, tool output, or unfamiliar content. The original record and embedded data are preserved if the reviewer explicitly accepts incomplete recovery.
 - **The fallback path relies on the user.** Where the File System Access API is unavailable, the dashboard downloads the file and the user must confirm they can see it. Nothing verifies that file.
 - **The backend is a fixture.** ChatGPT's private API shapes are modelled from observed responses. The compatibility checks fail closed when the shape changes, but only real accounts reveal new shapes.
-- **Not tested end to end:** browser restart with a run in flight (covered at unit level by the crash test), token expiry inside the installed extension (covered by `api.test.ts`), and account switching inside the installed extension (covered by `safety.test.ts`).
-- **Journal format.** The journal moved to key `chatgpt-organizer:v2:<account>`. Marks stored by 0.1.0 under `chatgpt-triage:v1:` are left in place but not read.
+- **Browser coverage gaps.** The installed tests reopen or reload the dashboard and reload the ChatGPT tab. Full browser-process restart with a mutation in flight remains covered by simulated journal snapshots. Token expiry is covered by the API unit tests.
+- **Journal format.** The per-account `chatgpt-organizer:v2:<account>` key is unchanged. Older success labels lack durable verification evidence and become unverified on load. A previously finished run with those results offers read-only verification. Unsent jobs from an older run need a fresh review because they lack the original mark timestamp. An older in-flight intent is still reconciled. Marks under the 0.1.0 `chatgpt-triage:v1:` key remain outside this journal.
 
-## Real-account smoke test (nondestructive)
+## Real-account acceptance
 
-1. Run `pnpm run build`, load `build/extension-chatgpt`, sign in at chatgpt.com and open the dashboard.
-2. Confirm that the chat count matches the sidebar and that no "only loaded chats can be changed" notice appears.
-3. Read several chats in the preview with `j`/`k`, search with `/`, and switch Active/Archived and project filters.
-4. Mark a chat with **Rename** to a temporary title, review it, run it, and check the title in ChatGPT. Rename it back the same way.
-5. Archive one chat, check that it appears under Archived in ChatGPT, then **Unarchive** it.
-6. Open a second dashboard tab and confirm that it waits.
-7. Export a plan, then import it again.
-
-Do not delete real chats as part of qualification.
+The owner smoke procedure uses reversible changes on test conversations and records evidence from the actual service. No live acceptance evidence has been recorded. [Owner smoke procedure](OWNER-SMOKE.md)
 
 ## Release blockers
 
-- The smoke test above has not been run against a real account.
-- The backup format and probe rely on the fields `mapping`, `is_archived`, `is_visible`, `gizmo_id` and `conversation_template_id`. Confirm these on a real account before the first real delete.
+- **Real-account contract.** Run the owner procedure and record matching active, archived and Project listings, observed response shapes, verified reversible mutations, account isolation and restart behavior.
+- **Destructive endpoint contract.** Confirm the delete acknowledgment and the account-scoped detail response that proves invisibility or absence using provider documentation or existing sanitized evidence. The nondestructive smoke cannot establish these behaviors.
+- **Recovery coverage.** Confirm the real detail record contains all expected branches and message metadata, that repeated reads of an unchanged conversation give stable record digests, and that ordinary backup holds media and unfamiliar shapes in sanitized fixtures captured from read-only real responses. Referenced bytes and the browser-download fallback remain limitations. A readable JSON record alone establishes neither media recovery nor the success of an unverified fallback download.
+- **Concurrent native changes.** The saved digest is checked before dispatch. The service contract for a conditional PATCH against that exact revision is unverified. A native edit after the preflight read can race a delete.
+- **Account identity.** Confirm the service uses distinct authenticated user IDs for the account boundaries this extension promises to enforce. Workspaces that share an ID require independent evidence of an account boundary before they can be treated as isolated.
