@@ -161,9 +161,10 @@ export async function runDownload(input: RunInput, deps: RunDeps): Promise<Downl
 
 export function formatSummary(summary: DownloadSummary): string {
   const { downloaded, failed, skipped, errors } = summary.media;
+  const shown = errors.slice(0, 2).map((failure) => `${failure.id} (${failure.error})`).join("; ");
   const failures = errors.length === 0
     ? ""
-    : ` Failed media: ${errors.map((failure) => `${failure.id} (${failure.error})`).join("; ")}.`;
+    : ` Failed media: ${shown}${errors.length > 2 ? ` and ${errors.length - 2} more` : ""}. See manifest.json for all failures.`;
   return `Archived ${summary.written} conversation(s), skipped ${summary.skipped} already saved. `
     + `Media: ${downloaded} downloaded, ${failed} failed, ${skipped} skipped.${failures}`
     + ` Timeframe: ${summary.timeframe}. Output: ${summary.outputDir}`;

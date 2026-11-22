@@ -189,6 +189,7 @@ function options(overrides: Partial<DownloadOptions> = {}): DownloadOptions {
     outRoot: OUT_ROOT,
     includeArchived: false,
     limit: null,
+    noMedia: true,
     backend: undefined,
     session: undefined,
     cdpUrl: undefined,
