@@ -12,11 +12,10 @@ import {
 import { FsBookmarksStore, FsLikesStore } from "./fs-store.ts";
 import type { ProfileStore } from "../../x-archive-core/src/collector.ts";
 import type { XSession } from "./deps.ts";
+import { ensureSuiteExtension, suiteWorker } from "./extension.ts";
 import { writeJsonFile, stateDir } from "./state.ts";
 
 export type SeedProfileStore = ProfileStore & { allRecords(): Promise<unknown[]> };
-
-const EXTENSION_ID = "lekmlndhaidgepoalcmbcehffnliclil";
 
 export interface SeedReport {
   bookmarks: { records: number; folders: number; state: ScanState | null; already: boolean };
@@ -36,13 +35,12 @@ interface SeedCounts {
   profiles: Record<string, number>;
 }
 
-async function countsFromExtension(session: XSession, cdpUrl: string): Promise<SeedCounts> {
+async function countsFromExtension(session: XSession, cdpUrl: string, extensionId: string): Promise<SeedCounts> {
   const browser = await chromium.connectOverCDP(cdpUrl, { timeout: 10_000 });
   try {
     const context = browser.contexts()[0];
     if (!context) throw new Error("Helium has no browser context to count archives from.");
-    const worker = context.serviceWorkers().find((worker) => worker.url().includes(EXTENSION_ID));
-    if (!worker) throw new Error("The X Archive extension is not loaded in this Helium.");
+    const worker = await suiteWorker(context, extensionId);
     return await worker.evaluate(async (userId: string): Promise<SeedCounts> => {
       const count = (name: string, store: string, index?: string, key?: IDBValidKey) =>
         new Promise<number>((resolvePromise, rejectPromise) => {
@@ -88,13 +86,12 @@ async function countsFromExtension(session: XSession, cdpUrl: string): Promise<S
   }
 }
 
-async function dumpFromExtension(session: XSession, cdpUrl: string): Promise<CdpDump> {
+async function dumpFromExtension(session: XSession, cdpUrl: string, extensionId: string): Promise<CdpDump> {
   const browser = await chromium.connectOverCDP(cdpUrl, { timeout: 10_000 });
   try {
     const context = browser.contexts()[0];
     if (!context) throw new Error("Helium has no browser context to seed from.");
-    const worker = context.serviceWorkers().find((worker) => worker.url().includes(EXTENSION_ID));
-    if (!worker) throw new Error("The X Archive extension is not loaded in this Helium.");
+    const worker = await suiteWorker(context, extensionId);
     return await worker.evaluate(async (userId: string): Promise<CdpDump> => {
       const open = (name: string) => new Promise<IDBDatabase>((resolvePromise, rejectPromise) => {
         const request = indexedDB.open(name);
@@ -161,8 +158,9 @@ export async function seedFromHelium(
 ): Promise<SeedReport> {
   const bookmarksStore = new FsBookmarksStore(session.userId);
   const likesStore = new FsLikesStore(session.userId);
+  const extensionId = await ensureSuiteExtension(cdpUrl);
 
-  const counts = await countsFromExtension(session, cdpUrl).catch(() => null);
+  const counts = await countsFromExtension(session, cdpUrl, extensionId).catch(() => null);
   const fsBookmarksCount = (await bookmarksStore.allRecords()).length;
   const fsLikesCount = (await likesStore.allRecords()).length;
   const bookmarksOk = counts !== null && counts.bookmarks === fsBookmarksCount;
@@ -196,7 +194,7 @@ export async function seedFromHelium(
     return report;
   }
 
-  const dump = await dumpFromExtension(session, cdpUrl);
+  const dump = await dumpFromExtension(session, cdpUrl, extensionId);
   const report: SeedReport = {
     bookmarks: { records: 0, folders: 0, state: null, already: false },
     likes: { records: 0, state: null, already: false },

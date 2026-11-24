@@ -21,7 +21,7 @@ import { buildDebugReport } from "../../x-archive-core/src/debug.ts";
 import { Effect } from "effect";
 import { graphqlRequest } from "../../x-archive-core/src/api.ts";
 import { extractLookupUserId } from "../../x-archive-core/src/collector.ts";
-import { parseProfileScreenName, type Credentials } from "../../x-archive-core/src/capture.ts";
+import { PROFILE_OPERATIONS, parseProfileScreenName, type Credentials } from "../../x-archive-core/src/capture.ts";
 import { FsBookmarksStore, FsLikesStore } from "./fs-store.ts";
 import { SqliteProfileStore, profileDbPath } from "./profile-db.ts";
 import type { Backend } from "./backend.ts";
@@ -103,10 +103,10 @@ async function resolveTargetUserId(
   if (cached?.screenName === screenName && cached.targetUserId) return cached.targetUserId;
   const queryId = credentials.queryIds["UserByScreenName"];
   if (!queryId) {
-    throw new Error("The UserByScreenName lookup was never captured. Open https://x.com/" + screenName + " in Helium once with the extension loaded.");
+    throw new Error("The UserByScreenName lookup was never captured. Open https://x.com/" + screenName + " in Helium once, then retry.");
   }
   const authorization = credentials.authorization;
-  if (!authorization) throw new Error("Captured credentials carry no authorization header. Open x.com in Helium once with the extension loaded.");
+  if (!authorization) throw new Error("Captured credentials carry no authorization header. Open x.com in Helium once, then retry.");
   status.say("session", "Resolving @" + screenName + " to an X user id…");
   void queryId;
   const body = await Effect.runPromise(
@@ -315,7 +315,11 @@ export async function downloadProfile(handle: string, options: RunOptions): Prom
   status.say("session", "Connecting to " + options.cdpUrl + "…");
   const session = await readBrowserSession(options.cdpUrl, options.backend);
   status.say("session", "Reading captured X credentials…");
-  const credentials = await readCapturedCredentials(session, options.cdpUrl, options.backend);
+  const credentials = await readCapturedCredentials(session, options.cdpUrl, options.backend, {
+    required: [["UserByScreenName"], PROFILE_OPERATIONS],
+    screenName,
+    onStatus: (text) => status.say("session", text),
+  });
   const targetUserId = await resolveTargetUserId(session, credentials, screenName, status);
   const profileDir = screenName.toLowerCase();
   const outDir = join(options.outRoot, profileDir);
@@ -398,7 +402,10 @@ export async function downloadSelf(options: RunOptions): Promise<RunSummary[]> {
   status.say("session", "Connecting to " + options.cdpUrl + "…");
   const session = await readBrowserSession(options.cdpUrl, options.backend);
   status.say("session", "Reading captured X credentials…");
-  const credentials = await readCapturedCredentials(session, options.cdpUrl, options.backend);
+  const credentials = await readCapturedCredentials(session, options.cdpUrl, options.backend, {
+    required: [["Bookmarks"], ["Likes"]],
+    onStatus: (text) => status.say("session", text),
+  });
   if (options.backend.kind === "bctl") {
     status.say("session", "Seeding needs the Helium extension, which the bctl appliance does not have; continuing with the local store.");
   } else {
@@ -426,7 +433,7 @@ export async function downloadSelf(options: RunOptions): Promise<RunSummary[]> {
   }
   progress.finish();
   if (summaries.length === 0) {
-    throw new Error("Nothing captured yet. Open https://x.com/i/history and https://x.com/i/history/likes in Helium once with the extension loaded.");
+    throw new Error("Nothing captured yet. Open https://x.com/i/history and https://x.com/i/history/likes in Helium once, then retry.");
   }
   return summaries;
 }

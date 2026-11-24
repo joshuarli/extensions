@@ -51,7 +51,13 @@ retained either way.
   `--backend=bctl` (see [bctl](#bctl)). It reads
   your x.com cookies (including HttpOnly ones) and, from the X Archive
   extension's storage, the query IDs/features X's web app uses for the
-  GraphQL API. If Helium is not reachable, the CLI falls back to
+  GraphQL API. On the Helium path the CLI hot-loads `dist/extension-suite`
+  over CDP if it is not already loaded, building it first when missing;
+  the extension is session-only, so this is repeated each run and its ID is
+  read from CDP rather than fixed to an install path. If an operation was
+  never captured, the CLI opens the relevant x.com page (bookmarks, likes,
+  or the profile) and caches the credentials for 30 days. No manual
+  extension install is needed. If Helium is not reachable, the CLI falls back to
   `~/usr/dotfiles/darwin/.local/bin/export-cookies.py`
   to decrypt the x.com cookies from Helium's cookie store
   (`X_ARCHIVE_COOKIES_HELPER` overrides the path). That fallback needs

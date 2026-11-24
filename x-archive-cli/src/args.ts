@@ -31,9 +31,11 @@ Options:
   --version, -v   print the version
 
 Exports read the X session from the browser backend over CDP:
-cookies for authentication, and the query IDs/features that the X Archive
-browser extension captured from your normal x.com usage. If collection
-fails part-way through, re-running is safe — saved pages are retained.
+cookies for authentication, and the query IDs/features captured from x.com.
+The CLI hot-loads the X Archive extension into the browser and opens the
+pages needed for missing credentials; no manual install is required.
+If collection fails part-way through, re-running is safe — saved pages are
+retained.
 Bookmarks and likes resume from the saved checkpoint. A profile scan
 starts from the newest posts and stops once it catches up to what is
 already archived; the archive database travels in the profile's folder.

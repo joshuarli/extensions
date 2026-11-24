@@ -1,15 +1,31 @@
-import { chromium } from "playwright";
+import { chromium, type BrowserContext } from "playwright";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
-import { CredentialsSchema, credentialKey, parseUserId, type Credentials, type ProfileTarget } from "../../x-archive-core/src/capture.ts";
+import {
+  CredentialsSchema,
+  PROFILE_OPERATIONS,
+  credentialKey,
+  parseUserId,
+  parseProfileScreenName,
+  type Credentials,
+  type Operation,
+  type ProfileTarget,
+} from "../../x-archive-core/src/capture.ts";
 import { Schema } from "effect";
 import type { ArchiveDeps } from "../../x-archive-core/src/collector.ts";
 import { HELIUM_BACKEND, type Backend } from "./backend.ts";
+import { ensureSuiteExtensionOnBrowser, suiteWorker } from "./extension.ts";
 import { credentialsCachePath, readJsonFile, writeJsonFile, stateDir, stateRoot } from "./state.ts";
 
-const EXTENSION_ID = "lekmlndhaidgepoalcmbcehffnliclil";
+export type RequiredCaptures = readonly (readonly Operation[])[];
+
+export interface CaptureOptions {
+  readonly required?: RequiredCaptures;
+  readonly screenName?: string | undefined;
+  readonly onStatus?: ((text: string) => void) | undefined;
+}
 const CACHE_MAX_AGE_DAYS = 30;
 const EXPORT_COOKIES = process.env["X_ARCHIVE_COOKIES_HELPER"]
   ?? join(homedir(), "usr", "dotfiles", "darwin", ".local", "bin", "export-cookies.py");
@@ -48,6 +64,68 @@ function cacheCredentials(credentials: Credentials): void {
   try {
     writeJsonFile(credentialsCachePath(), { ...credentials, cached_at: new Date().toISOString() });
   } catch { /* The cache is an optimization; never fail the run over it. */ }
+}
+
+const BOOKMARK_CAPTURE_OPERATIONS = new Set<Operation>(["Bookmarks", "BookmarkFoldersSlice", "BookmarkFolderTimeline"]);
+const LIKE_CAPTURE_OPERATIONS = new Set<Operation>(["Likes"]);
+const PROFILE_CAPTURE_OPERATIONS = new Set<Operation>(PROFILE_OPERATIONS);
+
+export function missingCaptures(credentials: Credentials, required: RequiredCaptures): string[] {
+  return required
+    .filter((group) => !group.some((operation) => !!credentials.queryIds[operation]))
+    .map((group) => group.join(" / "));
+}
+
+export function hasRequiredCaptures(credentials: Credentials, required: RequiredCaptures): boolean {
+  return !!credentials.authorization
+    && Object.keys(credentials.queryIds).length > 0
+    && missingCaptures(credentials, required).length === 0;
+}
+
+export function capturePages(required: RequiredCaptures, screenName: string | undefined): string[] {
+  const operations = required.flat();
+  const pages: string[] = [];
+  if (operations.some((operation) => BOOKMARK_CAPTURE_OPERATIONS.has(operation))) pages.push("https://x.com/i/history");
+  if (operations.some((operation) => LIKE_CAPTURE_OPERATIONS.has(operation))) pages.push("https://x.com/i/history/likes");
+  if (operations.some((operation) => operation === "UserByScreenName" || PROFILE_CAPTURE_OPERATIONS.has(operation))) {
+    const profile = screenName ? parseProfileScreenName("https://x.com/" + screenName) : null;
+    if (!profile) throw new Error("Cannot capture profile credentials without a valid @handle.");
+    pages.push("https://x.com/" + profile);
+  }
+  return pages;
+}
+
+function mergeCredentials(base: Credentials, next: Credentials): Credentials {
+  return {
+    authorization: next.authorization ?? base.authorization,
+    clientUuid: next.clientUuid ?? base.clientUuid,
+    transactionId: next.transactionId ?? base.transactionId,
+    queryIds: { ...base.queryIds, ...next.queryIds },
+    features: { ...base.features, ...next.features },
+    fieldToggles: { ...base.fieldToggles, ...next.fieldToggles },
+  };
+}
+
+async function workerCredentials(
+  context: BrowserContext,
+  extensionId: string,
+  userId: string,
+): Promise<Credentials | null> {
+  let worker;
+  try {
+    worker = await suiteWorker(context, extensionId, 2_000);
+  } catch {
+    return null;
+  }
+  try {
+    const raw = await worker.evaluate(async (key: string): Promise<unknown> => {
+      const all = await chrome.storage.local.get(key);
+      return all[key] ?? null;
+    }, credentialKey(userId));
+    return raw === null ? null : Schema.decodeUnknownSync(CredentialsSchema)(raw);
+  } catch {
+    return null;
+  }
 }
 
 export function parseNetscapeCookies(text: string, hostname: string): Array<{ name: string; value: string }> {
@@ -125,38 +203,75 @@ export async function readBrowserSession(cdpUrl: string, backend: Backend = HELI
   }
 }
 
-export async function readCapturedCredentials(session: XSession, cdpUrl: string, backend: Backend = HELIUM_BACKEND): Promise<Credentials> {
+export async function readCapturedCredentials(
+  session: XSession,
+  cdpUrl: string,
+  backend: Backend = HELIUM_BACKEND,
+  capture: CaptureOptions = {},
+): Promise<Credentials> {
+  const required = capture.required ?? [];
+  const cached = cachedCredentials();
+  if (backend.kind === "bctl") {
+    if (cached && hasRequiredCaptures(cached, required)) return cached;
+    throw new Error(
+      `The bctl session "${backend.session ?? "xarchive"}" cannot capture X credentials. `
+      + "Run `X_ARCHIVE_BACKEND=helium x download self` from a signed-in Helium once to seed the cache, then retry.",
+    );
+  }
   let browser;
   try {
     browser = await chromium.connectOverCDP(cdpUrl, { timeout: 10_000 });
   } catch {
-    const cached = cachedCredentials();
-    if (cached) return cached;
-    throw new Error(backend.kind === "bctl"
-      ? `The bctl session "${backend.session ?? "xarchive"}" is not reachable at ${cdpUrl} and no cached credentials exist yet. Check \`bctl status\`.`
-      : "Helium is not reachable on " + cdpUrl + " and no cached credentials exist yet. Open x.com with the extension loaded, then retry.");
+    if (cached && hasRequiredCaptures(cached, required)) return cached;
+    throw new Error(
+      "Helium is not reachable on " + cdpUrl
+      + (cached ? " and its cached credentials are missing " + missingCaptures(cached, required).join(", ") + "." : " and no cached credentials exist yet.")
+      + " Start Helium with `~/usr/bin/helium` and retry.",
+    );
   }
   try {
     const context = browser.contexts()[0];
     if (!context) throw new Error("The browser at " + cdpUrl + " has no context to read extension storage from.");
-    const worker = context.serviceWorkers().find((worker) => worker.url().includes(EXTENSION_ID));
-    const key = credentialKey(session.userId);
-    const raw = worker
-      ? await worker.evaluate(async (storageKey: string) => {
-          const all = await chrome.storage.local.get(storageKey);
-          return all[storageKey] ?? null;
-        }, key).catch(() => null)
-      : null;
-    const fromBrowser = raw ? Schema.decodeUnknownSync(CredentialsSchema)(raw) : null;
-    if (fromBrowser && Object.keys(fromBrowser.queryIds).length > 0 && fromBrowser.authorization) {
-      cacheCredentials(fromBrowser);
-      return fromBrowser;
+    capture.onStatus?.("Loading the X Archive extension into Helium…");
+    const extensionId = await ensureSuiteExtensionOnBrowser(browser);
+    let credentials: Credentials | null = await workerCredentials(context, extensionId, session.userId);
+    if (credentials && cached) credentials = mergeCredentials(cached, credentials);
+    if (!credentials) credentials = cached;
+    const pages = capturePages(required, capture.screenName);
+    if ((!credentials || !hasRequiredCaptures(credentials, required)) && pages.length > 0) {
+      capture.onStatus?.("Capturing X GraphQL credentials from " + pages.length + " page(s)…");
+      for (const url of pages) {
+        if (credentials && hasRequiredCaptures(credentials, required)) break;
+        const page = await context.newPage();
+        try {
+          try {
+            await page.goto(url, { waitUntil: "domcontentloaded", timeout: 20_000 });
+          } catch (error) {
+            capture.onStatus?.("Could not open " + url + ": " + (error instanceof Error ? error.message : String(error)));
+          }
+          const deadline = Date.now() + 20_000;
+          while (Date.now() < deadline) {
+            const latest = await workerCredentials(context, extensionId, session.userId);
+            if (latest) {
+              credentials = credentials ? mergeCredentials(credentials, latest) : latest;
+              if (hasRequiredCaptures(credentials, required)) break;
+            }
+            await new Promise((resolvePromise) => setTimeout(resolvePromise, 500));
+          }
+        } finally {
+          await page.close().catch(() => {});
+        }
+      }
     }
-    const cached = cachedCredentials();
-    if (cached) return cached;
-    throw new Error(backend.kind === "bctl"
-      ? `The bctl session "${backend.session ?? "xarchive"}" has no X Archive extension and no cached credentials exist yet. Run the CLI once from a signed-in Helium to seed the cache (X_ARCHIVE_BACKEND=helium x download self), then retry.`
-      : "No captured X credentials found. Open x.com (and the pages you archive: /i/history, /i/history/likes, or the profile) once in Helium with the extension loaded, then retry.");
+    if (credentials && hasRequiredCaptures(credentials, required)) {
+      cacheCredentials(credentials);
+      return credentials;
+    }
+    const missing = credentials ? missingCaptures(credentials, required) : ["all operations"];
+    throw new Error(
+      "X credentials are incomplete (" + missing.join(", ") + "). "
+      + (pages.length ? "Visit " + pages.join(" and ") + " in Helium once, then retry." : "Open x.com in Helium once, then retry."),
+    );
   } finally {
     await browser.close();
   }
