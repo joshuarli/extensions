@@ -2,6 +2,8 @@
 
 This repository builds one Chromium Manifest V3 extension from five feature packages with shared TypeScript and Vite tooling.
 
+The roadmap, [docs/roadmap.md](docs/roadmap.md), holds all current and future work; its Status is the resume point.
+
 ## Commands
 
 `make clean` removes this checkout’s build output in `./build` and `./dist`. It refuses symlinks and ordinary files at those paths.
