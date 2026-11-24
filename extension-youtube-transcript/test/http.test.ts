@@ -1,6 +1,6 @@
 import { beforeEach, describe, it } from "vitest";
 import assert from "node:assert/strict";
-import { cachedFetch, clearResponseCache } from "../src/http.ts";
+import { cachedFetch, clearResponseCache } from "../../youtube-transcript-core/src/http.ts";
 
 describe("cachedFetch", () => {
   beforeEach(() => clearResponseCache());

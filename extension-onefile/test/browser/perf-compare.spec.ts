@@ -3,9 +3,9 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { readFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildPolyglot } from "../../src/polyglot.ts";
-import { readStoredArchive } from "../../src/zip.ts";
-import { CapturePayloadSchema } from "../../src/message-contract.ts";
+import { buildPolyglot } from "../../../onefile-core/src/polyglot.ts";
+import { readStoredArchive } from "../../../onefile-core/src/zip.ts";
+import { CapturePayloadSchema } from "../../../onefile-core/src/message-contract.ts";
 import { Schema } from "effect";
 
 const specDirectory = dirname(fileURLToPath(import.meta.url)),

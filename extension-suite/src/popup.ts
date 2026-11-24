@@ -5,7 +5,7 @@ import {
   setStatus,
 } from "../../lib/extension-ui.ts";
 import { mountYouTubeTranscriptPopup } from "../../extension-youtube-transcript/src/popup.ts";
-import { isYouTubeUrl } from "../../extension-youtube-transcript/src/url.ts";
+import { isYouTubeUrl } from "../../youtube-transcript-core/src/url.ts";
 import { SuiteResponseSchema, type SuiteResponse } from "./message-contract.ts";
 
 const popupContext = "Popup";

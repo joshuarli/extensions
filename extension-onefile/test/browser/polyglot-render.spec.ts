@@ -3,7 +3,7 @@ import { createServer, type Server } from "node:http";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildPolyglot } from "../../src/polyglot.ts";
+import { buildPolyglot } from "../../../onefile-core/src/polyglot.ts";
 
 const specDirectory = dirname(fileURLToPath(import.meta.url)),
   repoRoot = join(specDirectory, "..", "..", ".."),

@@ -3,9 +3,9 @@ import type {
   PageData,
   ResolveTranscriptOutput,
   TranscriptPanelData,
-} from "./types.ts";
+} from "../../youtube-transcript-core/src/types.ts";
 import { createActionRevert } from "../../lib/action-revert.ts";
-import { buildMarkdown } from "./metadata.ts";
+import { buildMarkdown } from "../../youtube-transcript-core/src/metadata.ts";
 import { readYouTubePage, updatePageProgress } from "./page.ts";
 import {
   fetchCaptionXmlText,
@@ -13,9 +13,9 @@ import {
   fetchPlayerData,
   fetchTranscript as fetchTranscriptApi,
   getCaptionTracks,
-} from "./youtube-api.ts";
-import { pickCaptionTrack } from "./captions.ts";
-import { resolveTranscript } from "./workflow.ts";
+} from "../../youtube-transcript-core/src/youtube-api.ts";
+import { pickCaptionTrack } from "../../youtube-transcript-core/src/captions.ts";
+import { resolveTranscript } from "../../youtube-transcript-core/src/workflow.ts";
 import {
   CaptionFetchError,
   InvalidPageError,
@@ -23,16 +23,16 @@ import {
   PlayerDataError,
   SettingsReadError,
   TabNotAccessibleError,
-} from "./error.ts";
-import { cachedFetch, clearResponseCache } from "./http.ts";
+} from "../../youtube-transcript-core/src/error.ts";
+import { cachedFetch, clearResponseCache } from "../../youtube-transcript-core/src/http.ts";
 import { readPreferredLanguageSettings } from "./settings.ts";
-import { getVideoId, isYouTubeUrl } from "./url.ts";
+import { getVideoId, isYouTubeUrl } from "../../youtube-transcript-core/src/url.ts";
 import { Effect, Schema } from "effect";
 import {
   PageDataSchema,
   PreferredLanguageSettingsSchema,
   TranscriptPanelDataSchema,
-} from "./types.ts";
+} from "../../youtube-transcript-core/src/types.ts";
 import {
   ExtensionMessageSchema,
   ExtensionResponseSchema,

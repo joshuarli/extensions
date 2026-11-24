@@ -4,13 +4,13 @@ This repository builds one Chromium Manifest V3 extension with five features:
 
 - **Allow Right-Click** toggles right-click, text selection, copy, paste, and drag support on the current tab.
 - **YouTube Transcript Copier** copies a video's transcript or SRT subtitles and supports a preferred transcript language. See the [YouTube user guide](extension-youtube-transcript/README.md).
-- **X Archive support** passively captures X GraphQL credentials for `x-archive-cli`; it has no user interface. See the [support guide](extension-x-bookmarks/README.md).
+- **X Archive support** passively captures X GraphQL credentials for `x-archive-cli`; it has no user interface. See the [support guide](extension-x-archive/README.md).
 - **Onefile** saves the active tab as an offline-openable universal self-extracting ZIP (`.u.zip.html`). See the [Onefile guide](extension-onefile/README.md).
 - **ChatGPT Organizer** reviews, marks and bulk-organizes ChatGPT conversations with a resumable queue and a backup before deletion. See the [ChatGPT Organizer guide](extension-chatgpt/README.md).
 
 The `extension-*` packages remain separate source and test units; [extension-suite](extension-suite) composes every one of them into one worker, manifest, popup, and options page. There is no separately installable feature extension: if a directory starts with `extension-`, it belongs in the suite.
 
-The two CLI tools live outside the extension: **x-archive-cli** archives X bookmarks, likes and profiles to `~/.local/share/x/downloads` by default ([CLI guide](x-archive-cli/README.md)), and **onefile-cli** saves a page as the same `.u.zip.html` archive to `~/.local/share/onefile` by default ([CLI guide](onefile-cli/README.md)).
+The CLI tools live outside the extension: **x-archive-cli** archives X bookmarks, likes and profiles ([CLI guide](x-archive-cli/README.md)), **onefile-cli** saves a page as the same `.u.zip.html` archive ([CLI guide](onefile-cli/README.md)), **chatgpt-archive-cli** archives ChatGPT conversations ([CLI guide](chatgpt-archive-cli/README.md)), and **youtube-transcript-cli** fetches a transcript or SRT from a YouTube URL ([CLI guide](youtube-transcript-cli/README.md)). Each has a matching `*-core` domain package where the browser extension and CLI share logic.
 
 ## Install
 

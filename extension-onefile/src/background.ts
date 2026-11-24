@@ -1,9 +1,9 @@
 import { Effect } from "effect";
 import { createActionRevert } from "../../lib/action-revert.ts";
-import { fetchResourceBytes } from "./fetch-resource.ts";
+import { fetchResourceBytes } from "../../onefile-core/src/fetch-resource.ts";
 import { createArchiveBlobUrl } from "./offscreen-download.ts";
-import { capturePolicy } from "./policy.ts";
-import { saveTab, type SaveDependencies } from "./workflow.ts";
+import { capturePolicy } from "../../onefile-core/src/policy.ts";
+import { saveTab, type SaveDependencies } from "../../onefile-core/src/workflow.ts";
 
 interface OnefileActionState {
   tabId: number;

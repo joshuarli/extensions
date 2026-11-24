@@ -1,5 +1,5 @@
 import { Schema } from "effect";
-import { PreferredLanguageSettingsSchema, type PreferredLanguageSettings } from "./types.ts";
+import { PreferredLanguageSettingsSchema, type PreferredLanguageSettings } from "../../youtube-transcript-core/src/types.ts";
 
 export const preferredLanguageStorageKey = "youtube-transcript/language";
 

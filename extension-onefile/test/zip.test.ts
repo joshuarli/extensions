@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { crc32 } from "../src/crc32.ts";
-import { assertZipLimits, buildStoredZip, extractStoredEntry, readStoredArchive } from "../src/zip.ts";
+import { crc32 } from "../../onefile-core/src/crc32.ts";
+import { assertZipLimits, buildStoredZip, extractStoredEntry, readStoredArchive } from "../../onefile-core/src/zip.ts";
 
 const textEncoder = new TextEncoder();
 

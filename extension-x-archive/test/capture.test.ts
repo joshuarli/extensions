@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { handleXBookmarksRequest } from "../src/background.ts";
+import { handleXArchiveRequest } from "../src/background.ts";
 import { captureRequest, mergeCapture, parseProfileScreenName, parseUserId } from "../src/capture.ts";
 
 const bookmarkUrl = "https://x.com/i/api/graphql/AbC_123/Bookmarks?features=%7B%22enabled%22%3Atrue%7D";
@@ -88,7 +88,7 @@ describe("credential capture handler", () => {
         },
       },
     };
-    handleXBookmarksRequest({
+    handleXArchiveRequest({
       url: bookmarkUrl,
       initiator: "https://x.com",
       requestHeaders: [{ name: "Authorization", value: "Bearer actual" }],

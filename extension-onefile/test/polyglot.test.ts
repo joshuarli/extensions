@@ -7,8 +7,8 @@ import {
   injectMetadataSlot,
   selectZipWrapper,
   type PolyglotUnresolved,
-} from "../src/polyglot.ts";
-import { extractStoredEntry, readStoredArchive } from "../src/zip.ts";
+} from "../../onefile-core/src/polyglot.ts";
+import { extractStoredEntry, readStoredArchive } from "../../onefile-core/src/zip.ts";
 
 const textDecoder = new TextDecoder();
 

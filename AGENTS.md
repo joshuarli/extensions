@@ -32,8 +32,10 @@ The roadmap, [docs/roadmap.md](docs/roadmap.md), holds all current and future wo
 - Shared CLI shell for terminal CLIs: [lib/cli.ts](lib/cli.ts), [lib/progress.ts](lib/progress.ts)
 - Allow Right-Click architecture: [docs/allow-right-click.md](docs/allow-right-click.md)
 - YouTube user and message API: [extension-youtube-transcript/README.md](extension-youtube-transcript/README.md)
-- X Archive credential capture for the CLI: [extension-x-bookmarks/README.md](extension-x-bookmarks/README.md)
+- YouTube transcript domain and CLI: [youtube-transcript-core](youtube-transcript-core/README.md), [youtube-transcript-cli](youtube-transcript-cli/README.md)
+- X Archive credential capture for the CLI: [extension-x-archive/README.md](extension-x-archive/README.md)
 - Onefile terminal CLI: [onefile-cli/README.md](onefile-cli/README.md)
+- Onefile domain core: [onefile-core/README.md](onefile-core/README.md)
 - Onefile save and format: [extension-onefile/README.md](extension-onefile/README.md), [extension-onefile/ARCHITECTURE.md](extension-onefile/ARCHITECTURE.md), [extension-onefile/FORMAT.md](extension-onefile/FORMAT.md)
 - ChatGPT organizer (suite feature): [extension-chatgpt/README.md](extension-chatgpt/README.md)
 - ChatGPT archive domain logic: [chatgpt-archive-core/README.md](chatgpt-archive-core/README.md)
@@ -48,7 +50,7 @@ The roadmap, [docs/roadmap.md](docs/roadmap.md), holds all current and future wo
 - Right-click page behavior: `extension-allow-right-click/test/user-select-restoration.browser.test.ts`. The installed Chromium CI job tests the real service worker and the right-click toggle in `extension-onefile/test/browser/extension-runtime.spec.ts`.
 - YouTube messages: `extension-youtube-transcript/test/message-contract.test.ts`; HTTP and transcript parsing: `http.test.ts`, `transcript.test.ts` in that test directory.
 - Onefile capture messages: `extension-onefile/test/message-contract.test.ts`; ZIP and HTML formats: `zip.test.ts`, `polyglot.test.ts`, `archive-integrity.test.ts`; Chromium capture: `test/browser/capture.spec.ts`.
-- X GraphQL request and response handling: `x-archive-core/test/api.test.ts`, `parser.test.ts`, `merge.test.ts`, `collector.test.ts`, `debug.test.ts`; extension credential capture: `extension-x-bookmarks/test/capture.test.ts`.
+- X GraphQL request and response handling: `x-archive-core/test/api.test.ts`, `parser.test.ts`, `merge.test.ts`, `collector.test.ts`, `debug.test.ts`; extension credential capture: `extension-x-archive/test/capture.test.ts`.
 - X CLI flags and exit codes: `x-archive-cli/test/args.test.ts`; backend selection: `x-archive-cli/test/backend.test.ts`; filesystem state: `fs-store.test.ts`; cookie input: `netscape.test.ts`.
 - X exported JSON/media/HTML complete end-to-end contract and live X/YouTube endpoints: none; tests use fixtures or mocks.
 - ChatGPT archive: paging, timeframe, media pointers and record hashing in `chatgpt-archive-core/test/`; CLI flags, selection, resume and media download in `chatgpt-archive-cli/test/`. `chatgpt-archive-cli/test/cdp-live.test.ts` drives the CLI through a real CDP endpoint against routed fixtures.

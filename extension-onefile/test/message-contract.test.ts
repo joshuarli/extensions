@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Schema } from "effect";
-import { CapturePayloadSchema } from "../src/message-contract.ts";
+import { CapturePayloadSchema } from "../../onefile-core/src/message-contract.ts";
 
 describe("capture message contract", () => {
   it("accepts a minimal valid payload", () => {

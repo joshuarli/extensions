@@ -1,4 +1,4 @@
-import { extractStoredEntry, readStoredArchive } from "../zip.ts";
+import { extractStoredEntry, readStoredArchive } from "../../../onefile-core/src/zip.ts";
 
 const metadataElementId = "onefile-metadata",
   bannerElementId = "onefile-banner",

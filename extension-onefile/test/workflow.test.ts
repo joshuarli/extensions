@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { Effect } from "effect";
-import { saveTab, type SaveDependencies } from "../src/workflow.ts";
-import { readStoredArchive } from "../src/zip.ts";
-import { buildArchiveFilename } from "../src/filename.ts";
-import { ResourceFetchError } from "../src/errors.ts";
+import { saveTab, type SaveDependencies } from "../../onefile-core/src/workflow.ts";
+import { readStoredArchive } from "../../onefile-core/src/zip.ts";
+import { buildArchiveFilename } from "../../onefile-core/src/filename.ts";
+import { ResourceFetchError } from "../../onefile-core/src/errors.ts";
 
 const capturedAtMs = new Date(2024, 4, 1, 10, 20, 30).getTime(),
   imageBytes = new Uint8Array([137, 80, 78, 71]),

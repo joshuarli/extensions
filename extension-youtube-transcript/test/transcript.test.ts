@@ -6,8 +6,8 @@ import {
   formatTimestamp,
   groupTranscriptSegments,
   parseTranscriptXml,
-} from "../src/transcript.ts";
-import { pickCaptionTrack } from "../src/captions.ts";
+} from "../../youtube-transcript-core/src/transcript.ts";
+import { pickCaptionTrack } from "../../youtube-transcript-core/src/captions.ts";
 
 test("formats timestamps as M:SS and H:MM:SS", () => {
   assert.equal(formatTimestamp(0), "0:00");

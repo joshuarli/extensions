@@ -39,7 +39,7 @@ import { seedFromHelium } from "./seed.ts";
 import { createProgressReporter, type ProgressReporter } from "../../lib/progress.ts";
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
-const RENDER_TOOL = join(REPO_ROOT, "extension-x-bookmarks", "tools", "render_archive.py");
+const RENDER_TOOL = join(REPO_ROOT, "extension-x-archive", "tools", "render_archive.py");
 const EXTENSION_VERSION = "x-archive-cli 0.1.0";
 const SAFETY_TIMEOUT_MS = 6 * 60 * 60 * 1000;
 

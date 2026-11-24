@@ -4,6 +4,8 @@ Copies the current YouTube video's transcript as Markdown with video metadata in
 
 Transcript extraction is adapted from [defuddle's YouTube extractor](https://github.com/kepano/defuddle/blob/main/src/extractors/youtube.ts).
 
+The shared domain logic lives in [youtube-transcript-core](../youtube-transcript-core/README.md); [youtube-transcript-cli](../youtube-transcript-cli/README.md) fetches the same transcripts from the terminal.
+
 For browser installation, follow the [repository README](../README.md).
 
 ## Use

@@ -10,7 +10,7 @@ import {
   handleInternalMessage,
 } from "../../extension-youtube-transcript/src/background.ts";
 import { isYouTubeTranscriptMessage } from "../../extension-youtube-transcript/src/message-contract.ts";
-import { handleXBookmarksRequest, xBookmarksRequestFilter } from "../../extension-x-bookmarks/src/background.ts";
+import { handleXArchiveRequest, xArchiveRequestFilter } from "../../extension-x-archive/src/background.ts";
 import { createActionStatus } from "./action-status.ts";
 import { suiteName } from "./identity.ts";
 import {
@@ -154,7 +154,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
 });
 
 chrome.webRequest.onSendHeaders.addListener(
-  handleXBookmarksRequest,
-  xBookmarksRequestFilter,
+  handleXArchiveRequest,
+  xArchiveRequestFilter,
   ["requestHeaders", "extraHeaders"],
 );

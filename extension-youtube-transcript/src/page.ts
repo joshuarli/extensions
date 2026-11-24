@@ -1,4 +1,4 @@
-import type { PageData, TranscriptPanelData, TranscriptSegment } from "./types.ts";
+import type { PageData, TranscriptPanelData, TranscriptSegment } from "../../youtube-transcript-core/src/types.ts";
 
 type PageReadMode = "page" | "panel";
 

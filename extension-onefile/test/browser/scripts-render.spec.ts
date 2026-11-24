@@ -4,11 +4,11 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Schema } from "effect";
-import { buildPolyglot } from "../../src/polyglot.ts";
-import { originPathName } from "../../src/filename.ts";
-import { readStoredArchive, extractStoredEntry } from "../../src/zip.ts";
-import { collectModuleSpecifiers } from "../../src/inject/capture.ts";
-import { CapturePayloadSchema } from "../../src/message-contract.ts";
+import { buildPolyglot } from "../../../onefile-core/src/polyglot.ts";
+import { originPathName } from "../../../onefile-core/src/filename.ts";
+import { readStoredArchive, extractStoredEntry } from "../../../onefile-core/src/zip.ts";
+import { collectModuleSpecifiers } from "../../../onefile-core/src/inject/capture.ts";
+import { CapturePayloadSchema } from "../../../onefile-core/src/message-contract.ts";
 
 const specDirectory = dirname(fileURLToPath(import.meta.url)),
   repoRoot = join(specDirectory, "..", "..", ".."),

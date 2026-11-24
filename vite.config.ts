@@ -26,11 +26,11 @@ function sourcePath(extensionName: string, ...segments: string[]): string {
 
 function injectedBundles(
   extensionName: string,
-  entries: readonly { source: string; output: string }[],
+  entries: readonly { source: string; output: string; root?: string }[],
 ): SuiteBundle[] {
-  return entries.map(({ source, output }) => ({
-    root: sourcePath(extensionName),
-    input: sourcePath(extensionName, source),
+  return entries.map(({ source, output, root }) => ({
+    root: sourcePath(root ?? extensionName),
+    input: sourcePath(root ?? extensionName, source),
     outputDirectory: suiteOutputDirectory,
     entryFileName: `inject/${extensionName.replace(/^extension-/u, "")}/${output}.js`,
     format: "iife",
@@ -84,7 +84,7 @@ export const suiteBundles: SuiteBundle[] = [
     { source: "data/inject/listen/main.ts", output: "listen/main" },
   ]),
   ...injectedBundles("extension-onefile", [
-    { source: "inject/capture.ts", output: "capture" },
+    { source: "inject/capture.ts", output: "capture", root: "onefile-core" },
     { source: "inject/loader.ts", output: "loader" },
   ]),
 ];

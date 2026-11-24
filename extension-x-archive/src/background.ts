@@ -6,14 +6,14 @@ import {
   readCredentials,
 } from "./capture.ts";
 
-export const xBookmarksRequestFilter: chrome.webRequest.RequestFilter = {
+export const xArchiveRequestFilter: chrome.webRequest.RequestFilter = {
   urls: ["https://x.com/i/api/graphql/*"],
   types: ["xmlhttprequest", "other"],
 };
 
 let updateQueue: Promise<void> = Promise.resolve();
 
-export function handleXBookmarksRequest(
+export function handleXArchiveRequest(
   details: chrome.webRequest.OnSendHeadersDetails,
 ): void {
   updateQueue = updateQueue.then(async () => {

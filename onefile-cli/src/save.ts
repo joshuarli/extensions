@@ -3,13 +3,14 @@ import { join, resolve } from "node:path";
 import { Effect } from "effect";
 import { chromium, type Page } from "playwright";
 import { build } from "vite";
-import { fetchResourceBytes } from "../../extension-onefile/src/fetch-resource.ts";
-import { saveTab, type SaveDependencies } from "../../extension-onefile/src/workflow.ts";
+import { fetchResourceBytes } from "../../onefile-core/src/fetch-resource.ts";
+import { saveTab, type SaveDependencies } from "../../onefile-core/src/workflow.ts";
 import type { SaveOptions } from "./args.ts";
 import { resolveBackend } from "./backend.ts";
 
 async function bundle(name: "capture" | "loader"): Promise<string> {
-  const result = await build({ configFile: false, logLevel: "silent", build: { write: false, minify: false, target: "chrome120", rolldownOptions: { input: resolve(import.meta.dirname, `../../extension-onefile/src/inject/${name}.ts`), output: { format: "iife" } } } });
+  const source = name === "capture" ? "onefile-core/src/inject/capture.ts" : "extension-onefile/src/inject/loader.ts";
+  const result = await build({ configFile: false, logLevel: "silent", build: { write: false, minify: false, target: "chrome120", rolldownOptions: { input: resolve(import.meta.dirname, `../../${source}`), output: { format: "iife" } } } });
   const outputs = Array.isArray(result) ? result : [result];
   const chunk = outputs.flatMap((output) => "output" in output ? output.output : []).find((output) => output.type === "chunk");
   if (!chunk || chunk.type !== "chunk") throw new Error(`Could not build ${name} script`);

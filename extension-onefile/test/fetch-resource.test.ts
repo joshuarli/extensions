@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { fetchResourceBytes } from "../src/fetch-resource.ts";
-import { ResourceFetchError } from "../src/errors.ts";
+import { fetchResourceBytes } from "../../onefile-core/src/fetch-resource.ts";
+import { ResourceFetchError } from "../../onefile-core/src/errors.ts";
 
 function stubResponse(body: Uint8Array, contentType: string | null, ok = true, status = 200): Response {
   return {

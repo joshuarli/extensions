@@ -5,7 +5,7 @@ import {
   collectModuleSpecifiers,
   resolveCssImports,
   splitSrcset,
-} from "../src/inject/capture.ts";
+} from "../../onefile-core/src/inject/capture.ts";
 
 describe("collectModuleSpecifiers", () => {
   it("collects static, side-effect, re-export, dynamic, and worker specifiers", () => {

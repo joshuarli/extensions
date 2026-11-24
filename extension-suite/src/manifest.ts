@@ -1,7 +1,7 @@
 import { allowRightClickManifest } from "../../extension-allow-right-click/src/manifest.fragment.ts";
 import { chatgptManifest } from "../../extension-chatgpt/src/manifest.fragment.ts";
 import { onefileManifest } from "../../extension-onefile/src/manifest.fragment.ts";
-import { xBookmarksManifest } from "../../extension-x-bookmarks/src/manifest.fragment.ts";
+import { xArchiveManifest } from "../../extension-x-archive/src/manifest.fragment.ts";
 import { youtubeTranscriptManifest } from "../../extension-youtube-transcript/src/manifest.fragment.ts";
 import {
   suiteDescription,
@@ -19,7 +19,7 @@ export const featureManifests: readonly FeatureManifest[] = [
   allowRightClickManifest,
   onefileManifest,
   youtubeTranscriptManifest,
-  xBookmarksManifest,
+  xArchiveManifest,
   chatgptManifest,
 ];
 

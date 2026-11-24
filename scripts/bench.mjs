@@ -116,7 +116,7 @@ function preflight(selected) {
     for (const bundle of ["dist/extension-suite/inject/onefile/capture.js", "dist/extension-suite/inject/onefile/loader.js"]) {
       if (!existsSync(bundle)) problems.push(`${bundle} missing: run pnpm run dist`);
       else {
-        const source = bundle.includes("capture") ? "extension-onefile/src/inject/capture.ts" : "extension-onefile/src/inject/loader.ts";
+        const source = bundle.includes("capture") ? "onefile-core/src/inject/capture.ts" : "extension-onefile/src/inject/loader.ts";
         if (statSync(source).mtimeMs > statSync(bundle).mtimeMs) warnings.push(`${bundle} is older than ${source}; rebuild if unintended`);
       }
     }

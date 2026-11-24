@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { extractStoredEntry, readStoredArchive } from "../../extension-onefile/src/zip.ts";
+import { extractStoredEntry, readStoredArchive } from "../../onefile-core/src/zip.ts";
 import { help, outputDirectory, parseArgs } from "../src/args.ts";
 import { assembleCapture } from "../src/save.ts";
 

@@ -1,6 +1,6 @@
 import { test } from "vitest";
 import assert from "node:assert/strict";
-import { buildFrontmatter, buildMarkdown } from "../src/metadata.ts";
+import { buildFrontmatter, buildMarkdown } from "../../youtube-transcript-core/src/metadata.ts";
 
 test("builds Obsidian-compatible YouTube frontmatter", () => {
   const frontmatter = buildFrontmatter({

@@ -3,7 +3,7 @@ import type {
   PageData,
   TranscriptPanelData,
   TranscriptResult,
-} from "../src/types.ts";
+} from "../../youtube-transcript-core/src/types.ts";
 import { describe, it, test } from "vitest";
 import { Effect } from "effect";
 import assert from "node:assert/strict";
@@ -22,9 +22,9 @@ import {
   resolveMessageTab,
 } from "../src/background.ts";
 import { readYouTubePage } from "../src/page.ts";
-import { resolveTranscript } from "../src/workflow.ts";
-import { fetchPlayerData, fetchTranscript, getCaptionTracks } from "../src/youtube-api.ts";
-import { CaptionFetchError } from "../src/error.ts";
+import { resolveTranscript } from "../../youtube-transcript-core/src/workflow.ts";
+import { fetchPlayerData, fetchTranscript, getCaptionTracks } from "../../youtube-transcript-core/src/youtube-api.ts";
+import { CaptionFetchError } from "../../youtube-transcript-core/src/error.ts";
 import {
   readPreferredLanguageSettings,
   savePreferredLanguageSettings,

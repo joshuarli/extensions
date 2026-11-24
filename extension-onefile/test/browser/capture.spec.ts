@@ -3,7 +3,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { CapturePayloadSchema } from "../../src/message-contract.ts";
+import { CapturePayloadSchema } from "../../../onefile-core/src/message-contract.ts";
 import { Schema } from "effect";
 
 const specDirectory = dirname(fileURLToPath(import.meta.url)),

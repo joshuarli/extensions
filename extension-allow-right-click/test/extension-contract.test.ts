@@ -11,7 +11,7 @@ test("composes a manifest fragment from every extension package", () => {
     "extension-allow-right-click",
     "extension-chatgpt",
     "extension-onefile",
-    "extension-x-bookmarks",
+    "extension-x-archive",
     "extension-youtube-transcript",
   ]);
   expect(featureManifests).toHaveLength(packages.length);

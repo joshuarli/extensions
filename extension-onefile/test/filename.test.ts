@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildArchiveFilename, originPathName, resourceEntryName } from "../src/filename.ts";
+import { buildArchiveFilename, originPathName, resourceEntryName } from "../../onefile-core/src/filename.ts";
 
 describe("originPathName", () => {
   it("keeps nested paths and strips leading slashes", () => {

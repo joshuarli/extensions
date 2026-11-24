@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { buildPolyglot, containsAsciiInsensitive } from "../../extension-onefile/src/polyglot.ts";
-import { readStoredArchive } from "../../extension-onefile/src/zip.ts";
+import { buildPolyglot, containsAsciiInsensitive } from "../../onefile-core/src/polyglot.ts";
+import { readStoredArchive } from "../../onefile-core/src/zip.ts";
 
 export async function run(options = {}) {
   const root = process.cwd();

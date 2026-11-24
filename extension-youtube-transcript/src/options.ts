@@ -4,7 +4,7 @@ import {
   readPreferredLanguageSettings,
   savePreferredLanguageSettings,
 } from "./settings.ts";
-import { PreferredLanguageSettingsSchema } from "./types.ts";
+import { PreferredLanguageSettingsSchema } from "../../youtube-transcript-core/src/types.ts";
 
 const optionsContext = "YouTube Transcript options";
 
