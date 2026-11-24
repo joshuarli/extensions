@@ -28,3 +28,7 @@ Each `extension-*/` directory is a feature package with its own source and packa
 The service worker is emitted as an ES module. Scripts injected with `chrome.scripting.executeScript()` are emitted as classic scripts, so keep their formats separate. The UI uses browser DOM APIs directly; Effect and Schema handle extension I/O and boundary validation.
 
 The shared package pins `tsrs` 0.18.0, TypeScript 7.1, Vite 8, Effect 4, and Vitest 5. `tsrs` uses the strict options in [tsconfig.json](../tsconfig.json). Its native macOS build supports Apple silicon only, so typechecking is unavailable on Intel Macs.
+
+## X archive filesystem storage
+
+Run only one X archive writer per state directory. Record saves read and merge existing data before replacing it, and writes use a shared staging filename. A missing archive starts empty; unreadable or malformed archive records fail instead of being replaced. Optional cache and scan-state reads treat missing, malformed, or unreadable files as absent.

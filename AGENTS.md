@@ -41,8 +41,7 @@ The roadmap, [docs/roadmap.md](docs/roadmap.md), holds all current and future wo
 
 ## Verification
 
-- Types profile measurements and remaining lint proof: [Types](docs/deslop-types.md).
-- `make test` typechecks and runs all Node Vitest tests; `make lint` independently typechecks and runs type-aware Oxlint `no-unsafe-argument` over TypeScript. With one CPU and `TEST_ARGS=--maxWorkers=1`, current warm test/lint costs are 51.54/1.16s (226 tests); [Types](docs/deslop-types.md) records gates. Original cold/warm costs: [Ground](docs/deslop-ground.md).
+- `make test` typechecks and runs all Node Vitest tests; `make lint` independently typechecks and runs type-aware Oxlint `no-unsafe-argument` over TypeScript.
 - `make test TEST_ARGS=--maxWorkers=1` bounds Vitest workers; browser tests are separate (`pnpm run test:browser`).
 - `make coverage TEST_ARGS=--maxWorkers=1` reports first-party Node line and branch coverage in `.work/coverage/`. It includes unimported source and has no threshold.
 - Suite composition (every extension package contributes a fragment), manifest and bundle shape: `extension-allow-right-click/test/extension-contract.test.ts`; suite messages: `extension-suite/test/message-contract.test.ts`.

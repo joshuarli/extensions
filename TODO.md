@@ -1,5 +1,5 @@
 Prefix: EXT
-Next: 5
+Next: 12
 
 ### EXT-1 · P1 · Run the X archive CLI inside a bctl appliance instead of everyday Helium
 
@@ -18,4 +18,67 @@ Next: 5
 - **Recommendation:** Gate 1, a one-to-two-day spike: a collector on the x-archive session pattern, checked against Python ig on a fixed set of 20 to 30 posts (a profile needing more than one page, a saved collection, image and mixed carousels, reels with audio, one HQ video). Compare post identity, membership, carousel order, dimensions, audio presence and duration. Any silent loss fails the spike. Gate 2: port saved and profile membership, resumable downloads, completion checks, the ffmpeg mux and the static gallery, reusing x-archive-core merge, storage and render patterns. Carry Shadowdriver SHD-49: any rate limit, login redirect, checkpoint or unrecognized response parks the whole job with its reason across restarts until a deliberate resume. Use synthetic fixtures only: this repository is public and the IG tree holds personal archive files. Add a suite feature only if passive credential capture is needed, following extension-x-bookmarks.
 - **Fix with:** reference-parity
 - **Effort:** L
+
+### EXT-5 · P3 · Cover Onefile archive wrapper and convergence failures
+
+- **Area:** Onefile archive
+- **Where:** extension-onefile/src/polyglot.ts:151; extension-onefile/test/polyglot.test.ts
+- **Problem:** The archive wrapper selection, iteration bound and nonconvergence failure paths lack resolved behavioral coverage; incorrect offset handling could produce an unreadable archive.
+- **Recommendation:** Determine reachable failure cases and add focused behavioral tests for the wrapper and convergence contract.
+- **Fix with:** none
+- **Effort:** M
+
+### EXT-6 · P3 · Exercise X archive CLI process and complete export
+
+- **Area:** X archive CLI
+- **Where:** x-archive-cli/test/args.test.ts; x-archive-cli/src/cli.ts; x-archive-cli/src/run.ts
+- **Problem:** Argument tests exercise parsing, but the CLI process boundary and complete JSON, media and HTML export contract are not covered end to end.
+- **Recommendation:** Drive the CLI as a process against synthetic service fixtures and verify exit status and exported archive contents.
+- **Fix with:** none
+- **Effort:** M
+
+### EXT-7 · P3 · Exercise installed extension worker lifecycle
+
+- **Area:** Suite runtime
+- **Where:** extension-onefile/test/browser/extension-runtime.spec.ts; extension-suite/src/service-worker.ts
+- **Problem:** The installed Chromium test exercises a right-click toggle in one worker lifetime but does not establish behavior after worker restart or extension update.
+- **Recommendation:** Add installed-suite browser coverage for worker restart and update behavior with persisted state.
+- **Fix with:** lifecycle-concurrency
+- **Effort:** M
+
+### EXT-8 · P3 · Verify archive replacement failure at rename
+
+- **Area:** X archive storage
+- **Where:** x-archive-cli/src/state.ts:36; x-archive-cli/test/state.test.ts; x-archive-cli/test/fs-store.test.ts
+- **Problem:** Tests cover staging write failure but do not exercise rename failure or a crash between staging and rename, leaving archive replacement recovery unverified.
+- **Recommendation:** Test rename failure and interruption using isolated files and verify the old archive and recovery behavior.
+- **Fix with:** durable-state
+- **Effort:** M
+
+### EXT-10 · P3 · Exercise Onefile capture and download in the installed suite
+
+- **Area:** Onefile capture
+- **Where:** extension-onefile/test/browser/capture.spec.ts:84; extension-onefile/test/browser/extension-runtime.spec.ts
+- **Problem:** The capture corpus injects the capture bundle into ordinary pages, and the installed suite test covers only the right-click toggle; the installed capture-to-download path is unverified.
+- **Recommendation:** Drive Onefile capture through the installed suite against a local fixture and verify the downloaded archive contents.
+- **Fix with:** none
+- **Effort:** M
+
+### EXT-11 · P3 · Qualify concurrent X archive filesystem writers
+
+- **Area:** X archive storage
+- **Where:** x-archive-cli/src/state.ts:36; x-archive-cli/src/fs-store.ts:55
+- **Problem:** The filesystem store reads, merges and replaces records using a shared staging filename; concurrent writers and power-loss durability are unqualified.
+- **Recommendation:** Establish the supported writer and durability contract, then test or enforce it for concurrent runs and interrupted writes.
+- **Fix with:** durable-state
+- **Effort:** M
+
+### EXT-9 · P4 · Qualify live X and YouTube service boundaries
+
+- **Area:** Service integration
+- **Where:** x-archive-core/test/api.test.ts; extension-youtube-transcript/test/http.test.ts; extension-youtube-transcript/test/integration.test.ts
+- **Problem:** Service tests use fixtures or mocks, leaving compatibility with live X and YouTube endpoints unverified.
+- **Recommendation:** Define and run an owner-authorized live qualification using suitable accounts and retain no credentials or personal data in fixtures.
+- **Fix with:** none
+- **Effort:** M
 
