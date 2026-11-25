@@ -95,33 +95,42 @@ function mediaItems(raw: unknown): MediaItem[] {
   });
 }
 
-function unwrapTweet(value: unknown): ObjectValue | null {
+const TWEET_WRAPPERS = new Set(["TweetWithVisibilityResults", "TweetPreviewDisplay"]);
+const TOMBSTONES = new Set(["TweetTombstone", "TweetUnavailable"]);
+
+export function unwrapTweet(value: unknown): ObjectValue | null {
   const result = object(value);
   if (!result) return null;
-  if (get(result, "__typename") === "TweetWithVisibilityResults") return object(get(result, "tweet"));
-  return result;
+  return TWEET_WRAPPERS.has(string(get(result, "__typename")) ?? "")
+    ? object(get(result, "tweet"))
+    : result;
 }
 
-function isTombstone(value: ObjectValue): boolean {
-  return ["TweetTombstone", "TweetUnavailable"].includes(string(get(value, "__typename")) ?? "");
+export function isTombstone(value: ObjectValue): boolean {
+  return TOMBSTONES.has(string(get(value, "__typename")) ?? "");
 }
 
-function extractTweet(entry: ObjectValue, observedAt: string): Bookmark | null {
-  const entryId = string(entry["entryId"]);
-  const id = entryId?.slice("tweet-".length) ?? "";
-  const item = get(entry, "content", "itemContent");
-  if (!object(item) || !id) return null;
-  const sortIndex = string(entry["sortIndex"]);
-  let result = get(item, "tweet_results", "result");
-  if (!object(result)) return unavailable(id, sortIndex, "No tweet data returned", observedAt);
-  if (get(result, "__typename") === "TweetWithVisibilityResults") result = get(result, "tweet");
-  if (!object(result) || ["TweetTombstone", "TweetUnavailable"].includes(string(get(result, "__typename")) ?? "")) {
-    return unavailable(id, sortIndex, string(get(result, "tombstone", "text", "text")) ?? "Tweet unavailable", observedAt);
+export function normalizeTweetResult(
+  result: unknown,
+  observedAt: string,
+  fallbackId = "",
+  sortIndex: string | null = null,
+): Bookmark | null {
+  const raw = object(result);
+  if (!raw) return fallbackId ? unavailable(fallbackId, sortIndex, "No tweet data returned", observedAt) : null;
+  const tweet = unwrapTweet(raw);
+  if (!tweet) {
+    return unavailable(string(get(raw, "rest_id")) ?? fallbackId, sortIndex, "No tweet data returned", observedAt);
+  }
+  if (isTombstone(tweet)) {
+    const id = string(get(tweet, "rest_id")) ?? fallbackId;
+    return id ? unavailable(id, sortIndex, string(get(tweet, "tombstone", "text", "text")) ?? "Tweet unavailable", observedAt) : null;
   }
 
-  const tweetId = string(get(result, "rest_id")) ?? string(get(result, "legacy", "id_str")) ?? id;
-  const rawRepost = get(result, "legacy", "retweeted_status_result", "result") ??
-    get(result, "retweeted_status_result", "result");
+  const tweetId = string(get(tweet, "rest_id")) ?? string(get(tweet, "legacy", "id_str")) ?? fallbackId;
+  if (!tweetId) return null;
+  const rawRepost = get(tweet, "legacy", "retweeted_status_result", "result") ??
+    get(tweet, "retweeted_status_result", "result");
   const repostOfId = string(get(rawRepost, "rest_id")) ?? string(get(rawRepost, "legacy", "id_str"));
   const repostSource = unwrapTweet(rawRepost);
   if (rawRepost != null && (!repostSource || isTombstone(repostSource))) {
@@ -130,7 +139,7 @@ function extractTweet(entry: ObjectValue, observedAt: string): Bookmark | null {
       ...(repostOfId ? { repost_of: repostOfId } : {}),
     };
   }
-  const content = repostSource ?? result;
+  const content = repostSource ?? tweet;
   const repostOf = repostSource ? repostOfId : null;
   const legacy = get(content, "legacy");
   const core = get(content, "core", "user_results", "result");
@@ -167,7 +176,7 @@ function extractTweet(entry: ObjectValue, observedAt: string): Bookmark | null {
     if (key) bindings[key] = string(get(binding, "value", "string_value")) ??
       string(get(binding, "value", "scribe_value", "description"));
   }
-  const card = get(content, "card", "legacy") ?? get(result, "card", "legacy");
+  const card = get(content, "card", "legacy") ?? get(tweet, "card", "legacy");
 
   return {
     tweet_id: tweetId,
@@ -176,7 +185,7 @@ function extractTweet(entry: ObjectValue, observedAt: string): Bookmark | null {
     created_at: string(get(legacy, "created_at")),
     full_text: noteText ?? string(get(legacy, "full_text")) ?? "",
     lang: string(get(legacy, "lang")),
-    source: string(get(content, "source")) ?? string(get(result, "source")),
+    source: string(get(content, "source")) ?? string(get(tweet, "source")),
     conversation_id: string(get(legacy, "conversation_id_str")),
     in_reply_to_tweet_id: string(get(legacy, "in_reply_to_status_id_str")),
     in_reply_to_user_id: string(get(legacy, "in_reply_to_user_id_str")),
@@ -193,7 +202,7 @@ function extractTweet(entry: ObjectValue, observedAt: string): Bookmark | null {
       retweets: number(get(legacy, "retweet_count")),
       replies: number(get(legacy, "reply_count")),
       bookmarks: number(get(legacy, "bookmark_count")),
-      views: Number.parseInt(string(get(content, "views", "count")) ?? string(get(result, "views", "count")) ?? "0", 10) || 0,
+      views: Number.parseInt(string(get(content, "views", "count")) ?? string(get(tweet, "views", "count")) ?? "0", 10) || 0,
     },
     entities: {
       urls: array(get(entities, "urls")).map((value) => ({
@@ -221,6 +230,19 @@ function extractTweet(entry: ObjectValue, observedAt: string): Bookmark | null {
   };
 }
 
+function extractTweet(entry: ObjectValue, observedAt: string): Bookmark | null {
+  const entryId = string(entry["entryId"]);
+  const id = entryId?.slice("tweet-".length) ?? "";
+  const item = get(entry, "content", "itemContent");
+  if (!object(item) || !id) return null;
+  return normalizeTweetResult(
+    get(item, "tweet_results", "result"),
+    observedAt,
+    id,
+    string(entry["sortIndex"]),
+  );
+}
+
 type EntriesResult = { valid: true; entries: unknown[] } | { valid: false; detail: string };
 
 function instructionEntries(instruction: unknown): EntriesResult {
@@ -240,13 +262,8 @@ function instructionEntries(instruction: unknown): EntriesResult {
 
 type ModuleResult = { posts: Bookmark[] } | { detail: string };
 
-const UNWRAPPERS = new Set(["TweetWithVisibilityResults", "TweetPreviewDisplay"]);
-
 function unwrapModuleTweet(result: unknown): ObjectValue | null {
-  const resultObject = object(result);
-  if (!resultObject) return null;
-  if (UNWRAPPERS.has(string(get(resultObject, "__typename")) ?? "")) return object(get(resultObject, "tweet"));
-  return resultObject;
+  return unwrapTweet(result);
 }
 
 function moduleAuthorId(itemContent: ObjectValue): string | null {

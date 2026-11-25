@@ -59,6 +59,84 @@ describe("parseHomeTimeline", () => {
     if (result.valid) throw new Error("expected failure");
     expect(result.detail).toContain("TimelineAddEntries");
   });
+
+  it("rejects a non-array entries container instead of reporting an empty finished feed", () => {
+    const data = { data: { home: { home_timeline_urt: { instructions: [
+      { type: "TimelineAddEntries", entries: { unexpected: true } },
+    ] } } } };
+    const result = parseHomeTimeline(data, now);
+    expect(result.valid).toBe(false);
+    if (!result.valid) expect(result.detail).toContain("entries array");
+  });
+
+  it("decodes visibility-wrapped tweets and counts unknown siblings individually", () => {
+    const wrapped = (id: string) => ({
+      __typename: "TweetWithVisibilityResults",
+      tweet: {
+        __typename: "Tweet",
+        rest_id: id,
+        core: { user_results: { result: { __typename: "User", rest_id: "900", core: { screen_name: "dave" } } } },
+        legacy: { full_text: "film " + id },
+      },
+    });
+    const direct = (id: string) => ({
+      __typename: "Tweet",
+      rest_id: id,
+      core: { user_results: { result: { __typename: "User", rest_id: "900", core: { screen_name: "dave" } } } },
+      legacy: { full_text: "film " + id },
+    });
+    const data = { data: { home: { home_timeline_urt: { instructions: [{ type: "TimelineAddEntries", entries: [
+      { entryId: "tweet-1", content: { entryType: "TimelineTimelineItem", itemContent: { tweet_results: { result: direct("1") } } } },
+      { entryId: "tweet-2", content: { entryType: "TimelineTimelineModule", items: [
+        { item: { itemContent: { tweet_results: { result: wrapped("2") } } } },
+        { item: { itemContent: { tweet_results: { result: { __typename: "MysteryTweet", rest_id: "3" } } } } },
+      ] } },
+    ] }] } } } };
+    const result = parseHomeTimeline(data, now);
+    expect(result.valid).toBe(false);
+    if (!result.valid) {
+      expect(result.accounting.posts).toBe(2);
+      expect(result.accounting.postBearingUnsupported).toBe(1);
+    }
+  });
+
+  it("decodes a mixed conversation module without dropping the wrapped sibling", () => {
+    const tweet = (id: string) => ({
+      __typename: "Tweet",
+      rest_id: id,
+      core: { user_results: { result: { __typename: "User", rest_id: "900", core: { screen_name: "dave" } } } },
+      legacy: { full_text: "film " + id },
+    });
+    const data = { data: { home: { home_timeline_urt: { instructions: [{ type: "TimelineAddEntries", entries: [
+      { entryId: "home-conversation-1", content: { entryType: "TimelineTimelineModule", items: [
+        { item: { itemContent: { tweet_results: { result: tweet("9") } } } },
+        { item: { itemContent: { tweet_results: { result: {
+          __typename: "TweetWithVisibilityResults", tweet: tweet("10"),
+        } } } } },
+      ] } },
+    ] }] } } } };
+    const result = valid(parseHomeTimeline(data, now));
+    expect(result.posts.map((post) => post.tweet_id)).toEqual(["9", "10"]);
+    expect(result.accounting.postBearingUnsupported).toBe(0);
+  });
+
+  it("uses note text and note entities when a long post carries them", () => {
+    const data = { data: { home: { home_timeline_urt: { instructions: [{ type: "TimelineAddEntries", entries: [
+      { entryId: "tweet-1", content: { entryType: "TimelineTimelineItem", itemContent: { tweet_results: { result: {
+        __typename: "Tweet",
+        rest_id: "1",
+        core: { user_results: { result: { __typename: "User", rest_id: "900", core: { screen_name: "dave" } } } },
+        legacy: { full_text: "short" },
+        note_tweet: { note_tweet_results: { result: {
+          text: "A long arthouse note with a mirror https://t.co/abc",
+          entity_set: { urls: [{ url: "https://t.co/abc", expanded_url: "https://mega.nz/file/one", display_url: "mega.nz" }] },
+        } } },
+      } } } } },
+    ] }] } } } };
+    const result = valid(parseHomeTimeline(data, now));
+    expect(result.posts[0]?.full_text).toContain("A long arthouse note");
+    expect(result.posts[0]?.urls[0]?.url).toBe("https://mega.nz/file/one");
+  });
 });
 
 describe("parseUserList", () => {
