@@ -131,8 +131,12 @@ function avatarHtml(authorValue: unknown, size: number, assets: ProfileAssets | 
 
 function linkify(value: unknown, urls: unknown, mentions: unknown, hashtags: unknown): string {
   let out = esc(value);
-  void mentions;
-  void hashtags;
+  const mentionNames = new Set(array(mentions)
+    .map((mention) => typeof mention === "string" ? mention : text(record(mention)["screen_name"]))
+    .filter((name) => name.length > 0)),
+    tagNames = new Set(array(hashtags)
+      .map((tag) => typeof tag === "string" ? tag : text(record(tag)["text"]))
+      .filter((tag) => tag.length > 0));
   const specs = array(urls).map((entry): { raw: string; href: string; display: string } => {
     if (typeof entry === "string") return { raw: entry, href: entry, display: entry };
     const url = record(entry);
@@ -148,8 +152,10 @@ function linkify(value: unknown, urls: unknown, mentions: unknown, hashtags: unk
     const label = (display || href).replace(/^https:\/\//u, "").replace(/^http:\/\//u, "").replace(/\/$/u, "");
     out = out.replaceAll(esc(raw), `<a href="${esc(href)}" rel="noopener">${esc(label.slice(0, 60))}</a>`);
   }
-  out = out.replaceAll(/(@\w{1,20})/gu, '<span class="mention">$1</span>');
-  out = out.replaceAll(/(#\w{1,80})/gu, '<span class="hashtag">$1</span>');
+  out = out.replaceAll(/(@\w{1,20})/gu, (match, name: string) =>
+    mentionNames.has(name.slice(1)) ? `<a class="mention" href="https://x.com/${esc(name.slice(1))}" rel="noopener">${esc(name)}</a>` : match);
+  out = out.replaceAll(/(#\w{1,80})/gu, (match, tag: string) =>
+    tagNames.has(tag.slice(1)) ? `<a class="hashtag" href="https://x.com/hashtag/${esc(tag.slice(1))}" rel="noopener">${esc(tag)}</a>` : match);
   return out;
 }
 
@@ -279,6 +285,16 @@ function renderPost(postValue: unknown, mode: string, assets: ProfileAssets | nu
   if (parentId) {
     headBits.push(`<div class="reply-note">Replying to <a href="${X_LINK}${esc(parentAttr)}" rel="noopener">post ${esc(parentAttr)}</a></div>`);
   }
+  const folders = array(post["folders"]).filter((folder): folder is string => typeof folder === "string" && folder.length > 0);
+  if (folders.length > 0) {
+    headBits.push(`<div class="reply-note">Folders: ${folders.map((folder) => esc(folder)).join(" · ")}</div>`);
+  }
+  if (!unavailable && text(post["source"])) {
+    headBits.push(`<div class="reply-note">via ${esc(post["source"])}</div>`);
+  }
+  if (text(post["in_reply_to_user_id"])) {
+    headBits.push(`<div class="reply-note">to user ${esc(post["in_reply_to_user_id"])}</div>`);
+  }
   const entities = record(post["entities"]),
     urlValues = array(entities["urls"]),
     isContext = mode === "context",
@@ -300,7 +316,7 @@ function renderPost(postValue: unknown, mode: string, assets: ProfileAssets | nu
   }
   return `<article class="${isContext ? "post context-post" : "post"}" id="post-${esc(tweetId)}"${dataAttrs}>${avatarHtml(author, 40, assets)}<div class="post-body">`
     + headBits.join("")
-    + `<div class="p-head"><span class="p-name">${esc(name)}</span>${isContext ? ' <span class="context-note">thread context</span>' : ""}`
+    + `<div class="p-head"><span class="p-name">${esc(name)}</span>${author["verified"] === true ? '<span title="Verified" style="color:var(--accent)">✓</span>' : ""}${isContext ? ' <span class="context-note">thread context</span>' : ""}`
     + `<span class="p-handle">@${esc(handle)}<span class="dot"> · </span><a href="${X_LINK}${esc(tweetId)}" rel="noopener"><span class="p-time">${esc(fmtDate(post["created_at"]))}</span></a></span></div>`
     + body + "</div></article>";
 }

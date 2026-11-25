@@ -75,15 +75,6 @@ Next: 45
 - **Fix with:** durable-state
 - **Effort:** M
 
-### EXT-21 · P3 · Render parsed fields that the HTML currently ignores
-
-- **Area:** X archive · HTML export
-- **Where:** x-archive-core/src/storage.ts:93-95; parser.ts:197/207-217; render.ts:132-146/269-273
-- **Problem:** Folder names are added to the JSON but never displayed; verified, source, in_reply_to_user_id and structured mention/hashtag entities are parsed but unused because linkify voids the latter and regexes the text, and expanded URLs are truncated to 60 characters.
-- **Recommendation:** Add folder chips, a verified badge, source and reply-to info, and entity-offset-driven mention and hashtag links using display_url.
-- **Fix with:** none
-- **Effort:** S
-
 ### EXT-23 · P3 · Label context posts and report thread-context gaps
 
 - **Area:** X archive · collection and HTML export

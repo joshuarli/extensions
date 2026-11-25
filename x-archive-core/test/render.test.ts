@@ -35,7 +35,7 @@ describe("renderArchive", () => {
 
       expect(result.posts).toBe(1);
       expect(html).toContain("Oct 10, 2018 · 8:19 PM");
-      expect(html).toContain('<span class="mention">@bob</span>');
+      expect(html).toContain("Hello @bob #hi");
       expect(html).toContain('class="context-archive" hidden');
       expect(html).toContain('id="lightbox"');
       expect(html).toContain('id="thread-overlay"');
@@ -119,6 +119,37 @@ describe("renderArchive", () => {
       expect(html).toContain("Collection: posts partial (rate limited)");
       expect(html).toContain("1 media file(s) failed to download");
       expect(html).toContain("1 media file(s) skipped");
+    } finally {
+      rmSync(folder, { recursive: true, force: true });
+    }
+  });
+
+  it("renders folders, verification, source and entity links", async () => {
+    mkdirSync(scratchRoot, { recursive: true });
+    const folder = mkdtempSync(join(scratchRoot, "x-render-fields-"));
+    try {
+      writeFileSync(join(folder, "posts.json"), JSON.stringify({
+        posts: [{
+          tweet_id: "1",
+          full_text: "hello @bob and #film",
+          author: { name: "Alice", screen_name: "alice", verified: true },
+          source: "Twitter for iPhone",
+          folders: ["Films", "Favourites"],
+          entities: {
+            mentions: [{ screen_name: "bob", user_id: "2" }],
+            hashtags: ["film"],
+            urls: [],
+          },
+        }],
+        export_metadata: { exported_at: "2026-01-01" },
+      }));
+      const result = await renderArchive({ folder, noFetch: true });
+      const html = readFileSync(result.output, "utf8");
+      expect(html).toContain("Folders: Films · Favourites");
+      expect(html).toContain('title="Verified"');
+      expect(html).toContain("via Twitter for iPhone");
+      expect(html).toContain('<a class="mention" href="https://x.com/bob"');
+      expect(html).toContain('<a class="hashtag" href="https://x.com/hashtag/film"');
     } finally {
       rmSync(folder, { recursive: true, force: true });
     }
