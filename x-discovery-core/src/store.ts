@@ -42,9 +42,9 @@ export class DiscoveryStore {
       + "  PRIMARY KEY (tweet_id, hash)"
       + ");"
       + "CREATE TABLE IF NOT EXISTS observations ("
-      + "  run_id TEXT NOT NULL, entry_id TEXT NOT NULL, position INTEGER NOT NULL,"
+      + "  run_id TEXT NOT NULL, page INTEGER NOT NULL, entry_id TEXT NOT NULL, position INTEGER NOT NULL,"
       + "  tweet_id TEXT, author_id TEXT, author_handle TEXT, relationship TEXT NOT NULL, observed_at TEXT NOT NULL,"
-      + "  PRIMARY KEY (run_id, entry_id)"
+      + "  PRIMARY KEY (run_id, page, entry_id)"
       + ");"
       + "CREATE TABLE IF NOT EXISTS checkpoints ("
       + "  run_id TEXT PRIMARY KEY, cursor TEXT"
@@ -69,6 +69,45 @@ export class DiscoveryStore {
       + "  account_id TEXT PRIMARY KEY, run_id TEXT NOT NULL, acquired_at TEXT NOT NULL"
       + ");",
     );
+    this.migrateObservations();
+  }
+
+  private migrateObservations(): void {
+    const columns = this.db.prepare("PRAGMA table_info(observations)").all() as Array<{ name: string }>;
+    if (columns.some((column) => column.name === "page")) return;
+    this.db.exec("BEGIN");
+    try {
+      this.db.exec(
+        "CREATE TABLE observations_new ("
+        + "  run_id TEXT NOT NULL, page INTEGER NOT NULL, entry_id TEXT NOT NULL, position INTEGER NOT NULL,"
+        + "  tweet_id TEXT, author_id TEXT, author_handle TEXT, relationship TEXT NOT NULL, observed_at TEXT NOT NULL,"
+        + "  PRIMARY KEY (run_id, page, entry_id)"
+        + ");"
+        + "INSERT INTO observations_new (run_id, page, entry_id, position, tweet_id, author_id, author_handle, relationship, observed_at)"
+        + " SELECT run_id, 0, entry_id, position, tweet_id, author_id, author_handle, relationship, observed_at FROM observations;"
+        + "DROP TABLE observations;"
+        + "ALTER TABLE observations_new RENAME TO observations;",
+      );
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  private assertLease(accountId: string, runId: string): void {
+    const row = this.db.prepare("SELECT run_id FROM job_locks WHERE account_id = ?").get(accountId) as
+      | { run_id: string } | undefined;
+    if (row && row.run_id !== runId) {
+      throw new Error("The discovery lease for this account was taken over by another run; stopping this run.");
+    }
+  }
+
+  renewJobLock(accountId: string, runId: string, at: string = new Date().toISOString()): void {
+    const changed = this.db.prepare(
+      "UPDATE job_locks SET acquired_at = ? WHERE account_id = ? AND run_id = ?",
+    ).run(at, accountId, runId);
+    if (changed.changes !== 1) throw new Error("The discovery lease was lost; stopping this run.");
   }
 
   acquireJobLock(accountId: string, runId: string, at: string = new Date().toISOString()): boolean {
@@ -124,16 +163,20 @@ export class DiscoveryStore {
   }
 
   finishRun(runId: string, stopReason: string, at: string = new Date().toISOString()): void {
+    const run = this.db.prepare("SELECT account_id FROM runs WHERE run_id = ?").get(runId) as
+      | { account_id: string } | undefined;
+    if (run) this.assertLease(run["account_id"], runId);
     this.db.prepare("UPDATE runs SET ended_at = ?, stop_reason = ? WHERE run_id = ?").run(at, stopReason, runId);
   }
 
   commitPage(input: CommitPageInput): void {
+    this.assertLease(input.accountId, input.runId);
     const insertPost = this.db.prepare(
       "INSERT OR IGNORE INTO posts (tweet_id, hash, json, observed_at) VALUES (?, ?, ?, ?)",
     );
     const insertObservation = this.db.prepare(
-      "INSERT OR IGNORE INTO observations (run_id, entry_id, position, tweet_id, author_id, author_handle, relationship, observed_at)"
-      + " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT OR IGNORE INTO observations (run_id, page, entry_id, position, tweet_id, author_id, author_handle, relationship, observed_at)"
+      + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
     );
     this.db.exec("BEGIN");
     try {
@@ -145,7 +188,8 @@ export class DiscoveryStore {
         insertPost.run(post.tweet_id, contentHash(post), JSON.stringify(post), post.observed_at);
         insertObservation.run(
           input.runId,
-          "tweet-" + post.tweet_id,
+          input.page,
+          post.entry_id ?? "tweet-" + post.tweet_id,
           index,
           post.tweet_id,
           post.author_id,
@@ -163,6 +207,9 @@ export class DiscoveryStore {
   }
 
   saveFailure(runId: string, page: number, data: unknown, detail: string): void {
+    const run = this.db.prepare("SELECT account_id FROM runs WHERE run_id = ?").get(runId) as
+      | { account_id: string } | undefined;
+    if (run) this.assertLease(run["account_id"], runId);
     const json = JSON.stringify(data);
     this.db.exec("BEGIN");
     try {
@@ -205,11 +252,12 @@ export class DiscoveryStore {
 
   observations(runId: string): FeedObservation[] {
     const rows = this.db.prepare(
-      "SELECT run_id, entry_id, position, tweet_id, author_id, author_handle, relationship, observed_at"
-      + " FROM observations WHERE run_id = ? ORDER BY position",
+      "SELECT run_id, page, entry_id, position, tweet_id, author_id, author_handle, relationship, observed_at"
+      + " FROM observations WHERE run_id = ? ORDER BY page, position",
     ).all(runId) as Array<Record<string, unknown>>;
     return rows.map((row) => ({
       runId: String(row["run_id"]),
+      page: Number(row["page"]),
       entryId: String(row["entry_id"]),
       position: Number(row["position"]),
       tweetId: row["tweet_id"] === null ? null : String(row["tweet_id"]),

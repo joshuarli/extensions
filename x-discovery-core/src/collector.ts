@@ -24,6 +24,7 @@ export interface HomeTimelineDeps {
   writeCursor(cursor: string | null): Promise<void>;
   commitPage?(commit: PageCommit): Promise<void>;
   commitFailure?(failure: PageFailure): Promise<void>;
+  onPageStart?(): void | Promise<void>;
   signal: AbortSignal;
   report(message: string): void;
   maxPages: number;
@@ -64,6 +65,7 @@ export async function collectHomeTimeline(deps: HomeTimelineDeps): Promise<Colle
   let posts = 0;
   while (pages < deps.maxPages) {
     if (deps.signal.aborted) return { pages, posts, cursor, completed: false, reason: "stopped" };
+    await deps.onPageStart?.();
     pages++;
     const data = await deps.request(homeVariables(cursor), deps.signal);
     const parsed = parseHomeTimeline(data, new Date().toISOString());

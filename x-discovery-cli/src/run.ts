@@ -101,6 +101,7 @@ export async function collectFeed(options: DiscoverOptions): Promise<CollectSumm
           store.saveFailure(runId, failure.page, failure.data, failure.detail);
           report("Page " + failure.page + " saved for inspection: " + failure.detail, options.onStatus);
         },
+        onPageStart: () => store.renewJobLock(client.accountId, runId),
         signal: options.signal,
         report: (message) => report(message, options.onStatus),
         maxPages: options.maxPages,

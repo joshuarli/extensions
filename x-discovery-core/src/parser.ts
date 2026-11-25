@@ -44,7 +44,7 @@ function emptyAccounting(): HomeEntryAccounting {
   return { total: 0, posts: 0, cursors: 0, nonPost: 0, unavailable: 0, unsupported: 0, postBearingUnsupported: 0, modulePosts: 0 };
 }
 
-function toPost(bookmark: Bookmark): DiscoveredPost | null {
+function toPost(bookmark: Bookmark, entryId?: string): DiscoveredPost | null {
   if (bookmark.status !== "available") return null;
   const author = object(bookmark.author);
   const authorId = string(author?.["user_id"]);
@@ -88,6 +88,7 @@ function toPost(bookmark: Bookmark): DiscoveredPost | null {
     favorite_count: typeof metrics?.["likes"] === "number" ? metrics["likes"] : 0,
     retweet_count: typeof metrics?.["retweets"] === "number" ? metrics["retweets"] : 0,
     relationship,
+    entry_id: entryId ?? "tweet-" + bookmark.tweet_id,
     observed_at: bookmark.observed_at,
   };
 }
@@ -98,7 +99,7 @@ type Decoded =
   | { kind: "unsupported" }
   | { kind: "none" };
 
-function decodeResult(result: unknown, observedAt: string): Decoded {
+function decodeResult(result: unknown, observedAt: string, entryId?: string): Decoded {
   if (result === null || result === undefined) return { kind: "none" };
   if (!object(result)) return { kind: "unsupported" };
   const unwrapped = unwrapTweet(result);
@@ -110,7 +111,7 @@ function decodeResult(result: unknown, observedAt: string): Decoded {
   const bookmark = normalizeTweetResult(result, observedAt);
   if (!bookmark) return { kind: "unsupported" };
   if (bookmark.status === "unavailable") return { kind: "unavailable" };
-  const post = toPost(bookmark);
+  const post = toPost(bookmark, entryId);
   return post ? { kind: "post", post } : { kind: "unsupported" };
 }
 
@@ -142,7 +143,11 @@ export function parseHomeTimeline(data: unknown, observedAt: string): ParsedHome
         accounting.nonPost++;
         continue;
       }
-      const decoded = decodeResult(get(entry, "content", "itemContent", "tweet_results", "result"), observedAt);
+      const decoded = decodeResult(
+        get(entry, "content", "itemContent", "tweet_results", "result"),
+        observedAt,
+        string(get(entry, "entryId")) ?? undefined,
+      );
       if (decoded.kind === "post") {
         posts.push(decoded.post);
         accounting.posts++;
@@ -157,8 +162,14 @@ export function parseHomeTimeline(data: unknown, observedAt: string): ParsedHome
         accounting.postBearingUnsupported++;
         continue;
       }
-      for (const item of items) {
-        const decodedItem = decodeResult(get(item, "item", "itemContent", "tweet_results", "result"), observedAt);
+      for (const [itemIndex, item] of items.entries()) {
+        const itemEntryId = string(get(item, "entryId"))
+          ?? (string(get(entry, "entryId")) ?? "module") + ":" + itemIndex;
+        const decodedItem = decodeResult(
+          get(item, "item", "itemContent", "tweet_results", "result"),
+          observedAt,
+          itemEntryId,
+        );
         if (decodedItem.kind === "post") {
           posts.push(decodedItem.post);
           accounting.modulePosts++;

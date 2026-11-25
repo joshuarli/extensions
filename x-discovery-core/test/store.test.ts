@@ -35,10 +35,10 @@ function post(id: string, favoriteCount = 0): DiscoveredPost {
   };
 }
 
-function commit(runId: string, page: number, cursor: string | null, posts: DiscoveredPost[]) {
+function commit(runId: string, page: number, cursor: string | null, posts: DiscoveredPost[], accountId = "1725684628491739136") {
   store.commitPage({
     runId,
-    accountId: "1725684628491739136",
+    accountId,
     feed: "home-for-you",
     page,
     data: { data: { page } },
@@ -82,6 +82,33 @@ describe("DiscoveryStore", () => {
     expect(store.acquireJobLock("900", "dead-run", started)).toBe(true);
     expect(store.acquireJobLock("900", "fresh-run", "2026-11-25T00:05:00.000Z")).toBe(false);
     expect(store.acquireJobLock("900", "fresh-run", later)).toBe(true);
+  });
+
+  it("keeps each appearance of a post with its own page and entry identity", () => {
+    const run = newRun("1725684628491739136", "home-for-you", 5);
+    store.beginRun(run);
+    commit(run.runId, 1, "next", [post("100"), post("101")]);
+    commit(run.runId, 2, null, [{ ...post("102"), entry_id: "entry-102" }, { ...post("100"), entry_id: "entry-100-again" }]);
+    const observations = store.observations(run.runId);
+    expect(observations).toHaveLength(4);
+    expect(observations.map((entry) => [entry.page, entry.tweetId, entry.entryId])).toEqual([
+      [1, "100", "tweet-100"],
+      [1, "101", "tweet-101"],
+      [2, "102", "entry-102"],
+      [2, "100", "entry-100-again"],
+    ]);
+  });
+
+  it("renews a live lease and refuses writes after a takeover", () => {
+    const account = "900";
+    const first = newRun(account, "home-for-you", 5);
+    expect(store.acquireJobLock(account, first.runId, "2026-11-25T00:00:00.000Z")).toBe(true);
+    store.beginRun(first);
+    store.renewJobLock(account, first.runId, "2026-11-25T00:09:00.000Z");
+    expect(store.acquireJobLock(account, "second", "2026-11-25T00:14:00.000Z")).toBe(false);
+    expect(store.acquireJobLock(account, "second", "2026-11-25T00:20:00.000Z")).toBe(true);
+    expect(() => commit(first.runId, 1, null, [post("1")], account)).toThrow("taken over");
+    expect(() => store.finishRun(first.runId, "budget_reached")).toThrow("taken over");
   });
 
   it("keeps a failing response and its reason", () => {

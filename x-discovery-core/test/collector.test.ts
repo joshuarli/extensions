@@ -114,6 +114,14 @@ describe("collectHomeTimeline", () => {
     ]);
   });
 
+  it("renews the lease before each page request", async () => {
+    const collected = deps([page("cursor-2", "1"), page(null, "2")]);
+    let renewals = 0;
+    collected.onPageStart = () => { renewals++; };
+    await collectHomeTimeline(collected);
+    expect(renewals).toBe(2);
+  });
+
   it("does not send a request when already stopped", async () => {
     const collected = deps([page(null, "1")]);
     const controller = new AbortController();

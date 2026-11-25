@@ -16,6 +16,7 @@ export interface ObservationRun {
 
 export interface FeedObservation {
   runId: string;
+  page: number;
   entryId: string;
   position: number;
   tweetId: string | null;

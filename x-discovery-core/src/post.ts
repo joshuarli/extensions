@@ -27,6 +27,7 @@ export const DiscoveredPostSchema = Schema.Struct({
   favorite_count: Schema.Number,
   retweet_count: Schema.Number,
   relationship: Schema.optional(PostRelationshipSchema),
+  entry_id: Schema.optional(Schema.String),
   observed_at: Schema.String,
 });
 
