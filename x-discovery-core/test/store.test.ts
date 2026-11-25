@@ -76,6 +76,14 @@ describe("DiscoveryStore", () => {
     expect(store.acquireJobLock(run.accountId, "another-run")).toBe(true);
   });
 
+  it("takes over a stale lease without a human", () => {
+    const started = "2026-11-25T00:00:00.000Z";
+    const later = "2026-11-25T00:11:00.000Z";
+    expect(store.acquireJobLock("900", "dead-run", started)).toBe(true);
+    expect(store.acquireJobLock("900", "fresh-run", "2026-11-25T00:05:00.000Z")).toBe(false);
+    expect(store.acquireJobLock("900", "fresh-run", later)).toBe(true);
+  });
+
   it("keeps a failing response and its reason", () => {
     const run = newRun("1725684628491739136", "home-for-you", 5);
     store.beginRun(run);

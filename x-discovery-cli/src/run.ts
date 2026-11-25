@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { Schema } from "effect";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { connectX, operationForFeed } from "../../x-client-core/src/client.ts";
@@ -6,6 +7,7 @@ import { writeJsonFile } from "../../x-archive-cli/src/state.ts";
 import { downloadsRoot } from "../../x-archive-cli/src/state.ts";
 import {
   collectHomeTimeline,
+  AccountFindingSchema,
   deriveAccounts,
   extractResourceLinks,
   readArchiveCandidates,
@@ -141,7 +143,15 @@ export async function deriveFindings(options: {
       TOPIC_VERSION,
       LINK_VERSION,
     ])).digest("hex").slice(0, 16);
-    const cached = store.derivation(inputHash, "accounts-1") as AccountFinding[] | null;
+    const raw = store.derivation(inputHash, "accounts-1");
+    let cached: AccountFinding[] | null = null;
+    if (raw !== null) {
+      try {
+        cached = [...Schema.decodeUnknownSync(Schema.Array(AccountFindingSchema))(raw)];
+      } catch {
+        cached = null;
+      }
+    }
     const accounts = cached ?? deriveAccounts(posts, topics, links);
     if (!cached) store.saveDerivation(inputHash, "accounts-1", accounts);
     writeJsonFile(join(options.outDir, "topics.json"), topics, 0o644);

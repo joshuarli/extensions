@@ -7,6 +7,8 @@ import type { PageCommit } from "./collector.ts";
 import type { Feed, FeedObservation, ObservationRun } from "./observation.ts";
 import { DiscoveredPostSchema, type DiscoveredPost } from "./post.ts";
 
+const LEASE_MS = 10 * 60 * 1000;
+
 export function contentHash(post: DiscoveredPost): string {
   const normalized = JSON.stringify([
     post.author_id,
@@ -69,10 +71,35 @@ export class DiscoveryStore {
   }
 
   acquireJobLock(accountId: string, runId: string, at: string = new Date().toISOString()): boolean {
-    const result = this.db.prepare(
-      "INSERT OR IGNORE INTO job_locks (account_id, run_id, acquired_at) VALUES (?, ?, ?)",
-    ).run(accountId, runId, at);
-    return result.changes === 1;
+    const now = Date.parse(at);
+    if (!Number.isFinite(now)) throw new Error("Invalid lease clock.");
+    this.db.exec("BEGIN");
+    try {
+      const existing = this.db.prepare(
+        "SELECT run_id, acquired_at FROM job_locks WHERE account_id = ?",
+      ).get(accountId) as { run_id: string; acquired_at: string } | undefined;
+      if (existing && now - Date.parse(existing.acquired_at) < LEASE_MS) {
+        this.db.exec("ROLLBACK");
+        return false;
+      }
+      if (existing) {
+        const released = this.db.prepare(
+          "DELETE FROM job_locks WHERE account_id = ? AND run_id = ?",
+        ).run(accountId, existing.run_id);
+        if (released.changes !== 1) {
+          this.db.exec("ROLLBACK");
+          return false;
+        }
+      }
+      const claimed = this.db.prepare(
+        "INSERT OR IGNORE INTO job_locks (account_id, run_id, acquired_at) VALUES (?, ?, ?)",
+      ).run(accountId, runId, at);
+      this.db.exec("COMMIT");
+      return claimed.changes === 1;
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
   }
 
   releaseJobLock(accountId: string, runId: string): void {

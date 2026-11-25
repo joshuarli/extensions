@@ -1,10 +1,12 @@
 import { chromium } from "playwright";
+import { Schema } from "effect";
 import { cookieSession, readBrowserSession } from "../../lib/x-session.ts";
 import { resolveBackend } from "../../x-archive-cli/src/backend.ts";
 import { readCapturedCredentials, type RequiredCaptures } from "../../x-archive-cli/src/deps.ts";
 import { credentialsCachePath, readJsonFile, writeJsonFile } from "../../x-archive-cli/src/state.ts";
 import { requestWithRetry } from "../../x-archive-core/src/collector.ts";
 import {
+  CredentialsSchema,
   captureRequest,
   mergeCapture,
   type Credentials,
@@ -55,11 +57,11 @@ function cachedCredentials(): Credentials {
   const raw = readJsonFile(credentialsCachePath());
   if (!raw || typeof raw !== "object") return { queryIds: {}, features: {} };
   const { cached_at: _cached, ...rest } = raw as Record<string, unknown>;
-  return {
-    ...(rest as Partial<Credentials>),
-    queryIds: (rest["queryIds"] as Record<string, string>) ?? {},
-    features: (rest["features"] as Record<string, string>) ?? {},
-  };
+  try {
+    return Schema.decodeUnknownSync(CredentialsSchema)(rest);
+  } catch {
+    return { queryIds: {}, features: {} };
+  }
 }
 
 async function captureHomeTab(

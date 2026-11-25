@@ -1,32 +1,37 @@
+import { Schema } from "effect";
 import type { ResourceLink } from "./links.ts";
 import { sourceUrl, type DiscoveredPost } from "./post.ts";
 import type { TopicJudgment } from "./topic.ts";
 
 export const ACCOUNT_VERSION = "accounts-1";
 
-export interface AccountExample {
-  source_url: string;
-  text: string;
-  score: number;
-  reason: string;
-}
+export const AccountExampleSchema = Schema.Struct({
+  source_url: Schema.String,
+  text: Schema.String,
+  score: Schema.Number,
+  reason: Schema.String,
+});
 
-export interface AccountFinding {
-  author_id: string;
-  handle: string;
-  role: "author" | "curator" | "both";
-  posts_examined: number;
-  relevant_posts: number;
-  score: number;
-  resource_links: number;
-  link_examples: string[];
-  examples: AccountExample[];
-  first_seen: string;
-  last_seen: string;
-  uncertainty: "thin" | "moderate" | "low";
-  reason: string;
-  version: string;
-}
+export type AccountExample = Schema.Schema.Type<typeof AccountExampleSchema>;
+
+export const AccountFindingSchema = Schema.Struct({
+  author_id: Schema.String,
+  handle: Schema.String,
+  role: Schema.Literals(["author", "curator", "both"]),
+  posts_examined: Schema.Number,
+  relevant_posts: Schema.Number,
+  score: Schema.Number,
+  resource_links: Schema.Number,
+  link_examples: Schema.Array(Schema.String),
+  examples: Schema.Array(AccountExampleSchema),
+  first_seen: Schema.String,
+  last_seen: Schema.String,
+  uncertainty: Schema.Literals(["thin", "moderate", "low"]),
+  reason: Schema.String,
+  version: Schema.String,
+});
+
+export type AccountFinding = Schema.Schema.Type<typeof AccountFindingSchema>;
 
 export function deriveAccounts(
   posts: readonly DiscoveredPost[],
