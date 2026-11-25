@@ -34,11 +34,8 @@ export function createProgressReporter(
       const percent = report.total === null || report.total <= 0
         ? ""
         : ` ${String(Math.min(100, Math.round((report.done / report.total) * 100))).padStart(3)}%`;
-      const eta = report.total === null || report.done === 0 || report.done > report.total
-        ? ""
-        : ` eta ${duration(Math.round((elapsed / report.done) * (report.total - report.done)))}`;
       const count = report.total === null ? String(report.done) : `${report.done}/${report.total}`;
-      const line = `${report.phase} ${count}${percent} ${duration(elapsed)}${eta}${report.note ? ` · ${report.note}` : ""}`;
+      const line = `${report.phase} ${count}${percent} ${duration(elapsed)}${report.note ? ` · ${report.note}` : ""}`;
       if (line === lastLine) return;
       lastAt = now;
       lastLine = line;

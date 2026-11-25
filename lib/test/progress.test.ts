@@ -18,6 +18,7 @@ describe("progress reporter", () => {
     progress.finish("archived 10 chats");
     expect(out.text).toContain("records 3/10");
     expect(out.text).toContain(" 30%");
+    expect(out.text).not.toContain("eta");
     expect(out.text).toContain("archived 10 chats");
   });
 

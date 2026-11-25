@@ -92,13 +92,9 @@ class StatusLog {
   }
 }
 
-function progressLogger(progress: ProgressReporter, label: string): ({ posts, pages }: { posts: number; pages: number }) => void {
-  let last = 0;
+export function progressLogger(progress: ProgressReporter, label: string): ({ posts, pages }: { posts: number; pages: number }) => void {
   return ({ posts, pages }) => {
-    if (last === 0 || posts >= last + 500 || posts < last) {
-      progress.update({ phase: label, done: posts, total: null, note: pages + " pages" });
-      last = posts;
-    }
+    progress.update({ phase: label, done: posts, total: null, note: pages + (pages === 1 ? " page" : " pages") });
   };
 }
 
