@@ -1,5 +1,6 @@
 import { chromium } from "playwright";
 import { Schema } from "effect";
+import { followAccount, type FollowResult } from "./follow.ts";
 import { cookieSession, readBrowserSession } from "../../lib/x-session.ts";
 import { resolveBackend } from "../../x-archive-cli/src/backend.ts";
 import { readCapturedCredentials, type RequiredCaptures } from "../../x-archive-cli/src/deps.ts";
@@ -36,6 +37,7 @@ export interface XClient {
   accountId: string;
   request(operation: Operation, variables: Record<string, unknown>, signal: AbortSignal): Promise<unknown>;
   homePage(continuation: string | null, signal: AbortSignal): Promise<HomePage>;
+  follow(userId: string, signal: AbortSignal): Promise<FollowResult>;
   feed: Feed;
 }
 
@@ -149,6 +151,7 @@ export async function connectX(options: ConnectXOptions = {}): Promise<XClient> 
     accountId: session.userId,
     feed,
     request,
+    follow: (userId, requestSignal) => followAccount(session, userId, requestSignal, credentials.authorization),
     async homePage(continuation, requestSignal): Promise<HomePage> {
       const raw = await request(operation, homeVariables(continuation), requestSignal);
       return { result: parseHomeTimeline(raw, new Date().toISOString()), raw };
