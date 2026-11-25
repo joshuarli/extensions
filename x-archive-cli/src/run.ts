@@ -31,7 +31,7 @@ import {
   readBrowserSession,
   type XSession,
 } from "./deps.ts";
-import { downloadPostsMedia, filterCompletedMedia } from "./media.ts";
+import { downloadPostsMedia, filterCompletedMedia, formatSize } from "./media.ts";
 import { writeJsonFile } from "./state.ts";
 import { syncContextThreads } from "./context.ts";
 import { seedFromHelium } from "./seed.ts";
@@ -47,6 +47,7 @@ export interface RunOptions {
   backend: Backend;
   cdpUrl: string;
   noContext?: boolean;
+  maxMediaBytes: number;
 }
 
 export interface RunSummary {
@@ -56,6 +57,7 @@ export interface RunSummary {
   mediaTotal: number;
   mediaDownloaded: number;
   mediaFailed: number;
+  mediaSkipped: number;
   archiveHtml: string | null;
   collectionReason: string;
   contextPosts: number;
@@ -149,17 +151,25 @@ async function finishExport(input: FinishExportInput): Promise<RunSummary> {
   const jobsAll = collectMediaJobs(posts);
   const missingFromArchive = jobsAll.missing + mediaFailedInArchive;
   const jobs = filterCompletedMedia(jobsAll.jobs, outDir);
-  status.say("media", "Media: " + jobsAll.jobs.length + " items (" + missingFromArchive + " missing or unavailable); fetching " + jobs.length + ".");
+  const limitText = formatSize(options.maxMediaBytes);
+  status.say("media", "Media: " + jobsAll.jobs.length + " items (" + missingFromArchive + " missing or unavailable); fetching " + jobs.length
+    + (options.maxMediaBytes > 0 ? ". Skipping files over " + limitText + "." : ". No size limit."));
   const media = await downloadPostsMedia(jobs, {
     session,
     folder: outDir,
-    onProgress: ({ downloaded, failed, total }) => {
-      const done = downloaded + failed;
+    maxBytes: options.maxMediaBytes,
+    onProgress: ({ downloaded, failed, skipped, total }) => {
+      const done = downloaded + failed + skipped;
       if (done % 25 === 0 || done === total) {
-        status.progress.update({ phase: "media", done, total, note: downloaded + " downloaded" + (failed ? " · " + failed + " failed" : "") });
+        status.progress.update({ phase: "media", done, total, note: downloaded + " downloaded"
+          + (failed ? " · " + failed + " failed" : "")
+          + (skipped ? " · " + skipped + " skipped" : "") });
       }
     },
   });
+  if (media.skipped.length > 0) {
+    status.add("Skipped " + media.skipped.length + " media file(s) over " + limitText + "; nothing was written to disk for them.");
+  }
   const mediaDownloaded = jobsAll.jobs.length - jobs.length + media.downloaded;
   const report = buildDebugReport(
     {
@@ -200,6 +210,7 @@ async function finishExport(input: FinishExportInput): Promise<RunSummary> {
     mediaTotal: jobsAll.jobs.length,
     mediaDownloaded,
     mediaFailed: media.failed.length + missingFromArchive,
+    mediaSkipped: media.skipped.length,
     archiveHtml,
     collectionReason,
     contextPosts: input.contextPosts,
@@ -222,7 +233,7 @@ async function downloadBookmarks(session: XSession, credentials: Credentials, op
     if (options.action === "collect") {
       const state = await store.loadState();
       return { folder: "-", jsonFile: "-", posts: (await store.allRecords()).length,
-        mediaTotal: 0, mediaDownloaded: 0, mediaFailed: 0, archiveHtml: null,
+        mediaTotal: 0, mediaDownloaded: 0, mediaFailed: 0, mediaSkipped: 0, archiveHtml: null,
         collectionReason: state?.reason ?? "unknown", contextPosts: 0 };
     }
   }
@@ -267,7 +278,7 @@ async function downloadLikes(session: XSession, credentials: Credentials, option
     if (options.action === "collect") {
       const state = await store.loadState();
       return { folder: "-", jsonFile: "-", posts: (await store.allRecords()).length,
-        mediaTotal: 0, mediaDownloaded: 0, mediaFailed: 0, archiveHtml: null,
+        mediaTotal: 0, mediaDownloaded: 0, mediaFailed: 0, mediaSkipped: 0, archiveHtml: null,
         collectionReason: state?.reason ?? "unknown", contextPosts: 0 };
     }
   }
@@ -357,7 +368,7 @@ export async function downloadProfile(handle: string, options: RunOptions): Prom
       const state = await store.loadState(targetUserId);
       progress.finish();
       return { folder: "-", jsonFile: "-", posts: (await store.allRecords()).length,
-        mediaTotal: 0, mediaDownloaded: 0, mediaFailed: 0, archiveHtml: null,
+        mediaTotal: 0, mediaDownloaded: 0, mediaFailed: 0, mediaSkipped: 0, archiveHtml: null,
         collectionReason: state?.reason ?? "unknown", contextPosts: await store.contextCount() };
     }
   }
@@ -435,6 +446,7 @@ export function printSummary(label: string, summary: RunSummary): void {
     + " · " + summary.posts + " posts"
     + " · media " + summary.mediaDownloaded + "/" + summary.mediaTotal + " downloaded"
     + (summary.mediaFailed ? " (" + summary.mediaFailed + " unavailable)" : "")
+    + (summary.mediaSkipped ? " (" + summary.mediaSkipped + " skipped: too large)" : "")
     + (summary.contextPosts ? " · context " + summary.contextPosts + " posts" : "")
     + " · collection: " + summary.collectionReason
     + html + "\n",

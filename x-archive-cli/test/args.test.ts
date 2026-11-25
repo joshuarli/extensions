@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseArgs, USAGE } from "../src/args.ts";
+import { DEFAULT_MAX_MEDIA_BYTES, parseArgs, parseMaxMediaSize, USAGE } from "../src/args.ts";
 import { downloadsRoot } from "../src/state.ts";
 
 describe("x arguments", () => {
@@ -44,8 +44,26 @@ describe("x arguments", () => {
     expect(() => parseArgs(["download", "self", "--export-only", "--collect-only"])).toThrow("mutually exclusive");
   });
 
-  it("defaults the downloads root", () => {
-    expect(parseArgs(["download", "self"])).toMatchObject({ args: { options: { outRoot: downloadsRoot() } } });
+  it("defaults the downloads root and the media size limit", () => {
+    expect(parseArgs(["download", "self"])).toMatchObject({ args: { options: {
+      outRoot: downloadsRoot(),
+      maxMediaBytes: 16 * 1024 * 1024,
+    } } });
+    expect(DEFAULT_MAX_MEDIA_BYTES).toBe(16 * 1024 * 1024);
+  });
+
+  it("parses media size units and zero", () => {
+    expect(parseMaxMediaSize("16MB")).toBe(16 * 1024 * 1024);
+    expect(parseMaxMediaSize("500kb")).toBe(500 * 1024);
+    expect(parseMaxMediaSize("2g")).toBe(2 * 1024 * 1024 * 1024);
+    expect(parseMaxMediaSize("4096")).toBe(4096);
+    expect(parseMaxMediaSize("0")).toBe(0);
+    expect(() => parseMaxMediaSize("-1")).toThrow("--max-media-size");
+    expect(() => parseMaxMediaSize("1.5MB")).toThrow("--max-media-size");
+    expect(() => parseMaxMediaSize("16TB")).toThrow("--max-media-size");
+    expect(parseArgs(["download", "self", "--max-media-size=1MB"])).toMatchObject({
+      args: { options: { maxMediaBytes: 1024 * 1024 } },
+    });
   });
 
   it("rejects missing targets, unknown options, and unknown commands", () => {

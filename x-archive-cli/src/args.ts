@@ -26,6 +26,12 @@ Options:
                   export to DIR/bookmarks-<date> and DIR/likes-<date>;
                   a profile exports to DIR/<handle> and is updated in place
   --no-render     skip rendering archive.html
+  --max-media-size SIZE
+                  largest media file to save (default 16MB; 0 disables the limit).
+                  SIZE is bytes or a B/K/M/G suffix, e.g. 16MB or 500KB.
+                  Oversized media stays in the archive data but is not written
+                  to disk; if its size is unknown it is discarded once the
+                  partial download passes the limit.
   --backend NAME  helium (default) or bctl — see "bctl" below
   --session NAME  bctl session to launch or attach to (default: xarchive,
                   or X_ARCHIVE_SESSION)
@@ -71,6 +77,7 @@ export interface ParsedArgs {
     outRoot: string;
     render: boolean;
     noContext: boolean;
+    maxMediaBytes: number;
     backend: string | undefined;
     session: string | undefined;
     cdpUrl: string | undefined;
@@ -82,8 +89,32 @@ export type Command =
   | { kind: "version" }
   | { kind: "download"; args: ParsedArgs };
 
+export const DEFAULT_MAX_MEDIA_BYTES = 16 * 1024 * 1024;
+
+const MEDIA_SIZE_UNITS: Readonly<Record<string, number>> = {
+  b: 1,
+  k: 1024,
+  kb: 1024,
+  m: 1024 * 1024,
+  mb: 1024 * 1024,
+  g: 1024 * 1024 * 1024,
+  gb: 1024 * 1024 * 1024,
+};
+
+export function parseMaxMediaSize(value: string): number {
+  const match = /^(\d+)(b|k|kb|m|mb|g|gb)?$/iu.exec(value);
+  if (!match) {
+    throw new UsageError(`--max-media-size must be a non-negative integer with an optional B/KB/MB/GB suffix, got "${value}".\n\n${USAGE}`);
+  }
+  const bytes = Number(match[1]) * (MEDIA_SIZE_UNITS[match[2]?.toLowerCase() ?? "b"] ?? 1);
+  if (!Number.isSafeInteger(bytes)) {
+    throw new UsageError(`--max-media-size is too large, got "${value}".\n\n${USAGE}`);
+  }
+  return bytes;
+}
+
 const schema: ArgSchema = {
-  values: ["out", "backend", "session", "cdp-url"],
+  values: ["out", "backend", "session", "cdp-url", "max-media-size"],
   flags: ["export-only", "collect-only", "no-render", "no-context"],
   maxPositionals: Number.POSITIVE_INFINITY,
 };
@@ -111,6 +142,9 @@ export function parseArgs(argv: readonly string[]): Command {
       outRoot: parsed.values.get("out") ?? downloadsRoot(),
       render: !parsed.flags.has("no-render"),
       noContext: parsed.flags.has("no-context"),
+      maxMediaBytes: parsed.values.has("max-media-size")
+        ? parseMaxMediaSize(parsed.values.get("max-media-size")!)
+        : DEFAULT_MAX_MEDIA_BYTES,
       backend: parsed.values.get("backend"),
       session: parsed.values.get("session"),
       cdpUrl: parsed.values.get("cdp-url"),

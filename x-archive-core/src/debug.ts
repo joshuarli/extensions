@@ -61,6 +61,7 @@ export interface DebugReport {
     downloaded: number;
     stopped: boolean;
     failed: Array<{ filename: string; error: string }>;
+    skipped: Array<{ filename: string; bytes: number }>;
   } | null;
   last_error: LastErrorEntry | null;
   status_log: DebugStatusEntry[];
@@ -100,6 +101,7 @@ export function buildDebugReport(input: DebugReportInput, gathered: DebugGathere
         downloaded: input.media.downloaded,
         stopped: input.media.stopped,
         failed: input.media.failed,
+        skipped: input.media.skipped,
       }
       : null,
     last_error: gathered.lastError,

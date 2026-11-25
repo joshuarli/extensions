@@ -22,6 +22,7 @@ pnpm x download self inve1ns         # self and profiles in one run
 pnpm x download self --export-only   # re-export from saved data, no re-collection
 pnpm x download self --no-render     # skip archive.html
 pnpm x download self --collect-only  # collect only
+pnpm x download cleanjpg --max-media-size=0   # no media size limit
 pnpm x download token___garden --out=/path   # downloads root (default ~/.local/share/x/downloads)
 ```
 
@@ -103,6 +104,22 @@ retained either way.
   already on disk, and verified (HTTP 200, non-text content type, min
   size) before landing — the same atomics you get from the extension's
   downloads.
+
+## Media size limit
+
+By default `x` saves only media files up to 16 MB. A skipped file's path stays
+in the archive data (`posts.json` and `archive.db`), so raising the limit on a
+later run can fetch it without losing the post or its media URL. Skipped files
+are reported in the summary and under `media.skipped` in `debug.json`; they are
+not counted as download failures.
+
+Downloads stream into a temp directory and are moved into `media/` atomically
+only after they pass validation. When the server reports `Content-Length`, an
+oversized file is skipped before any body bytes are read; otherwise the partial
+download is discarded as soon as it passes the limit.
+
+`--max-media-size` accepts bytes or a B/K/M/G suffix (`16MB`, `500KB`, `0` for
+unlimited).
 
 ## bctl
 
