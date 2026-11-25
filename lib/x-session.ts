@@ -9,7 +9,7 @@ export interface XSession {
 export async function readBrowserSession(cdpUrl: string, backend: Backend = HELIUM_BACKEND): Promise<XSession> {
   let browser;
   try {
-    browser = await chromium.connectOverCDP(cdpUrl, { timeout: 10_000 });
+    browser = await chromium.connectOverCDP(cdpUrl, { timeout: 30_000 });
   } catch {
     if (backend.kind === "bctl") {
       throw new Error(
