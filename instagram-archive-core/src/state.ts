@@ -6,6 +6,21 @@ import {
   type MembershipRecord,
 } from "./types.ts";
 
+const MediaRefSchema = Schema.Struct({
+  url: Schema.String,
+  kind: Schema.Literals(["image", "video"]),
+  width: Schema.Number,
+  height: Schema.Number,
+});
+
+export const PostSchema = Schema.Struct({
+  shortcode: Schema.String,
+  username: Schema.NullOr(Schema.String),
+  postType: Schema.Literals(["image", "video", "carousel"]),
+  caption: Schema.NullOr(Schema.String),
+  media: Schema.Array(MediaRefSchema),
+});
+
 const MembershipRecordSchema = Schema.Struct({
   shortcode: Schema.String,
   username: Schema.NullOr(Schema.String),

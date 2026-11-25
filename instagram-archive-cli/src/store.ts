@@ -5,7 +5,8 @@ import {
   type CollectionState,
   type Post,
 } from "../../instagram-archive-core/src/index.ts";
-import { decodeCollection, encodeCollection } from "../../instagram-archive-core/src/index.ts";
+import { decodeCollection, encodeCollection, PostSchema } from "../../instagram-archive-core/src/index.ts";
+import { Schema } from "effect";
 import type { ArchiveFs } from "./fs.ts";
 
 export function accountDir(outRoot: string, accountId: string): string {
@@ -51,22 +52,19 @@ export function readPosts(fs: ArchiveFs, dir: string): Post[] {
   const raw = fs.readText(recordsPath(dir));
   if (raw === null) return [];
   const posts: Post[] = [];
-  for (const line of raw.split("\n")) {
+  for (const [index, line] of raw.split("\n").entries()) {
     if (line.trim() === "") continue;
     let value: unknown;
     try {
       value = JSON.parse(line);
     } catch {
-      throw new Error("The records file at " + recordsPath(dir) + " contains an unreadable line.");
+      throw new Error("The records file at " + recordsPath(dir) + " line " + (index + 1) + " is unreadable.");
     }
-    if (value === null || typeof value !== "object" || Array.isArray(value)) {
-      throw new Error("The records file at " + recordsPath(dir) + " contains an invalid record.");
+    try {
+      posts.push(Schema.decodeUnknownSync(PostSchema)(value));
+    } catch {
+      throw new Error("The records file at " + recordsPath(dir) + " line " + (index + 1) + " is not a valid post.");
     }
-    const record = value as Record<string, unknown>;
-    if (typeof record["shortcode"] !== "string" || !Array.isArray(record["media"])) {
-      throw new Error("The records file at " + recordsPath(dir) + " contains an invalid record.");
-    }
-    posts.push(value as Post);
   }
   return posts;
 }

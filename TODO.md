@@ -246,15 +246,6 @@ Next: 45
 - **Fix with:** single-source-of-truth
 - **Effort:** S
 
-### EXT-38 · P3 · Instagram records.jsonl entries are cast to Post after partial validation
-
-- **Area:** Instagram archive / persistence boundary
-- **Where:** instagram-archive-cli/src/store.ts:62-69; instagram-archive-core/src/media.ts:15-35; instagram-archive-core/src/render.ts:27-55
-- **Problem:** readPosts checks only shortcode and media, then casts each line to Post; malformed captions, types or media refs flow into filename derivation, rendering and downloads instead of a line-numbered failure.
-- **Recommendation:** Add a PostSchema beside MembershipRecordSchema and decode every line in readPosts.
-- **Fix with:** typing-audit
-- **Effort:** S
-
 ### EXT-41 · P3 · ChatGPT archive completeness is sticky and early stop checks one page
 
 - **Area:** ChatGPT archive / durable state

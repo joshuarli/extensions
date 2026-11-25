@@ -4,7 +4,7 @@ import { parseArgs, UsageError } from "../src/args.ts";
 import type { ArchiveFs } from "../src/fs.ts";
 import { assertRunnable, parkJob, readJob } from "../src/job.ts";
 import { scanTarget } from "../src/scan.ts";
-import { accountDir, collectionDir, readPosts, readState } from "../src/store.ts";
+import { accountDir, collectionDir, readPosts, readState, recordsPath } from "../src/store.ts";
 import type { InstagramClient } from "../../instagram-client-core/src/index.ts";
 import { InstagramRequestFailure } from "../../instagram-client-core/src/index.ts";
 import type { ProgressReporter } from "../../lib/progress.ts";
@@ -113,6 +113,17 @@ describe("parked job", () => {
     expect(() => assertRunnable(fs, "/archive", false)).toThrow(/--resume/);
     expect(readJob(fs, "/archive")?.collection).toBe("alice");
     expect(() => assertRunnable(fs, "/archive", true)).not.toThrow();
+  });
+});
+
+describe("readPosts", () => {
+  it("rejects a post missing a caption at its line number", () => {
+    const fs = new MemoryFs(),
+      dir = "/archive/alice",
+      valid = { shortcode: "abc", username: "alice", postType: "image", caption: null, media: [{ url: "https://cdn/a.jpg", kind: "image", width: 1, height: 1 }] },
+      malformed = { shortcode: "def", username: "alice", postType: "image", media: [] };
+    fs.writeText(recordsPath(dir), JSON.stringify(valid) + "\n" + JSON.stringify(malformed) + "\n");
+    expect(() => readPosts(fs, dir)).toThrow(/line 2/);
   });
 });
 
