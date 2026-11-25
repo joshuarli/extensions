@@ -1,0 +1,19 @@
+[
+  { "text": "Criterion and MUBI picks tonight", "expected": "relevant", "note": "genuine discovery" },
+  { "text": "GET ON THE TELEPHONE (1934) — an avant-garde short from the GPO film unit", "expected": "relevant", "note": "avant-garde short" },
+  { "text": "4 Months, 3 Weeks and 2 Days (2007), dir. Cristian Mungiu, 1080p BluRay REMUX eng subs", "expected": "relevant", "note": "resource post", "resource": true },
+  { "text": "Fast & Feel Love — Director: Nawapol Thamrongrattanarit", "expected": "relevant", "note": "film credit" },
+  { "text": "I interviewed Ryusuke Hamaguchi about his latest film", "expected": "relevant", "note": "auteur interview" },
+  { "text": "Iranian cinema has a unique ability to put you through overwhelming sadness", "expected": "relevant", "note": "national cinema discussion" },
+  { "text": "A Criterion collection essay on Koya Kamura film", "expected": "relevant", "note": "film essay" },
+  { "text": "Check out this rare film screening at the festival", "expected": "relevant", "note": "festival screening" },
+  { "text": "1080p WebRip x265 with Eng Subs — REPACK", "expected": "relevant", "note": "resource post", "resource": true },
+  { "text": "Dear You (2026), dir. Lan Hongchun, REPACK 1080p WebRip, Eng Sub", "expected": "relevant", "note": "resource post", "resource": true },
+  { "text": "We hired a director of engineering today", "expected": "unrelated", "note": "technical vocabulary" },
+  { "text": "That is the criterion for accepting this patch", "expected": "unrelated", "note": "technical vocabulary" },
+  { "text": "Our new webcam records 1080p video", "expected": "unrelated", "note": "technical vocabulary" },
+  { "text": "RT @gothicfilms: https://t.co/example", "expected": "unrelated", "note": "handle and link only" },
+  { "text": "We need a director of operations for the sales team", "expected": "unrelated", "note": "business vocabulary" },
+  { "text": "Our new security patch is ready for review", "expected": "unrelated", "note": "technical vocabulary" },
+  { "text": "📼", "expected": "insufficient_evidence", "note": "image-dominated post" }
+]

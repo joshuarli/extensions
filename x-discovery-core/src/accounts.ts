@@ -3,7 +3,7 @@ import type { ResourceLink } from "./links.ts";
 import { sourceUrl, type DiscoveredPost } from "./post.ts";
 import type { TopicJudgment } from "./topic.ts";
 
-export const ACCOUNT_VERSION = "accounts-1";
+export const ACCOUNT_VERSION = "accounts-2";
 
 export const AccountExampleSchema = Schema.Struct({
   source_url: Schema.String,
@@ -20,6 +20,9 @@ export const AccountFindingSchema = Schema.Struct({
   role: Schema.Literals(["author", "curator", "both"]),
   posts_examined: Schema.Number,
   relevant_posts: Schema.Number,
+  relevant_ratio: Schema.Number,
+  consistency: Schema.Number,
+  sample_sources: Schema.Array(Schema.Literals(["feed", "profile"])),
   score: Schema.Number,
   resource_links: Schema.Number,
   link_examples: Schema.Array(Schema.String),
@@ -71,14 +74,28 @@ export function deriveAccounts(
         reason: judgment.reason,
       }));
     const score = account.relevant.reduce((total, entry) => total + entry.judgment.score, 0);
-    const uncertainty = account.relevant.length < 3 ? "thin" as const
-      : account.relevant.length < 10 ? "moderate" as const : "low" as const;
+    const feedPosts = account.posts.filter((post) => post.feed !== "profile");
+    const profilePosts = account.posts.filter((post) => post.feed === "profile");
+    const consistencyPosts = feedPosts.length > 0 ? feedPosts : profilePosts;
+    const consistencyRelevant = account.relevant.filter(({ post }) => consistencyPosts.includes(post)).length;
+    const relevantRatio = account.posts.length > 0 ? account.relevant.length / account.posts.length : 0;
+    const consistency = consistencyPosts.length > 0
+      ? (consistencyRelevant + 1) / (consistencyPosts.length + 2) : 0;
+    const sampleSources: Array<"feed" | "profile"> = [
+      ...(feedPosts.length > 0 ? ["feed" as const] : []),
+      ...(profilePosts.length > 0 ? ["profile" as const] : []),
+    ];
+    const uncertainty = account.posts.length < 5 || account.relevant.length < 2 ? "thin" as const
+      : account.posts.length < 15 ? "moderate" as const : "low" as const;
     return {
       author_id: authorId,
       handle: handles[handles.length - 1] ?? "",
       role: curates && authors ? "both" as const : curates ? "curator" as const : "author" as const,
       posts_examined: account.posts.length,
       relevant_posts: account.relevant.length,
+      relevant_ratio: relevantRatio,
+      consistency,
+      sample_sources: sampleSources,
       score,
       resource_links: account.links.size,
       link_examples: [...account.links].slice(0, 3),
@@ -88,10 +105,12 @@ export function deriveAccounts(
       uncertainty,
       reason: account.relevant.length === 0
         ? "No relevant posts in the examined sample."
-        : "Ranked by " + account.relevant.length + " relevant posts (score " + score + ")"
+        : "Ranked by " + account.relevant.length + " relevant posts of " + account.posts.length
+          + " (score " + score + ", ratio " + relevantRatio.toFixed(2) + ", consistency " + consistency.toFixed(2) + ")"
           + (account.links.size > 0 ? " and " + account.links.size + " distinct resource links." : "."),
       version: ACCOUNT_VERSION,
     };
   }).sort((a, b) =>
-    b.relevant_posts - a.relevant_posts || b.score - a.score || b.resource_links - a.resource_links || a.handle.localeCompare(b.handle));
+    b.consistency - a.consistency || b.relevant_ratio - a.relevant_ratio || b.score - a.score
+    || b.resource_links - a.resource_links || a.handle.localeCompare(b.handle));
 }

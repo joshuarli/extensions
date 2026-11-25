@@ -10,6 +10,7 @@ export const ProjectConfigSchema = Schema.Struct({
   label: Schema.String,
   description: Schema.String,
   topic_terms: Schema.Array(Schema.Tuple([Schema.String, Schema.Number])),
+  negative_terms: Schema.Array(Schema.Tuple([Schema.String, Schema.Number])),
   relevance_threshold: Schema.Number,
   resource_hosts: Schema.Array(Schema.String),
   ledger_path: Schema.String,
@@ -19,7 +20,7 @@ export type ProjectConfig = Schema.Schema.Type<typeof ProjectConfigSchema>;
 
 export function projectVersion(config: ProjectConfig): string {
   return config.id + "-" + createHash("sha256")
-    .update(JSON.stringify([config.topic_terms, config.relevance_threshold, config.resource_hosts]))
+    .update(JSON.stringify([config.topic_terms, config.negative_terms, config.relevance_threshold, config.resource_hosts]))
     .digest("hex").slice(0, 8);
 }
 
@@ -49,7 +50,7 @@ export function loadProject(id: string): ProjectConfig {
     if (!Number.isFinite(config.relevance_threshold) || config.relevance_threshold < 0) {
       throw new Error("relevance_threshold must be a non-negative number.");
     }
-    for (const [term, weight] of config.topic_terms) {
+    for (const [term, weight] of [...config.topic_terms, ...config.negative_terms]) {
       if (term.trim() === "" || !Number.isFinite(weight) || weight < 0) {
         throw new Error("Every topic term needs a name and a non-negative weight.");
       }

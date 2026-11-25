@@ -185,7 +185,7 @@ export class DiscoveryStore {
       this.db.prepare("INSERT OR REPLACE INTO page_accounting (run_id, page, json) VALUES (?, ?, ?)")
         .run(input.runId, input.page, JSON.stringify(input.accounting));
       input.posts.forEach((post, index) => {
-        insertPost.run(post.tweet_id, contentHash(post), JSON.stringify(post), post.observed_at);
+        insertPost.run(post.tweet_id, contentHash(post), JSON.stringify({ ...post, feed: input.feed }), post.observed_at);
         insertObservation.run(
           input.runId,
           input.page,
