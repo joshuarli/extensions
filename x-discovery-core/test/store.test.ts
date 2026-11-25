@@ -44,7 +44,7 @@ function commit(runId: string, page: number, cursor: string | null, posts: Disco
     data: { data: { page } },
     posts,
     cursor,
-    accounting: { total: posts.length, posts: posts.length, cursors: 1, nonPost: 0, unavailable: 0, unsupported: 0, postBearingUnsupported: 0 },
+    accounting: { total: posts.length, posts: posts.length, cursors: 1, nonPost: 0, unavailable: 0, unsupported: 0, postBearingUnsupported: 0, modulePosts: 0 },
   });
 }
 

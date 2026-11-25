@@ -37,7 +37,7 @@ beforeEach(() => {
     data: { data: {} },
     posts: [post("1", "Criterion and MUBI tonight", "dave", "900")],
     cursor: null,
-    accounting: { total: 1, posts: 1, cursors: 0, nonPost: 0, unavailable: 0, unsupported: 0, postBearingUnsupported: 0 },
+    accounting: { total: 1, posts: 1, cursors: 0, nonPost: 0, unavailable: 0, unsupported: 0, postBearingUnsupported: 0, modulePosts: 0 },
   });
   store.close();
 });

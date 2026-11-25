@@ -29,23 +29,28 @@ describe("parseHomeTimeline", () => {
     expect(parsed.posts[0]?.full_text).toContain("Criterion");
     expect(parsed.posts[0]?.urls[0]?.url).toBe("https://drive.google.com/file/d/xyz/view");
     expect(parsed.accounting).toMatchObject({
-      total: 5, posts: 1, cursors: 2, nonPost: 1, unavailable: 1, unsupported: 0, postBearingUnsupported: 0,
+      total: 5, posts: 1, cursors: 2, nonPost: 1, unavailable: 1, unsupported: 0, postBearingUnsupported: 0, modulePosts: 0,
     });
   });
 
-  it("fails loudly on post-bearing modules instead of dropping posts", () => {
+  it("decodes conversation modules and counts their posts", () => {
+    const tweet = (id: string) => ({
+      __typename: "Tweet",
+      rest_id: id,
+      core: { user_results: { result: { __typename: "User", rest_id: "900", core: { screen_name: "dave" } } } },
+      legacy: { full_text: "criterion" },
+    });
     const data = {
       data: { home: { home_timeline_urt: { instructions: [{ type: "TimelineAddEntries", entries: [
-        { entryId: "module-1", content: { entryType: "TimelineTimelineModule", items: [
-          { item: { itemContent: { tweet_results: { result: { rest_id: "9" } } } } },
+        { entryId: "home-conversation-1", content: { entryType: "TimelineTimelineModule", items: [
+          { item: { itemContent: { tweet_results: { result: tweet("9") } } } },
+          { item: { itemContent: { tweet_results: { result: tweet("10") } } } },
         ] } },
       ] }] } } },
     };
-    const result = parseHomeTimeline(data, now);
-    expect(result.valid).toBe(false);
-    if (result.valid) throw new Error("expected failure");
-    expect(result.detail).toContain("post-bearing modules");
-    expect(result.accounting.postBearingUnsupported).toBe(1);
+    const result = valid(parseHomeTimeline(data, now));
+    expect(result.posts.map((post) => post.tweet_id)).toEqual(["9", "10"]);
+    expect(result.accounting).toMatchObject({ posts: 2, modulePosts: 2, postBearingUnsupported: 0 });
   });
 
   it("fails loudly when the timeline instruction is missing", () => {

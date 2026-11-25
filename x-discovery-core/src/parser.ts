@@ -8,6 +8,7 @@ export interface HomeEntryAccounting {
   unavailable: number;
   unsupported: number;
   postBearingUnsupported: number;
+  modulePosts: number;
 }
 
 export type ParsedHomeTimeline =
@@ -94,7 +95,7 @@ function post(result: unknown, author: unknown, observedAt: string): DiscoveredP
 }
 
 function emptyAccounting(): HomeEntryAccounting {
-  return { total: 0, posts: 0, cursors: 0, nonPost: 0, unavailable: 0, unsupported: 0, postBearingUnsupported: 0 };
+  return { total: 0, posts: 0, cursors: 0, nonPost: 0, unavailable: 0, unsupported: 0, postBearingUnsupported: 0, modulePosts: 0 };
 }
 
 export function parseHomeTimeline(data: unknown, observedAt: string): ParsedHomeTimeline {
@@ -139,11 +140,30 @@ export function parseHomeTimeline(data: unknown, observedAt: string): ParsedHome
     }
     if (entryType === "TimelineTimelineModule") {
       const items = array(get(entry, "content", "items"));
-      const carriesPost = items.some((item) =>
-        get(item, "item", "itemContent", "tweet_results", "result") !== undefined
-        || get(item, "item", "itemContent", "user_results", "result") !== undefined);
-      if (carriesPost) accounting.postBearingUnsupported++;
-      else accounting.nonPost++;
+      let decoded = 0;
+      for (const item of items) {
+        const result = get(item, "item", "itemContent", "tweet_results", "result");
+        const author = get(result, "core", "user_results", "result");
+        if (get(result, "__typename") !== "Tweet" || get(author, "__typename") !== "User") {
+          accounting.unavailable++;
+          continue;
+        }
+        const parsed = post(result, author, observedAt);
+        if (!parsed) {
+          accounting.unavailable++;
+          continue;
+        }
+        posts.push(parsed);
+        decoded++;
+        accounting.modulePosts++;
+        accounting.posts++;
+      }
+      if (decoded === 0) {
+        const carriesPost = items.some((item) =>
+          get(item, "item", "itemContent", "tweet_results", "result") !== undefined);
+        if (carriesPost) accounting.postBearingUnsupported++;
+        else accounting.nonPost++;
+      }
       continue;
     }
     accounting.unsupported++;

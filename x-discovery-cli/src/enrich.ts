@@ -103,6 +103,7 @@ export async function enrichCandidates(options: EnrichOptions): Promise<{
               unavailable: 0,
               unsupported: 0,
               postBearingUnsupported: 0,
+              modulePosts: 0,
             },
           });
           posts += sampled.length;
