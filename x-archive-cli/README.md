@@ -17,11 +17,16 @@ keep, or move.
 pnpm x download self                 # bookmarks + likes, posts JSON + media + render
 pnpm x download token___garden       # @handle or x.com profile URL: posts, reposts, replies
 pnpm x download token___garden       # same command updates it: only newer posts are fetched
+pnpm x download inve1ns cleanjpg     # several profiles, one after another (serial)
+pnpm x download self inve1ns         # self and profiles in one run
 pnpm x download self --export-only   # re-export from saved data, no re-collection
 pnpm x download self --no-render     # skip archive.html
 pnpm x download self --collect-only  # collect only
 pnpm x download token___garden --out=/path   # downloads root (default ~/.local/share/x/downloads)
 ```
+
+Targets are processed serially in the order given; a failure stops the run, and
+re-running resumes each target from its saved checkpoint.
 
 `x` writes exports to a well-known root, `~/.local/share/x/downloads`
 (`X_ARCHIVE_DOWNLOADS` or `XDG_DATA_HOME` override it; `--out=DIR` sets it

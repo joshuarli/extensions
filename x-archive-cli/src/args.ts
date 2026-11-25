@@ -8,9 +8,14 @@ export const USAGE = `x — archive X data to your machine
 Usage:
   x download self                 Archive your bookmarks and likes
   x download <handle>             Archive a profile's posts, reposts and replies
+  x download <handle> <handle>    Archive several profiles, one after another
+  x download self <handle>        Combine self and profiles in one run
   x download self --export-only   Re-export from saved data (no re-collection)
   x download self --no-render     Skip archive.html rendering
   x download <handle> --out DIR   Use DIR as the downloads root instead of the default
+
+Multiple targets are processed serially in the order given. A failure stops the
+run; re-running resumes each target from its saved checkpoint.
 
 Options:
   --export-only   skip collection; rebuild JSON/media/render from saved data
@@ -60,7 +65,7 @@ bctl appliance backend:
 
 export interface ParsedArgs {
   command: string;
-  target: string;
+  targets: readonly string[];
   options: {
     action: "download" | "collect" | "export";
     outRoot: string;
@@ -80,7 +85,7 @@ export type Command =
 const schema: ArgSchema = {
   values: ["out", "backend", "session", "cdp-url"],
   flags: ["export-only", "collect-only", "no-render", "no-context"],
-  maxPositionals: 1,
+  maxPositionals: Number.POSITIVE_INFINITY,
 };
 
 export function parseArgs(argv: readonly string[]): Command {
@@ -90,8 +95,8 @@ export function parseArgs(argv: readonly string[]): Command {
   if (command !== "download") throw new UsageError(`Unknown command "${command}".\n\n${USAGE}`);
   if (rest.includes("--help") || rest.includes("-h")) return { kind: "help" };
   const parsed = parseCliArgs(rest, schema);
-  const target = parsed.positional[0];
-  if (!target) throw new UsageError(`download needs a target: self, @handle, or a profile URL.\n\n${USAGE}`);
+  const targets = parsed.positional;
+  if (targets.length === 0) throw new UsageError(`download needs at least one target: self, @handle, or a profile URL.\n\n${USAGE}`);
   if (parsed.flags.has("export-only") && parsed.flags.has("collect-only")) {
     throw new UsageError(`--export-only and --collect-only are mutually exclusive.\n\n${USAGE}`);
   }
@@ -100,7 +105,7 @@ export function parseArgs(argv: readonly string[]): Command {
     : "download";
   return { kind: "download", args: {
     command,
-    target,
+    targets,
     options: {
       action,
       outRoot: parsed.values.get("out") ?? downloadsRoot(),

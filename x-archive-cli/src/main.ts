@@ -28,7 +28,7 @@ export async function main(argv: readonly string[]): Promise<number> {
     process.stdout.write("x-archive-cli 0.1.0\n");
     return 0;
   }
-  const { target, options } = command.args;
+  const { targets, options } = command.args;
   try {
     const resolved = resolveBackend({ backend: options.backend, session: options.session, cdpUrl: options.cdpUrl });
     const runOptions: RunOptions = {
@@ -39,13 +39,18 @@ export async function main(argv: readonly string[]): Promise<number> {
       backend: resolved.backend,
       cdpUrl: resolved.cdpUrl,
     };
-    if (target === "self") {
-      const summaries = await downloadSelf(runOptions);
-      for (const summary of summaries) printSummary("self", summary);
-      return 0;
+    let completed = 0;
+    for (const target of targets) {
+      completed++;
+      process.stderr.write(`[${completed}/${targets.length}] ${target}\n`);
+      if (target === "self") {
+        const summaries = await downloadSelf(runOptions);
+        for (const summary of summaries) printSummary("self", summary);
+      } else {
+        const summary = await downloadProfile(target, runOptions);
+        printSummary(target, summary);
+      }
     }
-    const summary = await downloadProfile(target, runOptions);
-    printSummary(target, summary);
     return 0;
   } catch (error) {
     process.stderr.write("x download failed: " + (error instanceof Error ? error.message : String(error)) + "\n");

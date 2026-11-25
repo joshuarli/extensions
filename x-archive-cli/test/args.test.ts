@@ -15,9 +15,27 @@ describe("x arguments", () => {
     const joined = parseArgs(["download", "self", "--out=./saved", "--backend=bctl", "--no-render", "--no-context"]);
     expect(split).toEqual(joined);
     expect(split).toMatchObject({ kind: "download", args: {
-      target: "self",
+      targets: ["self"],
       options: { action: "download", outRoot: "./saved", backend: "bctl", render: false, noContext: true },
     } });
+  });
+
+  it("accepts multiple targets in order", () => {
+    expect(parseArgs(["download", "inve1ns", "cleanjpg", "@third"])).toMatchObject({
+      kind: "download",
+      args: { targets: ["inve1ns", "cleanjpg", "@third"] },
+    });
+  });
+
+  it("accepts self mixed with profiles and options between targets", () => {
+    const parsed = parseArgs(["download", "self", "--out", "./saved", "inve1ns", "cleanjpg", "--no-render"]);
+    expect(parsed).toMatchObject({
+      kind: "download",
+      args: {
+        targets: ["self", "inve1ns", "cleanjpg"],
+        options: { outRoot: "./saved", render: false },
+      },
+    });
   });
 
   it("selects the action from flags and rejects contradictory ones", () => {
@@ -31,7 +49,7 @@ describe("x arguments", () => {
   });
 
   it("rejects missing targets, unknown options, and unknown commands", () => {
-    expect(() => parseArgs(["download"])).toThrow("download needs a target");
+    expect(() => parseArgs(["download"])).toThrow("download needs at least one target");
     expect(() => parseArgs(["download", "self", "--bogus"])).toThrow("Unknown option: --bogus");
     expect(() => parseArgs(["nope"])).toThrow("Unknown command");
   });
