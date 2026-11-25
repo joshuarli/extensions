@@ -81,6 +81,7 @@ export function hasRequiredCaptures(credentials: Credentials, required: Required
 export function capturePages(required: RequiredCaptures, screenName: string | undefined): string[] {
   const operations = required.flat();
   const pages: string[] = [];
+  if (operations.some((operation) => operation === "HomeTimeline")) pages.push("https://x.com/home");
   if (operations.some((operation) => BOOKMARK_CAPTURE_OPERATIONS.has(operation))) pages.push("https://x.com/i/history");
   if (operations.some((operation) => LIKE_CAPTURE_OPERATIONS.has(operation))) pages.push("https://x.com/i/history/likes");
   if (operations.some((operation) => operation === "UserByScreenName" || PROFILE_CAPTURE_OPERATIONS.has(operation))) {

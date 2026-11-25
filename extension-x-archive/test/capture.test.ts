@@ -16,6 +16,12 @@ describe("session and request capture", () => {
     expect(parseUserId("username=1")).toBeNull();
   });
 
+  it("captures the home timeline query for discovery", () => {
+    const url = bookmarkUrl.replace("Bookmarks", "HomeTimeline");
+    const result = captureRequest(url, "https://x.com", [{ name: "Authorization", value: "Bearer home" }]);
+    expect(result).toMatchObject({ operation: "HomeTimeline", queryId: "AbC_123", authorization: "Bearer home" });
+  });
+
   it("captures only real X page bookmark requests", () => {
     const headers = [
       { name: "Authorization", value: "Bearer actual" },

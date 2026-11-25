@@ -25,6 +25,10 @@ describe("capturePages", () => {
     expect(capturePages(required, "cleanjpg")).toEqual(["https://x.com/cleanjpg"]);
   });
 
+  it("opens the home feed for timeline discovery", () => {
+    expect(capturePages([["HomeTimeline"]], undefined)).toEqual(["https://x.com/home"]);
+  });
+
   it("rejects an invalid profile handle", () => {
     expect(() => capturePages([["UserByScreenName"]], "not a handle")).toThrow("valid @handle");
   });
