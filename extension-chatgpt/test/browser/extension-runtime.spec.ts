@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { chatgptDashboardPath } from "../../src/background.ts";
 import { FakeChatgpt } from "./fake-chatgpt.ts";
 
-const extensionPath = resolve("build/extension-suite");
+const extensionPath = resolve("dist/extension-suite");
 
 interface Saved {
   name: string;

@@ -63,8 +63,8 @@ jobs:
         run: |
           mkdir -p .work/tmp
           export TMPDIR="$PWD/.work/tmp"
-          make build
-          pnpm run test:browser extension-onefile/test/browser/extension-runtime.spec.ts extension-onefile/test/browser/capture.spec.ts --output="$PWD/.work/tmp/playwright-results"
+          make dist
+          pnpm run test:browser extension-onefile/test/browser/extension-runtime.spec.ts extension-onefile/test/browser/capture.spec.ts extension-onefile/test/browser/installed-capture.spec.ts --output="$PWD/.work/tmp/playwright-results"
       - name: Exercise the ChatGPT organizer in the installed suite
         run: |
           export TMPDIR="$PWD/.work/tmp"

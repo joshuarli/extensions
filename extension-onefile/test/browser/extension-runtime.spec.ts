@@ -3,7 +3,7 @@ import { createServer } from "node:http";
 import { mkdtemp, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 
-const extensionPath = resolve("build/extension-suite");
+const extensionPath = resolve("dist/extension-suite");
 
 test("installed suite toggles right-click on a local tab through its worker", async () => {
   const profile = await mkdtemp(resolve(".work/tmp/mv3-profile-"));

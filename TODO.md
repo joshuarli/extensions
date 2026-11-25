@@ -111,15 +111,6 @@ Next: 45
 - **Fix with:** none
 - **Effort:** M
 
-### EXT-27 · P2 · CI never tests the production extension bundle users install
-
-- **Area:** Build / CI
-- **Where:** .github/workflows/ci.yml:66; extension-onefile/test/browser/extension-runtime.spec.ts:6; extension-chatgpt/test/browser/extension-runtime.spec.ts:7; README.md:20; package.json:19
-- **Problem:** Installed-browser tests load build/extension-suite while users load dist/extension-suite; the only dist runs are unverified workflows, so minification, generated assets and NODE_ENV branches can ship broken.
-- **Recommendation:** Build dist in the installed-browser job and point both specs at it.
-- **Fix with:** none
-- **Effort:** S
-
 ### EXT-28 · P2 · Right-click browser behavior has no runner
 
 - **Area:** Tests / invariants
