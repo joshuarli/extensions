@@ -1,21 +1,12 @@
 import { mkdir, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { Effect } from "effect";
 import { chromium, type Page } from "playwright";
-import { build } from "vite";
+import { ONEFILE_CAPTURE_SOURCE, ONEFILE_LOADER_SOURCE } from "../../lib/assets.ts";
 import { fetchResourceBytes } from "../../onefile-core/src/fetch-resource.ts";
 import { saveTab, type SaveDependencies } from "../../onefile-core/src/workflow.ts";
 import type { SaveOptions } from "./args.ts";
 import { resolveBackend } from "./backend.ts";
-
-async function bundle(name: "capture" | "loader"): Promise<string> {
-  const source = name === "capture" ? "onefile-core/src/inject/capture.ts" : "extension-onefile/src/inject/loader.ts";
-  const result = await build({ configFile: false, logLevel: "silent", build: { write: false, minify: false, target: "chrome120", rolldownOptions: { input: resolve(import.meta.dirname, `../../${source}`), output: { format: "iife" } } } });
-  const outputs = Array.isArray(result) ? result : [result];
-  const chunk = outputs.flatMap((output) => "output" in output ? output.output : []).find((output) => output.type === "chunk");
-  if (!chunk || chunk.type !== "chunk") throw new Error(`Could not build ${name} script`);
-  return chunk.code;
-}
 
 export async function assembleCapture(payload: unknown, loaderSource: string, fetchResource: SaveDependencies["fetchResource"] = fetchResourceBytes): Promise<{ filename: string; bytes: Uint8Array; missingCount: number }> {
   let saved: { filename: string; bytes: Uint8Array } | undefined;
@@ -44,7 +35,8 @@ export function watchBrowserClose(browser: { close(): Promise<void> }, signal: A
 }
 
 export async function save(options: SaveOptions, signal?: AbortSignal): Promise<string> {
-  const [captureScript, loaderScript] = await Promise.all([bundle("capture"), bundle("loader")]);
+  const captureScript = ONEFILE_CAPTURE_SOURCE,
+    loaderScript = ONEFILE_LOADER_SOURCE;
   const cdpUrl = resolveBackend(options).cdpUrl;
   const browser = await chromium.connectOverCDP(cdpUrl);
   const unwatch = watchBrowserClose(browser, signal);

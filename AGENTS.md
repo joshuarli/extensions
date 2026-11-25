@@ -11,7 +11,8 @@ The roadmap, [docs/roadmap.md](docs/roadmap.md), holds all current and future wo
 - Install the pinned pnpm CLI with Node.js: `npm install --global pnpm@11.0.2`
 - Install dependencies: `pnpm install`
 - Check types and unit tests: `pnpm run check`
-- Build development or production bundles: `pnpm run build` or `pnpm run dist`
+- Build development or production bundles: `pnpm run build` or `pnpm run dist`; `pnpm run dist` also regenerates the embedded runtime assets in `lib/generated/assets.ts`
+- Run a CLI: `pnpm tools <x|onefile|youtube|chatgpt> [args...]`
 - Run browser tests: `pnpm run test:browser`
 
 ## Invariants
@@ -51,7 +52,7 @@ The roadmap, [docs/roadmap.md](docs/roadmap.md), holds all current and future wo
 - YouTube messages: `extension-youtube-transcript/test/message-contract.test.ts`; HTTP and transcript parsing: `http.test.ts`, `transcript.test.ts` in that test directory.
 - Onefile capture messages: `extension-onefile/test/message-contract.test.ts`; ZIP and HTML formats: `zip.test.ts`, `polyglot.test.ts`, `archive-integrity.test.ts`; Chromium capture: `test/browser/capture.spec.ts`.
 - X GraphQL request and response handling: `x-archive-core/test/api.test.ts`, `parser.test.ts`, `merge.test.ts`, `collector.test.ts`, `debug.test.ts`; extension credential capture: `extension-x-archive/test/capture.test.ts`.
-- X CLI flags and exit codes: `x-archive-cli/test/args.test.ts`; backend selection: `x-archive-cli/test/backend.test.ts`; filesystem state: `fs-store.test.ts`; cookie input: `netscape.test.ts`.
+- X CLI flags and exit codes: `x-archive-cli/test/args.test.ts`; backend selection: `x-archive-cli/test/backend.test.ts`; filesystem state: `fs-store.test.ts`; CDP extension hot-load and credential capture: `extension.test.ts`, `credential-capture.test.ts`; archive rendering: `x-archive-core/test/render.test.ts`.
 - X exported JSON/media/HTML complete end-to-end contract and live X/YouTube endpoints: none; tests use fixtures or mocks.
 - ChatGPT archive: paging, timeframe, media pointers and record hashing in `chatgpt-archive-core/test/`; CLI flags, selection, resume and media download in `chatgpt-archive-cli/test/`. `chatgpt-archive-cli/test/cdp-live.test.ts` drives the CLI through a real CDP endpoint against routed fixtures.
 - Performance workloads, entrypoint and budgets: [extension-onefile/PERFORMANCE.md](extension-onefile/PERFORMANCE.md); `make bench-list`, `make bench BENCH_ARGS='--tier=edit'`, Change workloads and `--budget=BASE,CAND`; Full is manual only.

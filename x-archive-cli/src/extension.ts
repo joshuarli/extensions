@@ -1,11 +1,6 @@
-import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
 import { chromium, type Browser, type BrowserContext, type Worker } from "playwright";
-
-export const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
-export const SUITE_EXTENSION_PATH = join(REPO_ROOT, "dist", "extension-suite");
+import { materializeExtension, suiteExtensionPath } from "../../lib/assets.ts";
 
 export interface ListedExtension {
   readonly id: string;
@@ -22,23 +17,9 @@ export function selectSuiteExtension(
   return extensions.find((extension) => extension.enabled && resolve(extension.path) === resolve(path))?.id ?? null;
 }
 
-function buildSuite(path: string): void {
-  if (existsSync(join(path, "manifest.json"))) return;
-  const result = spawnSync(process.execPath, [join(REPO_ROOT, "scripts", "build-extensions.mjs")], {
-    cwd: REPO_ROOT,
-    env: { ...process.env, NODE_ENV: "production" },
-    encoding: "utf8",
-    timeout: 120_000,
-  });
-  if (result.error || result.status !== 0) {
-    const detail = (result.stderr || result.stdout || String(result.error ?? "")).trim().slice(0, 400);
-    throw new Error("Could not build the X Archive extension: " + (detail || "build failed") + ". Run `make dist` and retry.");
-  }
-}
-
 export async function ensureSuiteExtensionOnBrowser(
   browser: Browser,
-  path: string = SUITE_EXTENSION_PATH,
+  path: string = suiteExtensionPath(),
 ): Promise<string> {
   const session = await browser.newBrowserCDPSession();
   let listed: { extensions: ListedExtension[] };
@@ -52,15 +33,14 @@ export async function ensureSuiteExtensionOnBrowser(
   }
   const existing = selectSuiteExtension(listed.extensions, path);
   if (existing) return existing;
-  buildSuite(path);
-  const loaded = await session.send("Extensions.loadUnpacked", { path }) as { id: string };
+  const loaded = await session.send("Extensions.loadUnpacked", { path: materializeExtension() }) as { id: string };
   if (!loaded.id) throw new Error("CDP loaded the X Archive extension but returned no extension id.");
   return loaded.id;
 }
 
 export async function ensureSuiteExtension(
   cdpUrl: string,
-  path: string = SUITE_EXTENSION_PATH,
+  path: string = suiteExtensionPath(),
   connect: Connect = (url, options) => chromium.connectOverCDP(url, options),
 ): Promise<string> {
   const browser = await connect(cdpUrl, { timeout: 10_000 });

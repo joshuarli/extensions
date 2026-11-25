@@ -31,7 +31,7 @@ Next: 12
 ### EXT-6 · P3 · Exercise X archive CLI process and complete export
 
 - **Area:** X archive CLI
-- **Where:** x-archive-cli/test/args.test.ts; x-archive-cli/src/cli.ts; x-archive-cli/src/run.ts
+- **Where:** x-archive-cli/test/args.test.ts; x-archive-cli/src/main.ts; x-archive-cli/src/run.ts
 - **Problem:** Argument tests exercise parsing, but the CLI process boundary and complete JSON, media and HTML export contract are not covered end to end.
 - **Recommendation:** Drive the CLI as a process against synthetic service fixtures and verify exit status and exported archive contents.
 - **Fix with:** none

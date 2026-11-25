@@ -2,11 +2,12 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
-    include: ["extension-*/test/**/*.test.ts", "lib/test/**/*.test.ts", "chatgpt-archive-core/test/**/*.test.ts", "chatgpt-archive-cli/test/**/*.test.ts", "x-archive-core/test/**/*.test.ts", "x-archive-cli/test/**/*.test.ts", "onefile-core/test/**/*.test.ts", "onefile-cli/test/**/*.test.ts", "youtube-transcript-core/test/**/*.test.ts", "youtube-transcript-cli/test/**/*.test.ts", "scripts/**/*.test.ts"],
+    include: ["cli/test/**/*.test.ts", "extension-*/test/**/*.test.ts", "lib/test/**/*.test.ts", "chatgpt-archive-core/test/**/*.test.ts", "chatgpt-archive-cli/test/**/*.test.ts", "x-archive-core/test/**/*.test.ts", "x-archive-cli/test/**/*.test.ts", "onefile-core/test/**/*.test.ts", "onefile-cli/test/**/*.test.ts", "youtube-transcript-core/test/**/*.test.ts", "youtube-transcript-cli/test/**/*.test.ts", "scripts/**/*.test.ts"],
     exclude: ["**/*.browser.test.ts"],
     environment: "node",
     coverage: {
       include: [
+        "cli/src/**/*.ts",
         "extension-*/src/**/*.{ts,mjs}",
         "lib/**/*.ts",
         "chatgpt-archive-{core,cli}/src/**/*.ts",

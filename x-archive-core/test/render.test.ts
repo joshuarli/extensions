@@ -1,0 +1,47 @@
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { describe, expect, it } from "vitest";
+import { renderArchive } from "../src/render.ts";
+
+const scratchRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..", ".work", "tmp");
+
+describe("renderArchive", () => {
+  it("writes a static archive page with UTC dates and offline thread context", async () => {
+    mkdirSync(scratchRoot, { recursive: true });
+    const folder = mkdtempSync(join(scratchRoot, "x-render-"));
+    try {
+      writeFileSync(join(folder, "posts.json"), JSON.stringify({
+        posts: [{
+          tweet_id: "1",
+          created_at: "Wed Oct 10 20:19:24 +0000 2018",
+          author: { name: "Alice", screen_name: "alice" },
+          full_text: "Hello @bob #hi",
+          conversation_id: "1",
+          metrics: { likes: 12 },
+        }],
+        context_posts: [{
+          tweet_id: "9",
+          created_at: "Mon Jan 01 00:00:00 +0000 2024",
+          author: { name: "Ancestor", screen_name: "anc" },
+          full_text: "context",
+          conversation_id: "1",
+        }],
+        profile: { name: "Alice", screen_name: "alice" },
+        export_metadata: { exported_at: "2026-01-01" },
+      }));
+      const result = await renderArchive({ folder, noFetch: true });
+      const html = readFileSync(result.output, "utf8");
+
+      expect(result.posts).toBe(1);
+      expect(html).toContain("Oct 10, 2018 · 8:19 PM");
+      expect(html).toContain('<span class="mention">@bob</span>');
+      expect(html).toContain('class="context-archive" hidden');
+      expect(html).toContain('id="lightbox"');
+      expect(html).toContain('id="thread-overlay"');
+      expect(html).not.toContain("<script src=");
+    } finally {
+      rmSync(folder, { recursive: true, force: true });
+    }
+  });
+});

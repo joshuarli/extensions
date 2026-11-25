@@ -83,7 +83,7 @@ const schema: ArgSchema = {
   maxPositionals: 1,
 };
 
-export function parseArgs(argv: string[]): Command {
+export function parseArgs(argv: readonly string[]): Command {
   const [command, ...rest] = argv;
   if (!command || command === "--help" || command === "-h") return { kind: "help" };
   if (command === "--version" || command === "-v") return { kind: "version" };

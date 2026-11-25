@@ -1,8 +1,5 @@
 import { chromium, type BrowserContext } from "playwright";
-import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { homedir } from "node:os";
 import {
   CredentialsSchema,
   PROFILE_OPERATIONS,
@@ -17,7 +14,7 @@ import { Schema } from "effect";
 import type { ArchiveDeps } from "../../x-archive-core/src/collector.ts";
 import { HELIUM_BACKEND, type Backend } from "./backend.ts";
 import { ensureSuiteExtensionOnBrowser, suiteWorker } from "./extension.ts";
-import { credentialsCachePath, readJsonFile, writeJsonFile, stateDir, stateRoot } from "./state.ts";
+import { credentialsCachePath, readJsonFile, writeJsonFile, stateDir } from "./state.ts";
 
 export type RequiredCaptures = readonly (readonly Operation[])[];
 
@@ -27,8 +24,6 @@ export interface CaptureOptions {
   readonly onStatus?: ((text: string) => void) | undefined;
 }
 const CACHE_MAX_AGE_DAYS = 30;
-const EXPORT_COOKIES = process.env["X_ARCHIVE_COOKIES_HELPER"]
-  ?? join(homedir(), "usr", "dotfiles", "darwin", ".local", "bin", "export-cookies.py");
 
 export interface XSession {
   userId: string;
@@ -128,42 +123,6 @@ async function workerCredentials(
   }
 }
 
-export function parseNetscapeCookies(text: string, hostname: string): Array<{ name: string; value: string }> {
-  const cookies: Array<{ name: string; value: string }> = [];
-  for (const line of text.split("\n")) {
-    if (!line || line.startsWith("#")) continue;
-    const parts = line.split("\t");
-    if (parts.length < 7) continue;
-    const domain = parts[0]!.toLowerCase();
-    const name = parts[5]!;
-    const value = parts[6]!;
-    const host = domain.startsWith(".") ? domain.slice(1) : domain;
-    if (host === hostname || host.endsWith("." + hostname)) cookies.push({ name, value });
-  }
-  return cookies;
-}
-
-function cookiesViaExportScript(): Array<{ name: string; value: string }> {
-  const workDir = mkdtempSync(join(stateRoot(), "cookies-"));
-  try {
-    const result = spawnSync("python3", [EXPORT_COOKIES, "helium", "x.com"], {
-      cwd: workDir,
-      timeout: 60_000,
-      encoding: "utf8",
-    });
-    if (result.status !== 0) {
-      throw new Error(
-        "export-cookies.py failed (exit " + String(result.status) + "): "
-        + (result.stderr || result.stdout || "unknown error").trim().slice(0, 300)
-        + ". If macOS asked to allow access to the Helium Storage Key, allow it and retry.",
-      );
-    }
-    return parseNetscapeCookies(readFileSync(join(workDir, "cookies-x.com.txt"), "utf8"), "x.com");
-  } finally {
-    rmSync(workDir, { recursive: true, force: true });
-  }
-}
-
 export async function readBrowserSession(cdpUrl: string, backend: Backend = HELIUM_BACKEND): Promise<XSession> {
   let browser;
   try {
@@ -175,16 +134,9 @@ export async function readBrowserSession(cdpUrl: string, backend: Backend = HELI
         + "Check `bctl status`; sign in once with `bctl profile login " + (backend.session ?? "xarchive") + "`.",
       );
     }
-    const cookies = cookiesViaExportScript();
-    const twid = cookies.find((cookie) => cookie.name === "twid");
-    const userId = parseUserId(twid?.value);
-    if (!userId) {
-      throw new Error(
-        "Helium is not reachable on " + cdpUrl + " and export-cookies.py found no x.com session. "
-        + "Quit and relaunch Helium via ~/usr/bin/helium, or sign in to x.com first.",
-      );
-    }
-    return { userId, cookies };
+    throw new Error(
+      "Helium is not reachable on " + cdpUrl + ". Start Helium with `~/usr/bin/helium` (remote debugging enabled) and retry.",
+    );
   }
   try {
     const context = browser.contexts()[0];

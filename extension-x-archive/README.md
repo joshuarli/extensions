@@ -19,8 +19,8 @@ CDP to authenticate its own GraphQL calls (see `x-archive-cli/src/deps.ts`).
 It reads cookies itself over CDP and keeps a 30-day credential cache when no
 extension or signed-in browser is available.
 
-The package also owns `tools/render_archive.py`, which the CLI runs to produce
-`archive.html` for each export folder.
+`archive.html` rendering lives in `x-archive-core/src/render.ts` and is shared
+with the CLI; no Python renderer is needed.
 
 ## What was removed
 

@@ -39,7 +39,7 @@ Example:
   pnpm youtube https://www.youtube.com/watch?v=UH6HCSNs7Os --format=srt
 `;
 
-export function parseArgs(argv: string[]): Command {
+export function parseArgs(argv: readonly string[]): Command {
   if (argv.length === 0 || argv.includes("--help") || argv.includes("-h")) return { kind: "help" };
   if (argv.length === 1 && (argv[0] === "--version" || argv[0] === "-v")) return { kind: "version" };
   const parsed = parseCliArgs(argv, schema),

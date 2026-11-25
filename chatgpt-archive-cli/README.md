@@ -9,7 +9,7 @@ CDP.
 ## Usage
 
 ```
-node chatgpt-archive-cli/src/cli.ts download [options]
+node chatgpt-archive-cli/src/cli.ts download [options] (or `pnpm tools chatgpt download [options]`)
 ```
 
 | Option | Meaning |
@@ -103,7 +103,7 @@ filenames are derived from file ids and optional pointer file names only.
 - `src/media.ts` — media job collection from saved records, bounded-concurrency
   downloads, atomic `.part` rename and failure collection.
 - `src/storage.ts` — small filesystem seam plus Web Crypto SHA-256.
-- `src/cli.ts` — entry point, interrupt handling and exit codes.
+- `src/main.ts` — importable command entry point; `src/cli.ts` is the process wrapper.
 
 ## Tests
 

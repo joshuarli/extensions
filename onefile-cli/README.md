@@ -11,7 +11,7 @@ pnpm onefile save https://example.com/ --cdp-url http://127.0.0.1:9222
 
 The command opens a new tab, waits for load, captures the page, writes the archive, prints its path, and closes that tab. An existing file is never overwritten. Missing resources are recorded in the archive banner and `metadata.json` and reported on stderr. See [the format](../extension-onefile/FORMAT.md) for viewing and extraction details.
 
-The save workflow and archive format come from [onefile-core](../onefile-core/README.md), shared with the Onefile feature in the suite.
+The save workflow and archive format come from [onefile-core](../onefile-core/README.md), shared with the Onefile feature in the suite. Capture and loader scripts are embedded at build time, so saving needs neither a checkout nor Vite at runtime.
 
 The default output directory is `~/.local/share/onefile`. `XDG_DATA_HOME` changes the base directory; `ONEFILE_OUT` sets the directory directly; `--out` takes precedence over both.
 

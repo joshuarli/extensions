@@ -10,7 +10,7 @@ This repository builds one Chromium Manifest V3 extension with five features:
 
 The `extension-*` packages remain separate source and test units; [extension-suite](extension-suite) composes every one of them into one worker, manifest, popup, and options page. There is no separately installable feature extension: if a directory starts with `extension-`, it belongs in the suite.
 
-The CLI tools live outside the extension: **x-archive-cli** archives X bookmarks, likes and profiles ([CLI guide](x-archive-cli/README.md)), **onefile-cli** saves a page as the same `.u.zip.html` archive ([CLI guide](onefile-cli/README.md)), **chatgpt-archive-cli** archives ChatGPT conversations ([CLI guide](chatgpt-archive-cli/README.md)), and **youtube-transcript-cli** fetches a transcript or SRT from a YouTube URL ([CLI guide](youtube-transcript-cli/README.md)). Each has a matching `*-core` domain package where the browser extension and CLI share logic.
+Run any tool through `pnpm tools <command>` (`x`, `onefile`, `youtube`, `chatgpt`), or use the individual `pnpm x`, `pnpm onefile`, `pnpm youtube` scripts. The CLI tools live outside the extension: **x-archive-cli** archives X bookmarks, likes and profiles ([CLI guide](x-archive-cli/README.md)), **onefile-cli** saves a page as the same `.u.zip.html` archive ([CLI guide](onefile-cli/README.md)), **chatgpt-archive-cli** archives ChatGPT conversations ([CLI guide](chatgpt-archive-cli/README.md)), and **youtube-transcript-cli** fetches a transcript or SRT from a YouTube URL ([CLI guide](youtube-transcript-cli/README.md)). Each has a matching `*-core` domain package where the browser extension and CLI share logic.
 
 ## Install
 
@@ -22,7 +22,7 @@ Load the generated extension folder as an unpacked extension in a Chromium-based
 
 The generated folders are not checked into the repository; obtain a built folder from the person who supplied the extension.
 
-The unified extension has one extension ID. Storage, IndexedDB archives, and external YouTube API callers from the old standalone extensions do not carry over automatically. Export X bookmarks to JSON before switching, and update external scripts with the new ID.
+The unified extension's ID is pinned by a manifest key, so a CLI hot-load from its cache directory gets the same ID on every machine. Storage, IndexedDB archives, and external YouTube API callers from the old standalone extensions do not carry over automatically. Export X bookmarks to JSON before switching, and update external scripts with the new ID (`iollcidiekkhoepdpmghaihbjccfkhla`).
 
 ## Use
 

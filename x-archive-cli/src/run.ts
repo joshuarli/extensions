@@ -1,7 +1,5 @@
 import { mkdirSync } from "node:fs";
-import { join, dirname, resolve } from "node:path";
-import { spawn } from "node:child_process";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import {
   collect,
   collectLikes,
@@ -21,6 +19,7 @@ import { buildDebugReport } from "../../x-archive-core/src/debug.ts";
 import { Effect } from "effect";
 import { graphqlRequest } from "../../x-archive-core/src/api.ts";
 import { extractLookupUserId } from "../../x-archive-core/src/collector.ts";
+import { renderArchive } from "../../x-archive-core/src/render.ts";
 import { PROFILE_OPERATIONS, parseProfileScreenName, type Credentials } from "../../x-archive-core/src/capture.ts";
 import { FsBookmarksStore, FsLikesStore } from "./fs-store.ts";
 import { SqliteProfileStore, profileDbPath } from "./profile-db.ts";
@@ -38,8 +37,6 @@ import { syncContextThreads } from "./context.ts";
 import { seedFromHelium } from "./seed.ts";
 import { createProgressReporter, type ProgressReporter } from "../../lib/progress.ts";
 
-const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
-const RENDER_TOOL = join(REPO_ROOT, "extension-x-archive", "tools", "render_archive.py");
 const EXTENSION_VERSION = "x-archive-cli 0.1.0";
 const SAFETY_TIMEOUT_MS = 6 * 60 * 60 * 1000;
 
@@ -130,14 +127,6 @@ async function resolveTargetUserId(
   return restId;
 }
 
-async function renderArchive(folder: string): Promise<boolean> {
-  return new Promise((resolvePromise) => {
-    const child = spawn("python3", [RENDER_TOOL, folder], { stdio: ["ignore", "inherit", "inherit"] });
-    child.on("close", (code) => resolvePromise(code === 0));
-    child.on("error", () => resolvePromise(false));
-  });
-}
-
 interface FinishExportInput {
   session: XSession;
   credentials: Credentials;
@@ -196,11 +185,12 @@ async function finishExport(input: FinishExportInput): Promise<RunSummary> {
   let archiveHtml: string | null = null;
   if (options.render) {
     status.say("rendering", "Rendering archive.html…");
-    if (await renderArchive(outDir)) {
-      archiveHtml = join(outDir, "archive.html");
-      status.say("rendering", "Rendered archive.html.");
-    } else {
-      status.add("Rendering failed; the JSON archive is still complete.");
+    try {
+      const rendered = await renderArchive({ folder: outDir });
+      archiveHtml = rendered.output;
+      status.say("rendering", "Rendered archive.html (" + rendered.posts + " posts).");
+    } catch (error) {
+      status.add("Rendering failed: " + (error instanceof Error ? error.message : String(error)) + "; the JSON archive is still complete.");
     }
   }
   return {

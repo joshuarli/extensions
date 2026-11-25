@@ -44,6 +44,7 @@ export const manifest = {
   name: suiteName,
   short_name: suiteShortName,
   version: suiteVersion,
+  key: "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArFL/QTrfC+AcyT+0t24vxifVsJmjTlq3INmy0yjig9NRyqaLY97MfZGUBKWvfiYGLsTZOCrFO1WTVbodZwcBXu4pcL8p+KMQtzMEsXlmCz8P04mjh7PWrLZjxDqqMnqGqgrtfLRSFeMdKS2TuFugbl5uFQKGH3pdYJLVG6PIXURzMGeigLOfWa/3IYadWhKmb2r36VDkngfykYO//cTxHztk+o5sxty3eqWTLKebhleVNfDGOM5G28OxNAaZ1m/vtnQnnMwkfZQCZopXu/gCtZ+YQMyByjePafOXB09qmXS11T4GtXDp0e9vf6vgYZKHFJHZa4bfUVQvJjlNiDgAFwIDAQAB",
   description: suiteDescription,
   minimum_chrome_version: "120",
   icons: {

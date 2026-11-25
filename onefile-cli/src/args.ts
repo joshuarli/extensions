@@ -18,7 +18,7 @@ export const help = `onefile — save a web page as a self-extracting archive\n\
 export function outputDirectory(out: string | undefined, env: NodeJS.ProcessEnv = process.env): string {
   return resolve(out ?? (env["ONEFILE_OUT"] || join(env["XDG_DATA_HOME"] || join(homedir(), ".local", "share"), "onefile")));
 }
-export function parseArgs(argv: string[], env: NodeJS.ProcessEnv = process.env): Command {
+export function parseArgs(argv: readonly string[], env: NodeJS.ProcessEnv = process.env): Command {
   if (argv.length === 0 || argv.includes("--help") || argv.includes("-h")) return { kind: "help" };
   if (argv.length === 1 && (argv[0] === "--version" || argv[0] === "-v")) return { kind: "version" };
   if (argv[0] !== "save") throw new UsageError(`Unknown command: ${argv[0]}`);

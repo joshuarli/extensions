@@ -51,19 +51,14 @@ retained either way.
   `--backend=bctl` (see [bctl](#bctl)). It reads
   your x.com cookies (including HttpOnly ones) and, from the X Archive
   extension's storage, the query IDs/features X's web app uses for the
-  GraphQL API. On the Helium path the CLI hot-loads `dist/extension-suite`
-  over CDP if it is not already loaded, building it first when missing;
-  the extension is session-only, so this is repeated each run and its ID is
-  read from CDP rather than fixed to an install path. If an operation was
-  never captured, the CLI opens the relevant x.com page (bookmarks, likes,
-  or the profile) and caches the credentials for 30 days. No manual
-  extension install is needed. If Helium is not reachable, the CLI falls back to
-  `~/usr/dotfiles/darwin/.local/bin/export-cookies.py`
-  to decrypt the x.com cookies from Helium's cookie store
-  (`X_ARCHIVE_COOKIES_HELPER` overrides the path). That fallback needs
-  one interactive Keychain approval on this machine before it can run
-  unattended; until then it fails with a clear message. Cached
-  credentials are used as a last resort.
+  GraphQL API. On the Helium path the CLI hot-loads the embedded suite
+  extension from a cache directory over CDP; its manifest key pins the ID
+  across machines. The extension is session-only, so this is repeated each
+  run. If an operation was never captured, the CLI opens the relevant x.com
+  page (bookmarks, likes, or the profile) and caches the credentials for 30
+  days. No checkout, build, or manual extension install is needed. A
+  reachable CDP browser is required; cached credentials are used only when
+  the browser cannot be reached.
 - **Store**: a profile archive is a SQLite database,
   `~/.local/share/x/downloads/<handle>/archive.db`, holding every observed
   post (merged by tweet id), the per-timeline scan state, and the learned
@@ -131,8 +126,7 @@ The appliance has no extension and no access to your Helium profile, so:
   run (seeded by `x download self` on the Helium backend; reused for 30
   days). Without a cache the run fails with the remedy; the appliance
   cannot capture fresh ones,
-- the export-cookies.py fallback is disabled on this path; a signed-out
-  or unreachable appliance fails fast with the sign-in instruction.
+- a signed-out or unreachable appliance fails fast with the sign-in instruction.
 
 Prerequisites: `bctl` on PATH (or `X_ARCHIVE_BCTL=/path/to/bctl`), a
 working Nanos runtime (`bctl doctor` passes), and the one-time sign-in.
@@ -144,7 +138,7 @@ already-minted endpoint instead of launching) are supported.
 ## Notes
 
 - The CLI inherits the old extension's archive format and update semantics
-  (`render_archive.py`, export folders, `debug.json`); collection and export
+  (`x-archive-core/src/render.ts`, export folders, `debug.json`); collection and export
   now happen only here. The extension's remaining job is to capture fresh X
   GraphQL query IDs, features, and authorization from normal browsing.
   Profile stores written before the per-folder SQLite store landed live
@@ -154,4 +148,4 @@ already-minted endpoint instead of launching) are supported.
   each GraphQL call for API-drift debugging.
 - The state dir holds the credential cache and cumulative bookmarks and
   likes, which may be private. It does not hold your cookies: those stay
-  in the browser or pass through memory via the cookie helper.
+  in the browser.
