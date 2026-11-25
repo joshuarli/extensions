@@ -102,6 +102,21 @@ describe("polyglot archive", () => {
     expect(containsAsciiInsensitive(new TextEncoder().encode("x </SCRIPT> y"), "</script")).toBe(true);
   });
 
+  it("reports no wrapper when every candidate is forbidden by the bytes", () => {
+    const forbidden = new TextEncoder().encode(
+      "<!-- --> --!> </script> </style> </noframes> </noembed> </iframe>",
+    );
+    expect(selectZipWrapper(forbidden)).toBeNull();
+    expect(() => buildPolyglot({
+      pageHtml: samplePage,
+      loaderSource: "/*loader*/",
+      resources: [{ name: "resources/0.bin", mime: "application/octet-stream", data: forbidden }],
+      sourceUrl: "https://example.com/",
+      capturedAtMs: 1_700_000_000_000,
+      unresolved: [],
+    })).toThrow("No HTML wrapper hides this archive without breaking parsing.");
+  });
+
   it("falls back past the comment wrapper when resource bytes close it", () => {
     const hostileBytes = new TextEncoder().encode("-->"),
       archive = buildPolyglot({
@@ -116,6 +131,27 @@ describe("polyglot archive", () => {
     expect(directory.entries.map((entry) => entry.name)).toContain("resources/0.bin");
     const prefixText = textDecoder.decode(archive.fileBytes.subarray(0, archive.prefixLength));
     expect(prefixText.endsWith('<script type="onefile-data">')).toBe(true);
+  });
+
+  it("converges on file-absolute offsets when a large prefix forces a later wrapper", () => {
+    const largePage = `${samplePage}${"x".repeat(120_000)}`;
+    const hostileBytes = new TextEncoder().encode("--> </script> </style> </noframes>");
+    const archive = buildPolyglot({
+      pageHtml: largePage,
+      loaderSource: "/*loader*/",
+      resources: [{ name: "resources/0.bin", mime: "application/octet-stream", data: hostileBytes }],
+      sourceUrl: "https://example.com/",
+      capturedAtMs: 1_700_000_000_000,
+      unresolved: [],
+    });
+    const prefixText = textDecoder.decode(archive.fileBytes.subarray(0, archive.prefixLength));
+    expect(prefixText).toContain("<!DOCTYPE html>");
+    expect(archive.metadata.prefixLength).toBe(archive.prefixLength);
+    expect(archive.prefixLength).toBeGreaterThan(120_000);
+    const directory = readStoredArchive(archive.fileBytes);
+    expect(extractStoredEntry(directory, "resources/0.bin")).toEqual(hostileBytes);
+    const storedMetadata: unknown = JSON.parse(textDecoder.decode(extractStoredEntry(directory, "metadata.json")));
+    expect(storedMetadata).toMatchObject({ prefixLength: archive.prefixLength });
   });
 
   it("keeps the html prefix renderable and resource bytes out of it", () => {
