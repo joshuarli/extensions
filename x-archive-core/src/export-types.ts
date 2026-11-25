@@ -10,5 +10,6 @@ export interface MediaExportResult {
   downloaded: number;
   failed: Array<{ filename: string; error: string }>;
   skipped: Array<{ filename: string; bytes: number }>;
+  downloadedDetails: Array<{ filename: string; bytes: number; sha256: string }>;
   stopped: boolean;
 }

@@ -10,15 +10,6 @@ Next: 45
 - **Fix with:** none
 - **Effort:** M
 
-### EXT-13 · P1 · Record media download outcomes and stop emitting broken HTML media links
-
-- **Area:** X archive · media and HTML export
-- **Where:** x-archive-core/src/media.ts:75-96, render.ts:153-203, export-types.ts:8-14; x-archive-cli/src/media.ts:174-200, run.ts:179-181
-- **Problem:** Rendered src paths are recomputed from URL conventions instead of downloaded files; skipped or failed media (common under the 16 MB default) becomes a broken link with no marker, .jpeg URLs produce a .jpg download but a .jpeg link, and the lightbox only cycles the four anchors renderMedia emits.
-- **Recommendation:** Write a per-export media manifest (filename, source URL, bytes, sha256, status and reason) into the JSON, have renderArchive read it rather than recompute paths, emit explicit unavailable placeholders, and render every gallery item.
-- **Fix with:** single-source-of-truth
-- **Effort:** M
-
 ### EXT-25 · P1 · Publish a versioned, restorable extension release
 
 - **Area:** Release / operations

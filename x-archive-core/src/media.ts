@@ -1,4 +1,35 @@
+import type { MediaExportResult } from "./export-types.ts";
+
 type MediaKind = "photo" | "video";
+
+export interface MediaManifestEntry {
+  readonly tweet_id: string;
+  readonly index: number;
+  readonly filename: string;
+  readonly url: string;
+  readonly status: "downloaded" | "skipped" | "failed" | "present";
+  readonly bytes?: number;
+  readonly sha256?: string;
+  readonly error?: string;
+}
+
+export function buildMediaManifest(jobs: readonly MediaJob[], result: MediaExportResult): MediaManifestEntry[] {
+  const downloaded = new Map(result.downloadedDetails.map((detail) => [detail.filename, detail])),
+    skipped = new Map(result.skipped.map((item) => [item.filename, item])),
+    failed = new Map(result.failed.map((item) => [item.filename, item]));
+  return jobs.map((job) => {
+    const hash = downloaded.get(job.filename),
+      skip = skipped.get(job.filename),
+      failure = failed.get(job.filename);
+    if (hash) return { tweet_id: job.tweet_id, index: job.index, filename: job.filename, url: job.url,
+      status: "downloaded", bytes: hash.bytes, sha256: hash.sha256 };
+    if (skip) return { tweet_id: job.tweet_id, index: job.index, filename: job.filename, url: job.url,
+      status: "skipped", bytes: skip.bytes };
+    if (failure) return { tweet_id: job.tweet_id, index: job.index, filename: job.filename, url: job.url,
+      status: "failed", error: failure.error };
+    return { tweet_id: job.tweet_id, index: job.index, filename: job.filename, url: job.url, status: "present" };
+  });
+}
 
 export interface MediaJob {
   tweet_id: string;

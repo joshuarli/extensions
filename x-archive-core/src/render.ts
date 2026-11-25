@@ -36,6 +36,7 @@ interface MediaItem {
   readonly kind: "photo" | "gif" | "video";
   readonly src: string;
   readonly alt: string;
+  readonly unavailable?: string;
 }
 
 interface ProfileAssets {
@@ -164,7 +165,7 @@ function extFromUrl(value: unknown, fallback: string): string {
   return match ? match[1]!.toLowerCase() : fallback;
 }
 
-function mediaItems(postValue: unknown, tweetId: string, quoted: boolean, mode: string): MediaItem[] {
+function mediaItems(postValue: unknown, tweetId: string, quoted: boolean, mode: string, mediaDir: string, manifest: Map<string, Json>): MediaItem[] {
   const post = record(postValue),
     items: MediaItem[] = [];
   for (const [index, value] of array(post["media"]).entries()) {
@@ -189,17 +190,27 @@ function mediaItems(postValue: unknown, tweetId: string, quoted: boolean, mode: 
       extension = extFromUrl(variants[0]?.["url"], "mp4");
     }
     if (mode !== "media") continue;
-    items.push({ kind, src: `media/${tweetId}${quoted ? "_quoted" : ""}_${index}.${extension}`, alt });
+    const base = `${tweetId}${quoted ? "_quoted" : ""}_${index}`,
+      entry = manifest.get(base),
+      filename = entry ? text(entry["filename"]) : `${base}.${extension}`,
+      src = `media/${filename || `${base}.${extension}`}`,
+      status = entry ? text(entry["status"]) : "",
+      reason = status === "skipped" || status === "failed"
+        ? (text(entry?.["error"]) || `${status} during collection`)
+        : existsSync(join(mediaDir, filename || `${base}.${extension}`)) ? undefined : "not archived";
+    items.push({ kind, src, alt, ...(reason ? { unavailable: reason } : {}) });
   }
   return items;
 }
 
 function renderMedia(items: readonly MediaItem[]): string {
   if (items.length === 0) return "";
-  const shown = items.slice(0, 4),
-    extra = items.length - shown.length,
-    parts = [`<div class="media m${shown.length}" data-gallery>`];
-  for (const { kind, src, alt } of shown) {
+  const parts = [`<div class="media m${Math.min(items.length, 4)}" data-gallery>`];
+  for (const { kind, src, alt, unavailable } of items) {
+    if (unavailable) {
+      parts.push(`<div class="unavailable-media" style="padding:8px;border:1px dashed var(--border);border-radius:8px;color:var(--muted);font-size:13px">Media not archived: ${esc(unavailable)} (${esc(src)})</div>`);
+      continue;
+    }
     const label = esc(alt) || { photo: "Open photo", gif: "Play GIF", video: "Play video" }[kind];
     parts.push(`<a class="item" href="${esc(src)}" data-type="${kind}" data-alt="${esc(alt)}" aria-label="${label}">`);
     if (kind === "photo") {
@@ -211,7 +222,6 @@ function renderMedia(items: readonly MediaItem[]): string {
     }
     parts.push("</a>");
   }
-  if (extra > 0) parts[parts.length - 1] += `<span class="more">+${extra}</span>`;
   parts.push("</div>");
   return parts.join("");
 }
@@ -220,7 +230,7 @@ function metric(icon: string, number: unknown): string {
   return `<span class="metric">${icon}<span>${formatNumber(number)}</span></span>`;
 }
 
-function renderQuoted(quotedValue: unknown, tweetId: string, mode: string, assets: ProfileAssets | null): string {
+function renderQuoted(quotedValue: unknown, tweetId: string, mode: string, assets: ProfileAssets | null, mediaDir: string, manifest: Map<string, Json>): string {
   const quoted = record(quotedValue);
   if (Object.keys(quoted).length === 0) return "";
   if (quoted["status"] === "unavailable") {
@@ -234,7 +244,7 @@ function renderQuoted(quotedValue: unknown, tweetId: string, mode: string, asset
     + `<span class="p-handle">@${esc(text(author["screen_name"]) || "unknown")}</span><span class="dot">·</span>`
     + `<span class="p-time">${esc(fmtDate(quoted["created_at"]))}</span></div>`
     + `<div class="p-text quoted-text">${linkify(quoted["full_text"], urls, null, null)}</div>`
-    + renderMedia(mediaItems(quoted, tweetId, true, mode))
+    + renderMedia(mediaItems(quoted, tweetId, true, mode, mediaDir, manifest))
     + `<div class="metrics" style="max-width:280px">${metric(ICON_REPLY, metrics["replies"])}${metric(ICON_RETWEET, metrics["retweets"])}${metric(ICON_LIKE, metrics["likes"])}</div>`
     + "</div></div></div>";
 }
@@ -261,7 +271,7 @@ function renderCard(cardValue: unknown): string {
     : block;
 }
 
-function renderPost(postValue: unknown, mode: string, assets: ProfileAssets | null, convCounts: Map<string, number>): string {
+function renderPost(postValue: unknown, mode: string, assets: ProfileAssets | null, convCounts: Map<string, number>, mediaDir: string, manifest: Map<string, Json>): string {
   const post = record(postValue),
     tweetId = text(post["tweet_id"]) || "?",
     author = record(post["author"]),
@@ -299,7 +309,7 @@ function renderPost(postValue: unknown, mode: string, assets: ProfileAssets | nu
     urlValues = array(entities["urls"]),
     isContext = mode === "context",
     quoted = record(post["quoted_tweet"]),
-    quotedHtml = renderQuoted(quoted, tweetId, isContext ? "text-only" : mode, assets),
+    quotedHtml = renderQuoted(quoted, tweetId, isContext ? "text-only" : mode, assets, mediaDir, manifest),
     cardHtml = renderCard(post["card"]),
     metrics = record(post["metrics"]);
   const metricsHtml = `<div class="metrics">${metric(ICON_REPLY, metrics["replies"])}${metric(ICON_RETWEET, metrics["retweets"])}${metric(ICON_LIKE, metrics["likes"])}${metric(ICON_BOOKMARK, metrics["bookmarks"])}`
@@ -309,7 +319,7 @@ function renderPost(postValue: unknown, mode: string, assets: ProfileAssets | nu
     body = `<div class="unavailable">${esc(text(post["unavailable_reason"]) || "This post is unavailable.")}</div>`;
   } else {
     body = `<div class="p-text">${linkify(post["full_text"], urlValues, entities["mentions"], entities["hashtags"])}</div>`
-      + renderMedia(mediaItems(post, tweetId, false, mode)) + quotedHtml + cardHtml + metricsHtml;
+      + renderMedia(mediaItems(post, tweetId, false, mode, mediaDir, manifest)) + quotedHtml + cardHtml + metricsHtml;
   }
   if (showThread && !isContext) {
     body += `<button class="thread-btn" data-thread="${esc(conversationId)}">${ICON_THREAD}Thread</button>`;
@@ -406,7 +416,11 @@ export async function renderArchive(options: RenderArchiveOptions): Promise<Rend
     meta = record(data["export_metadata"]),
     mode = options.textOnly ? "text-only" : "media",
     mediaDir = join(folder, "media"),
-    output = options.output ?? join(folder, "archive.html");
+    output = options.output ?? join(folder, "archive.html"),
+    mediaManifest = new Map(array(data["media_manifest"])
+      .map((entry) => record(entry))
+      .filter((entry) => typeof entry["filename"] === "string")
+      .map((entry) => [text(entry["filename"]).replace(/\.[^.]+$/u, ""), entry] as const));
   let archiveKind: "posts" | "likes" | "bookmarks",
     posts: unknown[],
     profile: Json;
@@ -484,10 +498,10 @@ export async function renderArchive(options: RenderArchiveOptions): Promise<Rend
     const id = text(record(value)["conversation_id"]) || "";
     convCounts.set(id, (convCounts.get(id) ?? 0) + 1);
   }
-  for (const post of posts) parts.push(renderPost(post, mode, assets, convCounts));
+  for (const post of posts) parts.push(renderPost(post, mode, assets, convCounts, mediaDir, mediaManifest));
   if (contextPosts.length > 0) {
     parts.push('<div class="context-archive" hidden>\n');
-    for (const post of contextPosts) parts.push(renderPost(post, "context", assets, convCounts));
+    for (const post of contextPosts) parts.push(renderPost(post, "context", assets, convCounts, mediaDir, mediaManifest));
     parts.push("</div>\n");
   }
   const contextFailed = Number(stats["context_failed"] ?? 0),

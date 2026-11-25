@@ -124,6 +124,36 @@ describe("renderArchive", () => {
     }
   });
 
+  it("marks unarchived media and shows every gallery item", async () => {
+    mkdirSync(scratchRoot, { recursive: true });
+    const folder = mkdtempSync(join(scratchRoot, "x-render-media-"));
+    try {
+      writeFileSync(join(folder, "posts.json"), JSON.stringify({
+        posts: [{
+          tweet_id: "1",
+          full_text: "photos",
+          media: Array.from({ length: 5 }, (_, index) => ({ type: "photo", url: `https://pbs.twimg.com/media/${index}.jpg` })),
+        }],
+        media_manifest: [
+          { tweet_id: "1", index: 0, filename: "1_0.jpg", url: "https://pbs.twimg.com/media/0.jpg", status: "downloaded", bytes: 10, sha256: "abc" },
+          { tweet_id: "1", index: 1, filename: "1_1.jpg", url: "https://pbs.twimg.com/media/1.jpg", status: "skipped", bytes: 99 },
+        ],
+        export_metadata: { exported_at: "2026-01-01" },
+      }));
+      mkdirSync(join(folder, "media"), { recursive: true });
+      writeFileSync(join(folder, "media", "1_0.jpg"), "bytes");
+      const result = await renderArchive({ folder, noFetch: true });
+      const html = readFileSync(result.output, "utf8");
+      expect(html).toContain("Media not archived: skipped during collection");
+      expect(html).toContain('href="media/1_0.jpg"');
+      expect(html.match(/class="item"/gu)?.length).toBe(1);
+      expect(html.match(/class="unavailable-media"/gu)?.length).toBe(4);
+      expect(html).toContain("media/1_4.jpg");
+    } finally {
+      rmSync(folder, { recursive: true, force: true });
+    }
+  });
+
   it("reports thread context gaps", async () => {
     mkdirSync(scratchRoot, { recursive: true });
     const folder = mkdtempSync(join(scratchRoot, "x-render-context-"));

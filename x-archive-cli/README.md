@@ -55,6 +55,10 @@ folder must travel intact (a 13 GB inlined file helps nobody); open
 `archive.html` to browse the archive. `--export-only` and `--offline` never fetch
 profile assets: they use cached files in `media/` or neutral placeholders.
 
+The JSON carries a `media_manifest` with each file's source URL, status, size
+and hash. The HTML uses it to link local files and marks skipped or failed
+media instead of leaving a broken image.
+
 `collection: complete` in `debug.json` means X's timeline was fully
 scanned. X rate-limits large timelines aggressively; if a run stops
 early, re-running resumes from the saved cursor — saved pages are

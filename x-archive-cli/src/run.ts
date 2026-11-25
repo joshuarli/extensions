@@ -1,4 +1,4 @@
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   collect,
@@ -10,7 +10,7 @@ import {
   assembleLikesArchive,
   assembleProfileArchive,
 } from "../../x-archive-core/src/storage.ts";
-import { collectMediaJobs } from "../../x-archive-core/src/media.ts";
+import { buildMediaManifest, collectMediaJobs } from "../../x-archive-core/src/media.ts";
 import {
   bookmarksFolderName,
   likesFolderName,
@@ -184,6 +184,10 @@ async function finishExport(input: FinishExportInput): Promise<RunSummary> {
     status.add("Media download stopped; saved media files are kept.");
   }
   const mediaDownloaded = jobsAll.jobs.length - jobs.length + media.downloaded;
+  const exportPath = join(outDir, jsonFile);
+  const exportData = JSON.parse(readFileSync(exportPath, "utf8")) as Record<string, unknown>;
+  exportData["media_manifest"] = buildMediaManifest(jobsAll.jobs, media);
+  writeJsonFile(exportPath, exportData, 0o644);
   const report = buildDebugReport(
     {
       accountId: session.userId,

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   closeSync,
   copyFileSync,
@@ -21,7 +22,7 @@ const CONCURRENCY = 4;
 const MIN_BYTES = 512;
 
 type FetchResult =
-  | { kind: "downloaded"; bytes: number }
+  | { kind: "downloaded"; bytes: number; sha256: string }
   | { kind: "skipped"; bytes: number }
   | { kind: "failed"; error: string }
   | { kind: "interrupted" };
@@ -106,6 +107,7 @@ async function fetchOne(
       let total = 0;
       let tooLarge = false;
       let readError: string | null = null;
+      const hash = createHash("sha256");
       try {
         for (;;) {
           const { done, value } = await reader.read();
@@ -116,6 +118,7 @@ async function fetchOne(
             break;
           }
           writeAll(handle, chunk);
+          hash.update(chunk);
           total += chunk.length;
         }
       } catch (error) {
@@ -137,7 +140,7 @@ async function fetchOne(
       mkdirSync(join(folder, "media"), { recursive: true });
       placeFile(temporary, target);
       temporary = null;
-      return { kind: "downloaded", bytes: total };
+      return { kind: "downloaded", bytes: total, sha256: hash.digest("hex") };
     } catch (error) {
       if (signal.aborted) return { kind: "interrupted" };
       lastError = String(error instanceof Error ? error.message : error).slice(0, 160);
@@ -173,6 +176,7 @@ export async function downloadPostsMedia(
   const tempDir = mkdtempSync(join(tmpdir(), "x-archive-media-"));
   const failed: Array<{ filename: string; error: string }> = [];
   const skipped: Array<{ filename: string; bytes: number }> = [];
+  const downloadedDetails: Array<{ filename: string; bytes: number; sha256: string }> = [];
   let downloaded = 0;
   let cursor = 0;
   let stopped = false;
@@ -184,7 +188,10 @@ export async function downloadPostsMedia(
         cursor += 1;
         const job = jobs[index]!;
         const result = await fetchOne(session, tempDir, folder, job, 3, maxBytes, signal);
-        if (result.kind === "downloaded") downloaded += 1;
+        if (result.kind === "downloaded") {
+          downloaded += 1;
+          downloadedDetails.push({ filename: job.filename, bytes: result.bytes, sha256: result.sha256 });
+        }
         else if (result.kind === "skipped") skipped.push({ filename: job.filename, bytes: result.bytes });
         else if (result.kind === "interrupted") { stopped = true; break; }
         else failed.push({ filename: job.filename, error: result.error });
@@ -197,5 +204,5 @@ export async function downloadPostsMedia(
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }
-  return { total, downloaded, failed, skipped, stopped: stopped || signal.aborted };
+  return { total, downloaded, failed, skipped, downloadedDetails, stopped: stopped || signal.aborted };
 }
