@@ -1,6 +1,8 @@
 import { chromium, type BrowserContext } from "playwright";
 import { join } from "node:path";
 import {
+  BOOKMARK_OPERATIONS,
+  LIKES_OPERATIONS,
   CredentialsSchema,
   PROFILE_OPERATIONS,
   captureErrorKey,
@@ -64,8 +66,8 @@ function cacheCredentials(credentials: Credentials): void {
   } catch { /* The cache is an optimization; never fail the run over it. */ }
 }
 
-const BOOKMARK_CAPTURE_OPERATIONS = new Set<Operation>(["Bookmarks", "BookmarkFoldersSlice", "BookmarkFolderTimeline"]);
-const LIKE_CAPTURE_OPERATIONS = new Set<Operation>(["Likes"]);
+const BOOKMARK_CAPTURE_OPERATIONS = new Set<Operation>(BOOKMARK_OPERATIONS);
+const LIKE_CAPTURE_OPERATIONS = new Set<Operation>(LIKES_OPERATIONS);
 const PROFILE_CAPTURE_OPERATIONS = new Set<Operation>(PROFILE_OPERATIONS);
 
 export function missingCaptures(credentials: Credentials, required: RequiredCaptures): string[] {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Credentials } from "../../x-archive-core/src/capture.ts";
+import { BOOKMARK_OPERATIONS, LIKES_OPERATIONS, type Credentials } from "../../x-archive-core/src/capture.ts";
 import {
   capturePages,
   hasRequiredCaptures,
@@ -18,6 +18,15 @@ describe("capturePages", () => {
       "https://x.com/i/history",
       "https://x.com/i/history/likes",
     ]);
+  });
+
+  it("maps every exported bookmark and likes operation to a capture page", () => {
+    for (const operation of BOOKMARK_OPERATIONS) {
+      expect(capturePages([[operation]], undefined)).toContain("https://x.com/i/history");
+    }
+    for (const operation of LIKES_OPERATIONS) {
+      expect(capturePages([[operation]], undefined)).toContain("https://x.com/i/history/likes");
+    }
   });
 
   it("opens the target profile for lookup and timeline operations", () => {

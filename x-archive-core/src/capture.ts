@@ -2,8 +2,8 @@ import { Schema } from "effect";
 
 const HOME_OPERATIONS = ["HomeTimeline", "HomeLatestTimeline"] as const;
 export const SOCIAL_OPERATIONS = ["Following", "Followers"] as const;
-const BOOKMARK_OPERATIONS = ["Bookmarks", "BookmarkFoldersSlice", "BookmarkFolderTimeline"] as const;
-const LIKES_OPERATIONS = ["Likes"] as const;
+export const BOOKMARK_OPERATIONS = ["Bookmarks", "BookmarkFoldersSlice", "BookmarkFolderTimeline"] as const;
+export const LIKES_OPERATIONS = ["Likes"] as const;
 export const PROFILE_OPERATIONS = ["UserTweets", "UserTweetsAndReplies", "UserOriginalsTimeline", "UserRepliesTimeline"] as const;
 const LOOKUP_OPERATIONS = ["UserByScreenName"] as const;
 const OPERATIONS = [...HOME_OPERATIONS, ...SOCIAL_OPERATIONS, ...BOOKMARK_OPERATIONS, ...LIKES_OPERATIONS, ...PROFILE_OPERATIONS, ...LOOKUP_OPERATIONS] as const;

@@ -57,15 +57,6 @@ Next: 46
 - **Fix with:** durable-state
 - **Effort:** M
 
-### EXT-37 · P3 · X capture operation sets are duplicated between core and CLI
-
-- **Area:** X archive / credential capture
-- **Where:** x-archive-core/src/capture.ts:5-8; x-archive-cli/src/deps.ts:66-68
-- **Problem:** Bookmark and likes operation tuples are private to capture.ts and re-listed verbatim in deps.ts; a rename missed in the router leaves the operation uncapturable with a misleading remedy.
-- **Recommendation:** Export the tuples or membership helpers from capture.ts, derive the CLI sets from them, and test that every operation group maps to a capture page.
-- **Fix with:** single-source-of-truth
-- **Effort:** S
-
 ### EXT-41 · P3 · ChatGPT archive completeness is sticky and early stop checks one page
 
 - **Area:** ChatGPT archive / durable state
