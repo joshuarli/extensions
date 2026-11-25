@@ -352,6 +352,7 @@ export async function downloadProfile(handle: string, options: RunOptions): Prom
   const outDir = join(options.outRoot, profileDir);
   mkdirSync(outDir, { recursive: true });
   const store = new SqliteProfileStore(profileDbPath(outDir), targetUserId);
+  status.say("session", "Checking legacy extension archives…");
   if (options.backend.kind === "bctl") {
     status.say("session", "Seeding needs the Helium extension, which the bctl appliance does not have; continuing with the local store.");
   } else {
@@ -441,6 +442,7 @@ export async function downloadSelf(options: RunOptions): Promise<RunSummary[]> {
     onStatus: (text) => status.say("session", text),
     signal: options.signal,
   });
+  status.say("session", "Checking legacy extension archives…");
   if (options.backend.kind === "bctl") {
     status.say("session", "Seeding needs the Helium extension, which the bctl appliance does not have; continuing with the local store.");
   } else {

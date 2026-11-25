@@ -44,9 +44,13 @@ async function countsFromExtension(session: XSession, cdpUrl: string, extensionI
     return await worker.evaluate(async (userId: string): Promise<SeedCounts> => {
       const count = (name: string, store: string, index?: string, key?: IDBValidKey) =>
         new Promise<number>((resolvePromise, rejectPromise) => {
-          const request = (() => {
-            const r = indexedDB.open(name);
-            r.onsuccess = () => {
+          const r = indexedDB.open(name);
+          r.onupgradeneeded = () => {
+            r.result.close();
+            rejectPromise(new Error("Legacy archive database not found: " + name));
+          };
+          r.onsuccess = () => {
+            try {
               const db = r.result;
               const objectStore = db.transaction(store, "readonly").objectStore(store);
               const req = index && key !== undefined
@@ -54,18 +58,26 @@ async function countsFromExtension(session: XSession, cdpUrl: string, extensionI
                 : objectStore.count();
               req.onsuccess = () => resolvePromise(req.result as number);
               req.onerror = () => rejectPromise(req.error);
-            };
-            r.onerror = () => rejectPromise(r.error);
-            return r;
-          })();
-          void request;
+            } catch (error) {
+              rejectPromise(error);
+            }
+          };
+          r.onerror = () => rejectPromise(r.error);
         });
       const keys = (name: string, store: string) => new Promise<IDBValidKey[]>((resolvePromise) => {
         const r = indexedDB.open(name);
+        r.onupgradeneeded = () => {
+          r.result.close();
+          resolvePromise([]);
+        };
         r.onsuccess = () => {
-          const req = r.result.transaction(store, "readonly").objectStore(store).getAllKeys();
-          req.onsuccess = () => resolvePromise(req.result as IDBValidKey[]);
-          req.onerror = () => resolvePromise([]);
+          try {
+            const req = r.result.transaction(store, "readonly").objectStore(store).getAllKeys();
+            req.onsuccess = () => resolvePromise(req.result as IDBValidKey[]);
+            req.onerror = () => resolvePromise([]);
+          } catch {
+            resolvePromise([]);
+          }
         };
         r.onerror = () => resolvePromise([]);
       });
@@ -95,28 +107,48 @@ async function dumpFromExtension(session: XSession, cdpUrl: string, extensionId:
     return await worker.evaluate(async (userId: string): Promise<CdpDump> => {
       const open = (name: string) => new Promise<IDBDatabase>((resolvePromise, rejectPromise) => {
         const request = indexedDB.open(name);
+        request.onupgradeneeded = () => {
+          request.result.close();
+          rejectPromise(new Error("Legacy archive database not found: " + name));
+        };
         request.onsuccess = () => resolvePromise(request.result);
         request.onerror = () => rejectPromise(request.error);
       });
       const all = (db: IDBDatabase, store: string) => new Promise<unknown[]>((resolvePromise, rejectPromise) => {
-        const request = db.transaction(store, "readonly").objectStore(store).getAll();
-        request.onsuccess = () => resolvePromise(request.result as unknown[]);
-        request.onerror = () => rejectPromise(request.error);
+        try {
+          const request = db.transaction(store, "readonly").objectStore(store).getAll();
+          request.onsuccess = () => resolvePromise(request.result as unknown[]);
+          request.onerror = () => rejectPromise(request.error);
+        } catch (error) {
+          rejectPromise(error);
+        }
       });
       const get = (db: IDBDatabase, store: string, key: string) => new Promise<unknown>((resolvePromise) => {
-        const request = db.transaction(store, "readonly").objectStore(store).get(key);
-        request.onsuccess = () => resolvePromise(request.result as unknown);
-        request.onerror = () => resolvePromise(null);
+        try {
+          const request = db.transaction(store, "readonly").objectStore(store).get(key);
+          request.onsuccess = () => resolvePromise(request.result as unknown);
+          request.onerror = () => resolvePromise(null);
+        } catch {
+          resolvePromise(null);
+        }
       });
       const keys = (db: IDBDatabase, store: string) => new Promise<IDBValidKey[]>((resolvePromise, rejectPromise) => {
-        const request = db.transaction(store, "readonly").objectStore(store).getAllKeys();
-        request.onsuccess = () => resolvePromise(request.result as IDBValidKey[]);
-        request.onerror = () => rejectPromise(request.error);
+        try {
+          const request = db.transaction(store, "readonly").objectStore(store).getAllKeys();
+          request.onsuccess = () => resolvePromise(request.result as IDBValidKey[]);
+          request.onerror = () => rejectPromise(request.error);
+        } catch (error) {
+          rejectPromise(error);
+        }
       });
       const postsFor = (db: IDBDatabase, targetUserId: string) => new Promise<unknown[]>((resolvePromise, rejectPromise) => {
-        const request = db.transaction("posts", "readonly").objectStore("posts").index("by-target").getAll(targetUserId);
-        request.onsuccess = () => resolvePromise(request.result as unknown[]);
-        request.onerror = () => rejectPromise(request.error);
+        try {
+          const request = db.transaction("posts", "readonly").objectStore("posts").index("by-target").getAll(targetUserId);
+          request.onsuccess = () => resolvePromise(request.result as unknown[]);
+          request.onerror = () => rejectPromise(request.error);
+        } catch (error) {
+          rejectPromise(error);
+        }
       });
 
       const out: CdpDump = { bookmarks: null, likes: null, profiles: [] };
