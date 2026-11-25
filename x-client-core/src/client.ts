@@ -62,8 +62,10 @@ function cachedCredentials(): Credentials {
   };
 }
 
-async function captureFollowingTab(
+async function captureHomeTab(
   cdpUrl: string,
+  operation: "HomeTimeline" | "HomeLatestTimeline",
+  clickFollowing: boolean,
   signal: AbortSignal,
   onStatus: ((message: string) => void) | undefined,
 ): Promise<Credentials> {
@@ -82,12 +84,14 @@ async function captureFollowingTab(
           if (entry) captured = mergeCapture(captured, entry);
         } catch { /* Ignore requests that are not X GraphQL captures. */ }
       });
-      onStatus?.("Clicking the Following tab on x.com/home to capture HomeLatestTimeline…");
+      onStatus?.("Observing " + operation + " from x.com/home…");
       await page.goto("https://x.com/home", { waitUntil: "domcontentloaded", timeout: 20_000 }).catch(() => {});
-      await page.getByRole("tab", { name: /following/iu }).first().click({ timeout: 15_000 }).catch(() => {});
+      if (clickFollowing) {
+        await page.getByRole("tab", { name: /following/iu }).first().click({ timeout: 15_000 }).catch(() => {});
+      }
       const deadline = Date.now() + 20_000;
-      while (!captured.queryIds["HomeLatestTimeline"] && Date.now() < deadline) {
-        if (signal.aborted) throw new Error("Interrupted while capturing HomeLatestTimeline.");
+      while (!captured.queryIds[operation] && Date.now() < deadline) {
+        if (signal.aborted) throw new Error("Interrupted while capturing " + operation + ".");
         await new Promise((resolve) => setTimeout(resolve, 500));
       }
     } finally {
@@ -113,14 +117,13 @@ export async function connectX(options: ConnectXOptions = {}): Promise<XClient> 
   }
   const feed: Feed = options.feed ?? "home-for-you";
   const operation = operationForFeed(feed);
-  const required: RequiredCaptures = options.required ?? [[operation]];
   const credentials = await readCapturedCredentials(session, resolved.cdpUrl, resolved.backend, {
-    required: feed === "home-following" ? [] : required,
+    required: [],
     onStatus: options.onStatus,
     signal,
   });
   if (!credentials.queryIds[operation]) {
-    const fresh = await captureFollowingTab(resolved.cdpUrl, signal, options.onStatus);
+    const fresh = await captureHomeTab(resolved.cdpUrl, operation, feed === "home-following", signal, options.onStatus);
     const merged: Credentials = {
       ...credentials,
       queryIds: { ...credentials.queryIds, ...fresh.queryIds },
