@@ -146,7 +146,7 @@ function linkify(value: unknown, urls: unknown, mentions: unknown, hashtags: unk
       href: text(url["expanded_url"]) || text(url["url"]) || text(url["href"]),
       display: text(url["display_url"]) || text(url["expanded_url"]) || text(url["url"]),
     };
-  }).filter((spec) => spec.raw.length > 0);
+  }).filter((spec) => spec.raw.length > 0 && /^https?:\/\//u.test(spec.href));
   const rawUrls = [...new Map(specs.map((spec) => [spec.raw, spec])).values()]
     .sort((left, right) => right.raw.length - left.raw.length);
   for (const { raw, href, display } of rawUrls) {

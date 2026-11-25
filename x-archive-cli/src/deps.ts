@@ -3,6 +3,7 @@ import { join } from "node:path";
 import {
   BOOKMARK_OPERATIONS,
   LIKES_OPERATIONS,
+  CaptureErrorSchema,
   CredentialsSchema,
   PROFILE_OPERATIONS,
   captureErrorKey,
@@ -178,8 +179,7 @@ async function workerCaptureError(
       const all = await chrome.storage.local.get(key);
       return all[key] ?? null;
     }, captureErrorKey(userId));
-    const stored = raw as { message?: unknown } | null;
-    return typeof stored?.["message"] === "string" ? stored["message"] : null;
+    return Schema.decodeUnknownSync(CaptureErrorSchema)(raw).message;
   } catch {
     return null;
   }

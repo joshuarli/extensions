@@ -97,6 +97,7 @@ export async function main(argv: readonly string[]): Promise<number> {
         allFailures.push(...summary.failures);
       }
     }
+    if (interrupt.stopped()) return dieBySignal(interrupt);
     if (allFailures.length > 0) {
       process.stderr.write("x completed with failures:\n" + allFailures.map((failure) => "  " + failure).join("\n") + "\n");
       return 1;

@@ -124,6 +124,27 @@ describe("renderArchive", () => {
     }
   });
 
+  it("does not turn a hostile entity URL into a link", async () => {
+    mkdirSync(scratchRoot, { recursive: true });
+    const folder = mkdtempSync(join(scratchRoot, "x-render-url-"));
+    try {
+      writeFileSync(join(folder, "posts.json"), JSON.stringify({
+        posts: [{
+          tweet_id: "1",
+          full_text: "see https://t.co/x",
+          entities: { urls: [{ url: "https://t.co/x", expanded_url: "javascript:alert(1)" }] },
+        }],
+        export_metadata: { exported_at: "2026-01-01" },
+      }));
+      const result = await renderArchive({ folder, noFetch: true });
+      const html = readFileSync(result.output, "utf8");
+      expect(html).not.toContain('href="javascript:');
+      expect(html).toContain("https://t.co/x");
+    } finally {
+      rmSync(folder, { recursive: true, force: true });
+    }
+  });
+
   it("marks unarchived media and shows every gallery item", async () => {
     mkdirSync(scratchRoot, { recursive: true });
     const folder = mkdtempSync(join(scratchRoot, "x-render-media-"));

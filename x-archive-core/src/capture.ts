@@ -31,6 +31,13 @@ export const CredentialsSchema = Schema.Struct({
 
 export type Credentials = Schema.Schema.Type<typeof CredentialsSchema>;
 
+export const CaptureErrorSchema = Schema.Struct({
+  message: Schema.String,
+  at: Schema.String,
+});
+
+export type CaptureError = Schema.Schema.Type<typeof CaptureErrorSchema>;
+
 export function credentialKey(userId: string): string {
   return "x_bookmarks_credentials_" + userId;
 }

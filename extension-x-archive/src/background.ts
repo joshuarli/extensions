@@ -37,8 +37,8 @@ export function handleXArchiveRequest(
         await chrome.storage.local.set({
           [captureErrorKey(userId ?? "unknown")]: { message, at: new Date().toISOString() },
         });
-      } catch {
-        return;
+      } catch (persistError) {
+        console.warn("Could not persist X capture error", persistError);
       }
     } finally {
       pendingOperations.delete(capture.operation);

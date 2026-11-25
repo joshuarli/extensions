@@ -45,6 +45,8 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: read
+    env:
+      TMPDIR: ${{ github.workspace }}/.work/tmp
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -59,13 +61,14 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Install pinned Chromium
         run: pnpm exec playwright install --with-deps chromium
+      - name: Prepare temporary directory
+        run: mkdir -p .work/tmp
+      - name: Build the production bundle
+        run: make dist
+      - name: Check embedded assets
+        run: pnpm run assets:check
       - name: Exercise the installed extension
-        run: |
-          mkdir -p .work/tmp
-          export TMPDIR="$PWD/.work/tmp"
-          make dist
-          pnpm run assets:check
-          pnpm run test:browser extension-onefile/test/browser/extension-runtime.spec.ts extension-onefile/test/browser/capture.spec.ts extension-onefile/test/browser/installed-capture.spec.ts --output="$PWD/.work/tmp/playwright-results"
+        run: pnpm run test:browser extension-onefile/test/browser/extension-runtime.spec.ts extension-onefile/test/browser/capture.spec.ts extension-onefile/test/browser/installed-capture.spec.ts --output=.work/tmp/playwright-results
       - name: Upload Onefile browser failure output
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

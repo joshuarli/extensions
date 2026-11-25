@@ -463,6 +463,7 @@ export async function downloadSelf(options: RunOptions): Promise<RunSummary[]> {
     signal: options.signal,
   });
   status.say("session", "Checking legacy extension archives…");
+  const selfFailures: string[] = [];
   if (options.backend.kind === "bctl") {
     status.say("session", "Seeding needs the Helium extension, which the bctl appliance does not have; continuing with the local store.");
   } else {
@@ -474,11 +475,11 @@ export async function downloadSelf(options: RunOptions): Promise<RunSummary[]> {
         + (seed.likes.already ? " (already up to date)" : ` (${seed.likes.added ?? 0} added, ${seed.likes.updated ?? 0} updated)`)
         + (seed.profiles.length ? ", " + seed.profiles.length + " profile archive(s)" : "") + ".");
     } catch (error) {
+      if (!options.signal.aborted) selfFailures.push("Helium seeding unavailable: " + (error instanceof Error ? error.message : String(error)));
       status.say("session", "Helium seeding unavailable: " + (error instanceof Error ? error.message : String(error)) + ". Continuing with the local store.");
     }
   }
   const summaries: RunSummary[] = [];
-  const selfFailures: string[] = [];
   if (credentials.queryIds["Bookmarks"] && !options.signal.aborted) {
     summaries.push(await downloadBookmarks(session, credentials, options, status));
   } else if (!options.signal.aborted) {
@@ -501,7 +502,7 @@ export async function downloadSelf(options: RunOptions): Promise<RunSummary[]> {
       status.say("social", "Saved " + social.following + " following and " + social.followers
         + " followers to " + social.folder + "/ (" + social.reason + ").");
     } catch (error) {
-      selfFailures.push("Following/followers capture failed: " + (error instanceof Error ? error.message : String(error)));
+      if (!options.signal.aborted) selfFailures.push("Following/followers capture failed: " + (error instanceof Error ? error.message : String(error)));
       status.say("social", "Following/followers capture failed: "
         + (error instanceof Error ? error.message : String(error)));
     }

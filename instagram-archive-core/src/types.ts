@@ -1,24 +1,30 @@
+import { Schema } from "effect";
+
 export const COLLECTION_FORMAT = "instagram-archive-collection";
 export const COLLECTION_VERSION = 1;
 
-export type PostType = "image" | "video" | "carousel";
-export type MediaKind = "image" | "video";
+export const MediaKindSchema = Schema.Literals(["image", "video"]);
+export type MediaKind = Schema.Schema.Type<typeof MediaKindSchema>;
+export const PostTypeSchema = Schema.Literals(["image", "video", "carousel"]);
+export type PostType = Schema.Schema.Type<typeof PostTypeSchema>;
 export type CollectionKind = "profile" | "saved";
 
-export interface MediaRef {
-  readonly url: string;
-  readonly kind: MediaKind;
-  readonly width: number;
-  readonly height: number;
-}
+export const MediaRefSchema = Schema.Struct({
+  url: Schema.String,
+  kind: MediaKindSchema,
+  width: Schema.Number,
+  height: Schema.Number,
+});
+export type MediaRef = Schema.Schema.Type<typeof MediaRefSchema>;
 
-export interface Post {
-  readonly shortcode: string;
-  readonly username: string | null;
-  readonly postType: PostType;
-  readonly caption: string | null;
-  readonly media: readonly MediaRef[];
-}
+export const PostSchema = Schema.Struct({
+  shortcode: Schema.String,
+  username: Schema.NullOr(Schema.String),
+  postType: PostTypeSchema,
+  caption: Schema.NullOr(Schema.String),
+  media: Schema.Array(MediaRefSchema),
+});
+export type Post = Schema.Schema.Type<typeof PostSchema>;
 
 export interface MembershipRecord {
   readonly shortcode: string;
