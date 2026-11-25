@@ -111,15 +111,6 @@ Next: 45
 - **Fix with:** none
 - **Effort:** M
 
-### EXT-28 · P2 · Right-click browser behavior has no runner
-
-- **Area:** Tests / invariants
-- **Where:** AGENTS.md:58; extension-allow-right-click/test/user-select-restoration.browser.test.ts; vitest.config.ts:6; extension-onefile/playwright.config.ts:4; extension-chatgpt/playwright.config.ts:4; package.json:21-22
-- **Problem:** The documented user-select restoration spec is excluded from Vitest and sits outside both Playwright testDirs, so no command or CI job runs it.
-- **Recommendation:** Include the spec in a Playwright testDir and run it in the installed-browser job.
-- **Fix with:** none
-- **Effort:** S
-
 ### EXT-29 · P2 · Browser CI failures leave no diagnostic artifacts
 
 - **Area:** CI / operability

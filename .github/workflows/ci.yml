@@ -65,7 +65,19 @@ jobs:
           export TMPDIR="$PWD/.work/tmp"
           make dist
           pnpm run test:browser extension-onefile/test/browser/extension-runtime.spec.ts extension-onefile/test/browser/capture.spec.ts extension-onefile/test/browser/installed-capture.spec.ts --output="$PWD/.work/tmp/playwright-results"
+      - name: Upload Onefile browser failure output
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: playwright-onefile
+          path: .work/tmp/playwright-results
       - name: Exercise the ChatGPT organizer in the installed suite
         run: |
           export TMPDIR="$PWD/.work/tmp"
           pnpm run test:browser:chatgpt --output="$PWD/.work/tmp/playwright-results-chatgpt"
+      - name: Upload ChatGPT browser failure output
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: playwright-chatgpt
+          path: .work/tmp/playwright-results-chatgpt
