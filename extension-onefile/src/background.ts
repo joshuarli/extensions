@@ -64,16 +64,20 @@ export function createOnefileBackground(
         }),
       fetchResource: (url) => fetchResourceBytes(url),
       downloadBlob: async (blob, filename) => {
-        const url = await createArchiveBlobUrl(
+        const archive = await createArchiveBlobUrl(
           await blob.arrayBuffer(),
           blob.type || "application/octet-stream",
         );
-        return chrome.downloads.download({
-          url,
-          filename,
-          saveAs: false,
-          conflictAction: "uniquify",
-        });
+        try {
+          return await chrome.downloads.download({
+            url: archive.url,
+            filename,
+            saveAs: false,
+            conflictAction: "uniquify",
+          });
+        } finally {
+          archive.release();
+        }
       },
       loadLoaderSource,
       setActionState: async (tabId, title, badge) => {

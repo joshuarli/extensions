@@ -255,15 +255,6 @@ Next: 45
 - **Fix with:** typing-audit
 - **Effort:** S
 
-### EXT-40 · P3 · Onefile offscreen blob URL is revoked on a timer
-
-- **Area:** Extension / resource lifecycle
-- **Where:** extension-onefile/src/offscreen.ts:26-28; extension-onefile/src/offscreen-download.ts:46-63; extension-onefile/src/background.ts:66-77
-- **Problem:** The URL is revoked 60 seconds after creation regardless of the download outcome, so a delayed download can reference a revoked URL; port1 is never closed.
-- **Recommendation:** Revoke on download completion or failure and close the port in the same path.
-- **Fix with:** lifecycle-concurrency
-- **Effort:** S
-
 ### EXT-41 · P3 · ChatGPT archive completeness is sticky and early stop checks one page
 
 - **Area:** ChatGPT archive / durable state

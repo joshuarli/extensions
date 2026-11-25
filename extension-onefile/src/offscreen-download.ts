@@ -1,3 +1,5 @@
+import { blobMessageKind, releaseBlobMessage } from "./offscreen-protocol.ts";
+
 const offscreenPath = "features/onefile/offscreen.html";
 
 let offscreenQueue: Promise<void> = Promise.resolve();
@@ -33,7 +35,12 @@ function ensureOffscreenDocument(): Promise<void> {
   return next;
 }
 
-export async function createArchiveBlobUrl(bytes: ArrayBuffer, type: string): Promise<string> {
+export interface ArchiveBlobUrl {
+  readonly url: string;
+  release(): void;
+}
+
+export async function createArchiveBlobUrl(bytes: ArrayBuffer, type: string): Promise<ArchiveBlobUrl> {
   await ensureOffscreenDocument();
   const offscreenUrl = chrome.runtime.getURL(offscreenPath);
   const clients = await (globalThis as unknown as { clients: OffscreenClients }).clients.matchAll({
@@ -44,21 +51,28 @@ export async function createArchiveBlobUrl(bytes: ArrayBuffer, type: string): Pr
   if (!client) throw new Error("Onefile offscreen document is unavailable.");
 
   const channel = new MessageChannel();
-  const url = new Promise<string>((resolve, reject) => {
-    channel.port1.onmessage = (event: MessageEvent<unknown>) => {
-      if (typeof event.data === "string") {
-        resolve(event.data);
-      } else {
-        reject(new Error("Onefile offscreen document returned an invalid URL."));
-      }
+  try {
+    const url = await new Promise<string>((resolve, reject) => {
+      channel.port1.onmessage = (event: MessageEvent<unknown>) => {
+        if (typeof event.data === "string") {
+          resolve(event.data);
+        } else {
+          reject(new Error("Onefile offscreen document returned an invalid URL."));
+        }
+      };
+      channel.port1.onmessageerror = () =>
+        reject(new Error("Onefile offscreen message failed."));
+      client.postMessage({ kind: blobMessageKind, bytes, type }, [bytes, channel.port2]);
+    });
+    return {
+      url,
+      release() {
+        channel.port1.postMessage(releaseBlobMessage);
+        channel.port1.close();
+      },
     };
-    channel.port1.onmessageerror = () =>
-      reject(new Error("Onefile offscreen message failed."));
-  });
-
-  client.postMessage(
-    { kind: "onefile/blob-url", bytes, type },
-    [bytes, channel.port2],
-  );
-  return url;
+  } catch (error) {
+    channel.port1.close();
+    throw error;
+  }
 }

@@ -1,29 +1,30 @@
-const blobMessageKind = "onefile/blob-url";
+import { isBlobMessage, releaseBlobMessage, type BlobPort } from "./offscreen-protocol.ts";
 
-interface BlobMessage {
-  kind: typeof blobMessageKind;
-  bytes: ArrayBuffer;
-  type: string;
-}
-
-function isBlobMessage(value: unknown): value is BlobMessage {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "kind" in value &&
-    value.kind === blobMessageKind &&
-    "bytes" in value &&
-    value.bytes instanceof ArrayBuffer &&
-    "type" in value &&
-    typeof value.type === "string"
-  );
-}
-
-navigator.serviceWorker.addEventListener("message", (event: MessageEvent<unknown>) => {
-  const data = event.data,
-    port = event.ports[0];
-  if (!port || !isBlobMessage(data)) return;
-  const url = URL.createObjectURL(new Blob([data.bytes], { type: data.type }));
+export function handleBlobUrlMessage(
+  data: unknown,
+  port: BlobPort,
+  createUrl: (blob: Blob) => string,
+  revokeUrl: (url: string) => void,
+): void {
+  if (!isBlobMessage(data)) return;
+  const url = createUrl(new Blob([data.bytes], { type: data.type }));
   port.postMessage(url);
-  setTimeout(() => URL.revokeObjectURL(url), 60_000);
-});
+  port.onmessage = (event: MessageEvent<unknown>) => {
+    if (event.data !== releaseBlobMessage) return;
+    revokeUrl(url);
+    port.close();
+  };
+}
+
+if (typeof navigator !== "undefined" && navigator.serviceWorker) {
+  navigator.serviceWorker.addEventListener("message", (event: MessageEvent<unknown>) => {
+    const port = event.ports[0] as BlobPort | undefined;
+    if (!port) return;
+    handleBlobUrlMessage(
+      event.data,
+      port,
+      (blob) => URL.createObjectURL(blob),
+      (url) => URL.revokeObjectURL(url),
+    );
+  });
+}
