@@ -255,15 +255,6 @@ Next: 45
 - **Fix with:** typing-audit
 - **Effort:** S
 
-### EXT-39 · P3 · Onefile CLI cannot force-exit on a second interrupt
-
-- **Area:** CLI / lifecycle
-- **Where:** lib/cli.ts:148-154,169-190; onefile-cli/src/main.ts:6-30; onefile-cli/src/save.ts:37-61
-- **Problem:** The callback interrupt form only calls back on SIGINT and abort is idempotent, so a hung browser close or capture ignores a second Ctrl-C; the listener also survives main.
-- **Recommendation:** Use createInterruptController in the onefile CLI, including close() and double-SIGINT force exit.
-- **Fix with:** lifecycle-concurrency
-- **Effort:** S
-
 ### EXT-40 · P3 · Onefile offscreen blob URL is revoked on a timer
 
 - **Area:** Extension / resource lifecycle

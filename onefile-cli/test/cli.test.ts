@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { extractStoredEntry, readStoredArchive } from "../../onefile-core/src/zip.ts";
 import { help, outputDirectory, parseArgs } from "../src/args.ts";
+import { main } from "../src/main.ts";
 import { assembleCapture } from "../src/save.ts";
 
 describe("onefile arguments", () => {
@@ -18,6 +19,19 @@ describe("onefile arguments", () => {
     expect(outputDirectory(undefined, { XDG_DATA_HOME: "/data" })).toBe("/data/onefile");
     expect(outputDirectory(undefined, { XDG_DATA_HOME: "/data", ONEFILE_OUT: "/direct" })).toBe("/direct");
     expect(outputDirectory("/explicit", { ONEFILE_OUT: "/direct" })).toBe("/explicit");
+  });
+});
+
+describe("onefile interrupt", () => {
+  it("removes its SIGINT listener when main returns", async () => {
+    const before = process.listenerCount("SIGINT");
+    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    try {
+      expect(await main(["--version"])).toBe(0);
+    } finally {
+      vi.restoreAllMocks();
+    }
+    expect(process.listenerCount("SIGINT")).toBe(before);
   });
 });
 
