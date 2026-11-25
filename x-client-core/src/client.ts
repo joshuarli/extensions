@@ -86,9 +86,8 @@ async function captureHomeTab(
       });
       onStatus?.("Observing " + operation + " from x.com/home…");
       await page.goto("https://x.com/home", { waitUntil: "domcontentloaded", timeout: 20_000 }).catch(() => {});
-      if (clickFollowing) {
-        await page.getByRole("tab", { name: /following/iu }).first().click({ timeout: 15_000 }).catch(() => {});
-      }
+      const tabName = clickFollowing ? /following/iu : /for you/iu;
+      await page.getByRole("tab", { name: tabName }).first().click({ timeout: 15_000 }).catch(() => {});
       const deadline = Date.now() + 20_000;
       while (!captured.queryIds[operation] && Date.now() < deadline) {
         if (signal.aborted) throw new Error("Interrupted while capturing " + operation + ".");
