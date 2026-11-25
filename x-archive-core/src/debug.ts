@@ -39,6 +39,7 @@ export interface DebugReportInput {
   media: MediaExportResult | null;
   reportName?: string;
   statusLog?: readonly DebugStatusEntry[];
+  failures?: readonly string[];
 }
 
 export interface DebugReport {
@@ -64,6 +65,7 @@ export interface DebugReport {
     skipped: Array<{ filename: string; bytes: number }>;
   } | null;
   last_error: LastErrorEntry | null;
+  failures: string[];
   status_log: DebugStatusEntry[];
   privacy_note: string;
 }
@@ -105,6 +107,7 @@ export function buildDebugReport(input: DebugReportInput, gathered: DebugGathere
       }
       : null,
     last_error: gathered.lastError,
+    failures: [...(input.failures ?? [])],
     status_log: statusLog.slice(-40),
     privacy_note: "No authorization headers, cookies, or CSRF tokens are included. Query IDs and client feature flags are public X web-app configuration, included for shape-drift debugging.",
   };

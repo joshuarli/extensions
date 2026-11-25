@@ -70,6 +70,7 @@ export interface RunSummary {
   mediaFailed: number;
   mediaSkipped: number;
   archiveHtml: string | null;
+  failures: string[];
   collectionReason: string;
   contextPosts: number;
 }
@@ -188,6 +189,7 @@ async function finishExport(input: FinishExportInput): Promise<RunSummary> {
   const exportData = JSON.parse(readFileSync(exportPath, "utf8")) as Record<string, unknown>;
   exportData["media_manifest"] = buildMediaManifest(jobsAll.jobs, media);
   writeJsonFile(exportPath, exportData, 0o644);
+  const failures: string[] = [];
   const report = buildDebugReport(
     {
       accountId: session.userId,
@@ -198,6 +200,7 @@ async function finishExport(input: FinishExportInput): Promise<RunSummary> {
       media,
       reportName: debugTool,
       statusLog: status.list(),
+      failures,
     },
     {
       credentials,
@@ -217,7 +220,10 @@ async function finishExport(input: FinishExportInput): Promise<RunSummary> {
       archiveHtml = rendered.output;
       status.say("rendering", "Rendered archive.html (" + rendered.posts + " posts).");
     } catch (error) {
-      status.add("Rendering failed: " + (error instanceof Error ? error.message : String(error)) + "; the JSON archive is still complete.");
+      const detail = error instanceof Error ? error.message : String(error);
+      failures.push("Rendering failed: " + detail);
+      status.add("Rendering failed: " + detail + "; the JSON archive is still complete.");
+      writeJsonFile(join(outDir, "debug.json"), { ...report, failures }, 0o644);
     }
   }
   return {
@@ -229,6 +235,7 @@ async function finishExport(input: FinishExportInput): Promise<RunSummary> {
     mediaFailed: media.failed.length + missingFromArchive,
     mediaSkipped: media.skipped.length,
     archiveHtml,
+    failures,
     collectionReason,
     contextPosts: input.contextPosts,
   };
@@ -255,7 +262,7 @@ async function downloadBookmarks(session: XSession, credentials: Credentials, op
     if (options.action === "collect") {
       const state = await store.loadState();
       return { folder: "-", jsonFile: "-", posts: (await store.allRecords()).length,
-        mediaTotal: 0, mediaDownloaded: 0, mediaFailed: 0, mediaSkipped: 0, archiveHtml: null,
+        mediaTotal: 0, mediaDownloaded: 0, mediaFailed: 0, mediaSkipped: 0, archiveHtml: null, failures: [],
         collectionReason: state?.reason ?? "unknown", contextPosts: 0 };
     }
   }
@@ -305,7 +312,7 @@ async function downloadLikes(session: XSession, credentials: Credentials, option
     if (options.action === "collect") {
       const state = await store.loadState();
       return { folder: "-", jsonFile: "-", posts: (await store.allRecords()).length,
-        mediaTotal: 0, mediaDownloaded: 0, mediaFailed: 0, mediaSkipped: 0, archiveHtml: null,
+        mediaTotal: 0, mediaDownloaded: 0, mediaFailed: 0, mediaSkipped: 0, archiveHtml: null, failures: [],
         collectionReason: state?.reason ?? "unknown", contextPosts: 0 };
     }
   }
@@ -407,7 +414,7 @@ export async function downloadProfile(handle: string, options: RunOptions): Prom
       const state = await store.loadState(targetUserId);
       progress.finish();
       return { folder: "-", jsonFile: "-", posts: (await store.allRecords()).length,
-        mediaTotal: 0, mediaDownloaded: 0, mediaFailed: 0, mediaSkipped: 0, archiveHtml: null,
+        mediaTotal: 0, mediaDownloaded: 0, mediaFailed: 0, mediaSkipped: 0, archiveHtml: null, failures: [],
         collectionReason: state?.reason ?? "unknown", contextPosts: await store.contextCount() };
     }
   }
@@ -471,6 +478,7 @@ export async function downloadSelf(options: RunOptions): Promise<RunSummary[]> {
     }
   }
   const summaries: RunSummary[] = [];
+  const selfFailures: string[] = [];
   if (credentials.queryIds["Bookmarks"] && !options.signal.aborted) {
     summaries.push(await downloadBookmarks(session, credentials, options, status));
   } else if (!options.signal.aborted) {
@@ -493,11 +501,13 @@ export async function downloadSelf(options: RunOptions): Promise<RunSummary[]> {
       status.say("social", "Saved " + social.following + " following and " + social.followers
         + " followers to " + social.folder + "/ (" + social.reason + ").");
     } catch (error) {
+      selfFailures.push("Following/followers capture failed: " + (error instanceof Error ? error.message : String(error)));
       status.say("social", "Following/followers capture failed: "
         + (error instanceof Error ? error.message : String(error)));
     }
   }
   progress.finish();
+  for (const summary of summaries) summary.failures.push(...selfFailures);
   if (summaries.length === 0 && !options.signal.aborted) {
     throw new Error("Nothing captured yet. Open https://x.com/i/history and https://x.com/i/history/likes in Helium once, then retry.");
   }
@@ -513,6 +523,7 @@ export function printSummary(label: string, summary: RunSummary): void {
     + (summary.mediaFailed ? " (" + summary.mediaFailed + " unavailable)" : "")
     + (summary.mediaSkipped ? " (" + summary.mediaSkipped + " skipped: too large)" : "")
     + (summary.contextPosts ? " · context " + summary.contextPosts + " posts" : "")
+    + (summary.failures.length ? " · " + summary.failures.length + " failure(s)" : "")
     + " · collection: " + summary.collectionReason
     + html + "\n",
   );

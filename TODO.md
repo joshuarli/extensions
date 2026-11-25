@@ -39,15 +39,6 @@ Next: 46
 - **Fix with:** security
 - **Effort:** S
 
-### EXT-31 · P2 · X self export exits successfully when requested outputs fail
-
-- **Area:** X archive / error model
-- **Where:** x-archive-cli/src/run.ts:206-217,353-362,446-455,479-482; x-archive-cli/src/main.ts:87-94
-- **Problem:** Render, social and seeding failures are only appended to an in-memory status log after debug.json is written, and main returns zero, so a partial archive looks complete.
-- **Recommendation:** Carry requested-output failures in RunSummary, include them in debug.json, and return a degraded status or non-zero exit.
-- **Fix with:** error-model
-- **Effort:** S
-
 ### EXT-32 · P2 · Concurrent X archive writers lose records
 
 - **Area:** X archive / durable state

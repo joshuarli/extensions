@@ -27,6 +27,7 @@ describe("debug report", () => {
         archive: { profile: null, collection: { posts: "complete", reason: "complete" }, stats: null },
         media: null,
         statusLog: [{ text: "Exported 10 posts", at: "2026-11-16T00:00:00.000Z" }],
+        failures: ["Rendering failed: bad template"],
       },
       {
         credentials,
@@ -46,5 +47,6 @@ describe("debug report", () => {
       authorization_present: true,
     });
     expect(report.status_log.map((entry) => entry.text)).toEqual(["Exported 10 posts"]);
+    expect(report.failures).toEqual(["Rendering failed: bad template"]);
   });
 });
