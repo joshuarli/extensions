@@ -53,6 +53,15 @@ the selected video and audio tracks with ffmpeg. When that endpoint is
 unavailable, it uses the standard URL. A mux failure records the file as failed
 without parking the archive.
 
+## Parity
+
+The scan path was compared against Python `ig` on 2026-11-25 using the same
+signed-in browser over `--backend cdp --cdp-url http://127.0.0.1:9222`. Both
+implementations recorded 123 posts from the same profile. Identity, membership,
+order, post types, media URL paths, and dimensions matched. Audio presence and
+duration were not compared because Instagram no longer serves the v1
+media-info endpoint used by the Python DASH path.
+
 ## Tests
 
 ```
