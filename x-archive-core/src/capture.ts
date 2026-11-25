@@ -20,6 +20,7 @@ export const CredentialsSchema = Schema.Struct({
   queryIds: Schema.Record(Schema.String, Schema.String),
   features: Schema.Record(Schema.String, Schema.String),
   fieldToggles: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+  methods: Schema.optional(Schema.Record(Schema.String, Schema.Literals(["GET", "POST"]))),
 });
 
 export type Credentials = Schema.Schema.Type<typeof CredentialsSchema>;
@@ -36,9 +37,12 @@ export function parseUserId(value: string | undefined): string | null {
   }
 }
 
+export type CapturedMethod = "GET" | "POST";
+
 export interface Capture {
   operation: Operation;
   queryId: string;
+  method?: CapturedMethod;
   authorization?: string;
   clientUuid?: string;
   transactionId?: string;
@@ -52,8 +56,12 @@ export function captureRequest(
   url: string,
   initiator: string | undefined,
   headers: readonly { name: string; value?: string | undefined }[],
+  method: string = "GET",
+  body?: string | undefined,
 ): Capture | null {
   if (initiator !== "https://x.com" && initiator !== "https://twitter.com") return null;
+  if (method.toUpperCase() !== "GET" && method.toUpperCase() !== "POST") return null;
+  const capturedMethod = method.toUpperCase() as CapturedMethod;
   const requestUrl = new URL(url);
   if (requestUrl.origin !== "https://x.com") return null;
   const match = new RegExp(
@@ -64,39 +72,77 @@ export function captureRequest(
   const queryId = match[1];
   const operation = match[2] as Operation;
   if (!queryId) return null;
+  const bodyValues = capturedMethod === "POST" ? jsonBody(body) : null;
   const values = new Map(headers.map((header) => [header.name.toLowerCase(), header.value]));
-  const validatedFeatures = booleanFeatureRecord(requestUrl.searchParams.get("features"));
+  const validatedFeatures = booleanFeatureRecord(requestUrl.searchParams.get("features"))
+    ?? (bodyValues ? booleanFeatureRecord(bodyValues["features"]) : undefined);
   const authorization = values.get("authorization");
   const clientUuid = values.get("x-client-uuid");
   const transactionId = values.get("x-client-transaction-id");
-  const fieldToggles = booleanFeatureRecord(requestUrl.searchParams.get("fieldToggles"));
-  const variables = requestUrl.searchParams.get("variables");
-  const targetUserId = isProfileOperation(operation) ? profileTargetFromVariables(requestUrl) : undefined;
+  const fieldToggles = booleanFeatureRecord(requestUrl.searchParams.get("fieldToggles"))
+    ?? (bodyValues ? booleanFeatureRecord(bodyValues["fieldToggles"]) : undefined);
+  const rawVariables = requestUrl.searchParams.get("variables")
+    ?? (bodyValues ? stringifyVariables(bodyValues["variables"]) : null);
+  const targetUserId = isProfileOperation(operation)
+    ? profileTargetFromVariables(requestUrl) ?? profileTargetFromBody(bodyValues)
+    : undefined;
   return {
     operation,
     queryId,
+    method: capturedMethod,
     ...(authorization ? { authorization } : {}),
     ...(clientUuid ? { clientUuid } : {}),
     ...(transactionId ? { transactionId } : {}),
     ...(validatedFeatures ? { features: validatedFeatures } : {}),
     ...(fieldToggles ? { fieldToggles } : {}),
     ...(targetUserId ? { targetUserId } : {}),
-    ...(variables ? { variables: variables.length > 1200 ? variables.slice(0, 1200) + "…" : variables } : {}),
+    ...(rawVariables ? { variables: rawVariables.length > 1200 ? rawVariables.slice(0, 1200) + "…" : rawVariables } : {}),
   };
 }
 
-function booleanFeatureRecord(raw: string | null): string | undefined {
-  if (!raw) return undefined;
+function jsonBody(body: string | undefined): Record<string, unknown> | null {
+  if (!body) return null;
   try {
-    const parsed: unknown = JSON.parse(raw);
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed) &&
-        Object.values(parsed).every((value) => typeof value === "boolean")) {
-      return raw;
-    }
-    return undefined;
+    const parsed: unknown = JSON.parse(body);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown> : null;
   } catch {
-    return undefined;
+    return null;
   }
+}
+
+function stringifyVariables(value: unknown): string | null {
+  if (typeof value === "string") return value;
+  if (value === undefined || value === null) return null;
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return null;
+  }
+}
+
+function booleanFeatureRecord(raw: unknown): string | undefined {
+  let parsed = raw;
+  if (typeof parsed === "string") {
+    try {
+      parsed = JSON.parse(parsed);
+    } catch {
+      return undefined;
+    }
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return undefined;
+  if (!Object.values(parsed).every((value) => typeof value === "boolean")) return undefined;
+  return JSON.stringify(parsed);
+}
+
+function profileTargetFromBody(body: Record<string, unknown> | null): string | undefined {
+  const variables = body?.["variables"];
+  if (!variables || typeof variables !== "object" || Array.isArray(variables)) return undefined;
+  const userId = (variables as Record<string, unknown>)["userId"]
+    ?? (variables as Record<string, unknown>)["user_id"];
+  if (typeof userId !== "string" && typeof userId !== "number") return undefined;
+  const digits = String(userId);
+  return /^\d+$/u.test(digits) ? digits : undefined;
 }
 
 function profileTargetFromVariables(requestUrl: URL): string | undefined {
@@ -120,6 +166,7 @@ export function mergeCapture(credentials: Credentials, capture: Capture): Creden
     ...(capture.authorization ? { authorization: capture.authorization } : {}),
     ...(capture.clientUuid ? { clientUuid: capture.clientUuid } : {}),
     ...(capture.transactionId ? { transactionId: capture.transactionId } : {}),
+    methods: { ...credentials.methods, ...(capture.method ? { [capture.operation]: capture.method } : {}) },
     queryIds: { ...credentials.queryIds, [capture.operation]: capture.queryId },
     features: {
       ...credentials.features,

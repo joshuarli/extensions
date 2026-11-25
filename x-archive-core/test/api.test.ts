@@ -125,6 +125,34 @@ describe("fieldToggles and graphql error bodies", () => {
     expect(decoded).toBe('{"withPayments":false,"withArticlePlainText":false}');
   });
 
+  it("sends POST operations with variables and features in a JSON body", async () => {
+    let method = "";
+    let body = "";
+    let url = "";
+    const originalFetch = globalThis.fetch;
+    (globalThis as Record<string, unknown>)["fetch"] = (async (requestUrl: string, init?: RequestInit) => {
+      url = requestUrl;
+      method = init?.method ?? "";
+      body = String(init?.body ?? "");
+      return new Response(JSON.stringify({ data: { ok: true } }));
+    }) as typeof fetch;
+    try {
+      await Effect.runPromise(graphqlRequest(
+        "123",
+        { ...credentials, methods: { Bookmarks: "POST" } },
+        "Bookmarks",
+        { count: 20, cursor: "next" },
+        new AbortController().signal,
+        session("u=123", "csrf-value"),
+      ));
+      expect(method).toBe("POST");
+      expect(url).toBe("https://x.com/i/api/graphql/AbC_123/Bookmarks");
+      expect(JSON.parse(body)).toEqual({ variables: { count: 20, cursor: "next" }, features: { ok: true } });
+    } finally {
+      (globalThis as Record<string, unknown>)["fetch"] = originalFetch;
+    }
+  });
+
   it("includes the graphql error message in 422 failures", async () => {
     const originalFetch = globalThis.fetch;
     (globalThis as Record<string, unknown>)["fetch"] = (async () => new Response(

@@ -22,6 +22,25 @@ describe("session and request capture", () => {
     expect(result).toMatchObject({ operation: "HomeTimeline", queryId: "AbC_123", authorization: "Bearer home" });
   });
 
+  it("captures a POST home timeline with variables and features from the JSON body", () => {
+    const url = bookmarkUrl.replace("Bookmarks", "HomeTimeline").split("?")[0] ?? "";
+    const body = JSON.stringify({
+      variables: { count: 20, cursor: "next" },
+      features: { enabled: true },
+      fieldToggles: { withPayments: false },
+    });
+    const result = captureRequest(url, "https://x.com", [{ name: "Authorization", value: "Bearer post" }], "POST", body);
+    expect(result).toMatchObject({
+      operation: "HomeTimeline",
+      method: "POST",
+      queryId: "AbC_123",
+      authorization: "Bearer post",
+      features: '{"enabled":true}',
+      fieldToggles: '{"withPayments":false}',
+      variables: '{"count":20,"cursor":"next"}',
+    });
+  });
+
   it("captures only real X page bookmark requests", () => {
     const headers = [
       { name: "Authorization", value: "Bearer actual" },

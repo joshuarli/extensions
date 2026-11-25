@@ -19,7 +19,7 @@ export function handleXArchiveRequest(
   updateQueue = updateQueue.then(async () => {
     const userId = await currentUserId();
     if (!userId) return;
-    const capture = captureRequest(details.url, details.initiator, details.requestHeaders ?? []);
+    const capture = captureRequest(details.url, details.initiator, details.requestHeaders ?? [], details.method);
     if (!capture) return;
     const previous = await readCredentials(userId);
     await chrome.storage.local.set({

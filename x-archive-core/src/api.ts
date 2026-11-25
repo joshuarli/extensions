@@ -54,6 +54,28 @@ export function buildGraphqlUrl(
   return "https://x.com/i/api/graphql/" + queryId + "/" + operation + "?" + params.toString();
 }
 
+export function buildGraphqlPostBody(
+  variables: Record<string, unknown>,
+  capturedFeatures: string | undefined,
+  capturedFieldToggles?: string,
+): string {
+  const decode = (raw: string | undefined): Record<string, unknown> => {
+    if (!raw) return {};
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+        ? parsed as Record<string, unknown> : {};
+    } catch {
+      return {};
+    }
+  };
+  return JSON.stringify({
+    variables,
+    features: decode(capturedFeatures),
+    ...(capturedFieldToggles ? { fieldToggles: decode(capturedFieldToggles) } : {}),
+  });
+}
+
 export function graphqlRequest(
   userId: string,
   credentials: Credentials,
@@ -89,22 +111,26 @@ export function graphqlRequest(
       if (credentials.clientUuid) headers["X-Client-Uuid"] = credentials.clientUuid;
       if (credentials.transactionId) headers["X-Client-Transaction-Id"] = credentials.transactionId;
 
-      const url = buildGraphqlUrl(
-        queryId,
-        operation,
-        variables,
-        credentials.features[operation],
-        credentials.fieldToggles?.[operation]
-          ?? (((GRAPHQL_FIELD_TOGGLES as readonly string[]).includes(operation)) ? DEFAULT_FIELD_TOGGLES : undefined),
-      );
+      const fieldToggles = credentials.fieldToggles?.[operation]
+        ?? (((GRAPHQL_FIELD_TOGGLES as readonly string[]).includes(operation)) ? DEFAULT_FIELD_TOGGLES : undefined);
+      const method = credentials.methods?.[operation] ?? "GET";
+      if (!/^[A-Za-z0-9_-]+$/u.test(queryId)) throw new RequestFailure("query", "Invalid captured X query ID.");
+      const url = method === "POST"
+        ? "https://x.com/i/api/graphql/" + queryId + "/" + operation
+        : buildGraphqlUrl(queryId, operation, variables, credentials.features[operation], fieldToggles);
+      const init: RequestInit = {
+        method,
+        credentials: "include",
+        headers,
+        signal: AbortSignal.any([signal, AbortSignal.timeout(30_000)]),
+      };
+      if (method === "POST") {
+        headers["Content-Type"] = "application/json";
+        init.body = buildGraphqlPostBody(variables, credentials.features[operation], fieldToggles);
+      }
       let response: Response;
       try {
-        response = await fetch(url, {
-          method: "GET",
-          credentials: "include",
-          headers,
-          signal: AbortSignal.any([signal, AbortSignal.timeout(30_000)]),
-        });
+        response = await fetch(url, init);
       } catch (cause) {
         if (signal.aborted) throw new RequestFailure("stopped", "Stopped by user.");
         throw new RequestFailure("network", "X request failed: " + String(cause));
