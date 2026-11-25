@@ -47,7 +47,7 @@ export async function followHandles(options: FollowOptions): Promise<FollowSumma
       const userId = extractLookupUserId(lookup);
       if (!userId) throw new Error("profile id not found");
       if (followingFromUserLookup(lookup) === true || tracked.has(userId)) {
-        markFollowed(ledgerPath, [userId]);
+        if (!options.dryRun) markFollowed(ledgerPath, [userId]);
         result.alreadyFollowing.push(name);
         continue;
       }

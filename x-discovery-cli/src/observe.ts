@@ -1,4 +1,5 @@
 import { chromium } from "playwright";
+import { Schema } from "effect";
 import { join } from "node:path";
 import { writeJsonFile } from "../../x-archive-cli/src/state.ts";
 import { deriveRecipe, type Observation } from "../../x-client-core/src/recipe.ts";
@@ -32,17 +33,24 @@ const SEMANTIC_NAMES: Record<string, string> = {
   Followers: "social.followers",
 };
 
-function parseValues(url: URL, postData: string | undefined): Record<string, unknown> {
-  const body = postData ? JSON.parse(postData) as Record<string, unknown> : null;
-  if (body && typeof body === "object") {
-    return { ...(body["variables"] as Record<string, unknown> ?? {}), ...body };
-  }
-  const raw = url.searchParams.get("variables");
+const ValuesSchema = Schema.Record(Schema.String, Schema.Unknown);
+
+function parseObject(raw: string | null): Record<string, unknown> {
+  if (!raw) return {};
   try {
-    return raw ? JSON.parse(raw) as Record<string, unknown> : {};
+    const parsed: unknown = JSON.parse(raw);
+    return Schema.decodeUnknownSync(ValuesSchema)(parsed) as Record<string, unknown>;
   } catch {
     return {};
   }
+}
+
+function parseValues(url: URL, postData: string | undefined): Record<string, unknown> {
+  const body = parseObject(postData ?? null);
+  if (Object.keys(body).length > 0) {
+    return { ...parseObject(JSON.stringify(body["variables"] ?? {})), ...body };
+  }
+  return parseObject(url.searchParams.get("variables"));
 }
 
 export async function observeOperation(options: {

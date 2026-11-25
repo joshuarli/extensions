@@ -75,19 +75,19 @@ export async function collectFeed(options: DiscoverOptions): Promise<CollectSumm
     if (!store.acquireJobLock(client.accountId, runId)) {
       throw new Error("Another discovery run is active for this account. Wait for it to finish.");
     }
-    store.beginRun({
-      runId,
-      accountId: client.accountId,
-      feed: options.feed,
-      startedAt: new Date().toISOString(),
-      endedAt: null,
-      stopReason: null,
-      budgetPages: options.maxPages,
-    });
     const knownBefore = new Set(store.allPosts().map((post) => post.tweet_id));
     let stopReason = "failed";
     let pages = 0;
     try {
+      store.beginRun({
+        runId,
+        accountId: client.accountId,
+        feed: options.feed,
+        startedAt: new Date().toISOString(),
+        endedAt: null,
+        stopReason: null,
+        budgetPages: options.maxPages,
+      });
       const result = await collectHomeTimeline({
         request: (variables, signal) => client.request(operationForFeed(client.feed), variables, signal),
         savePosts: async () => {},
@@ -147,7 +147,12 @@ export async function deriveFindings(options: {
     const links = posts.flatMap((post) => extractResourceLinks(post, options.project));
     const version = projectVersion(options.project);
     const inputHash = createHash("sha256").update(JSON.stringify([
-      posts.map((post) => post.tweet_id + ":" + (post.relationship?.kind ?? "original")),
+      posts.map((post) => JSON.stringify([
+        post.tweet_id,
+        post.full_text,
+        post.urls,
+        post.relationship?.kind ?? "original",
+      ])),
       version,
     ])).digest("hex").slice(0, 16);
     const raw = store.derivation(inputHash, version);
@@ -181,7 +186,8 @@ export function buildReport(outDir: string): string {
   try {
     let accounts: AccountFinding[] = [];
     try {
-      accounts = JSON.parse(readFileSync(join(outDir, "accounts.json"), "utf8")) as AccountFinding[];
+      const persisted: unknown = JSON.parse(readFileSync(join(outDir, "accounts.json"), "utf8"));
+      accounts = [...Schema.decodeUnknownSync(Schema.Array(AccountFindingSchema))(persisted)];
     } catch {
       accounts = [];
     }

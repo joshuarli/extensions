@@ -1,4 +1,4 @@
-import { createInterruptController, UsageError } from "../../lib/cli.ts";
+import { createInterruptController, dieBySignal, UsageError } from "../../lib/cli.ts";
 import { parseArgs, USAGE } from "./args.ts";
 import { resolveBackend } from "./backend.ts";
 import { readBrowserSession } from "./deps.ts";
@@ -16,6 +16,7 @@ export async function main(argv: readonly string[]): Promise<number> {
   const interrupt = createInterruptController(
     "Stopping after the current page. Saved data is kept; re-running resumes. Ctrl-C again to force exit.",
   );
+  const finish = (): number => interrupt.stopped() ? dieBySignal(interrupt) : 0;
   let command: ReturnType<typeof parseArgs>;
   try {
     command = parseArgs(argv);
@@ -51,7 +52,7 @@ export async function main(argv: readonly string[]): Promise<number> {
       });
       process.stdout.write(social.folder + "/following.json " + social.following + " users"
         + " · followers.json " + social.followers + " users · " + social.reason + "\n");
-      return interrupt.stopped() ? 130 : 0;
+      return finish();
     } catch (error) {
       if (interrupt.stopped()) {
         process.stderr.write("Interrupted. Saved lists are kept; re-running resumes.\n");
@@ -90,11 +91,11 @@ export async function main(argv: readonly string[]): Promise<number> {
         printSummary(target, summary);
       }
     }
-    return interrupt.stopped() ? 130 : 0;
+    return finish();
   } catch (error) {
     if (interrupt.stopped()) {
       process.stderr.write("Interrupted. Saved data is kept; re-running resumes.\n");
-      return 130;
+      return dieBySignal(interrupt);
     }
     process.stderr.write("x download failed: " + (error instanceof Error ? error.message : String(error)) + "\n");
     return 1;

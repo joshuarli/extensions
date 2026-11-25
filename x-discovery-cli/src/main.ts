@@ -1,4 +1,4 @@
-import { createInterruptController, UsageError } from "../../lib/cli.ts";
+import { createInterruptController, dieBySignal, UsageError } from "../../lib/cli.ts";
 import { readBrowserSession } from "../../lib/x-session.ts";
 import { parseArgs, USAGE } from "./args.ts";
 import { bootstrapCandidates, buildReport, collectFeed, deriveFindings, trackFinds } from "./run.ts";
@@ -24,6 +24,7 @@ export async function main(argv: readonly string[]): Promise<number> {
     const { args } = command;
     const project = loadProject(args.project);
     const status = (message: string): void => { process.stderr.write(message + "\n"); };
+    const finish = (): number => interrupt.stopped() ? dieBySignal(interrupt) : 0;
     if (command.kind === "collect") {
       const summary = await collectFeed({
         outDir: args.outDir,
@@ -38,7 +39,7 @@ export async function main(argv: readonly string[]): Promise<number> {
       process.stdout.write("run=" + summary.runId + " account=" + summary.accountId
         + " pages=" + summary.pages + " posts=" + summary.posts + " new=" + summary.newPosts
         + " reason=" + summary.stopReason + "\n" + summary.outDir + "\n");
-      return interrupt.stopped() ? 130 : 0;
+      return finish();
     }
     if (command.kind === "derive") {
       const summary = await deriveFindings({ outDir: args.outDir, project, checkLinks: args.checkLinks });
@@ -77,7 +78,7 @@ export async function main(argv: readonly string[]): Promise<number> {
       process.stdout.write("followed=" + result.followed.join(",") + " already=" + result.alreadyFollowing.join(",")
         + " dry=" + result.skipped.join(",") + " failures=" + result.failures.length + "\n");
       for (const failure of result.failures) process.stderr.write(failure + "\n");
-      return interrupt.stopped() ? 130 : 0;
+      return finish();
     }
     if (command.kind === "enrich") {
       const result = await enrichCandidates({
@@ -93,7 +94,7 @@ export async function main(argv: readonly string[]): Promise<number> {
       process.stdout.write("handles=" + result.handles + " posts=" + result.posts
         + " failures=" + result.failures.length + "\n");
       for (const failure of result.failures) process.stderr.write(failure + "\n");
-      return interrupt.stopped() ? 130 : 0;
+      return finish();
     }
     const session = await readBrowserSession(args.cdpUrl);
     const observed = await observeOperation({
@@ -105,11 +106,11 @@ export async function main(argv: readonly string[]): Promise<number> {
       onStatus: status,
     });
     process.stdout.write("observations=" + observed.observations.length + " " + observed.recipePath + "\n");
-    return interrupt.stopped() ? 130 : 0;
+    return finish();
   } catch (error) {
     if (interrupt.stopped()) {
       process.stderr.write("Interrupted. Saved pages and checkpoints are kept; the next run starts at the head.\n");
-      return 130;
+      return dieBySignal(interrupt);
     }
     if (error instanceof UsageError) {
       process.stderr.write(error.message + "\n");

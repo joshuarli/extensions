@@ -75,6 +75,8 @@ export async function enrichCandidates(options: EnrichOptions): Promise<{
         store.beginRun(run);
         let cursor: string | null = null;
         let page = 0;
+        let runReason = "budget_reached";
+        try {
         while (page < options.maxPages) {
           if (options.signal.aborted) break;
           const data = await client.request("UserTweets", {
@@ -111,7 +113,12 @@ export async function enrichCandidates(options: EnrichOptions): Promise<{
           cursor = parsed.nextCursor;
           await delay(1500, options.signal);
         }
-        store.finishRun(run.runId, options.signal.aborted ? "stopped" : "budget_reached");
+        } catch (error) {
+          runReason = "failed";
+          throw error;
+        } finally {
+          store.finishRun(run.runId, options.signal.aborted ? "stopped" : runReason);
+        }
       } catch (error) {
         failures.push(handle + ": " + (error instanceof Error ? error.message : String(error)));
       }

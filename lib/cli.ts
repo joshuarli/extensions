@@ -153,6 +153,14 @@ export function installInterrupt(message: string, onInterrupt?: () => void): voi
   });
 }
 
+export function dieBySignal(interrupt: InterruptController): never {
+  interrupt.close();
+  process.removeAllListeners("SIGINT");
+  process.kill(process.pid, "SIGINT");
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1000);
+  return process.exit(130);
+}
+
 export interface InterruptController {
   readonly signal: AbortSignal;
   stopped(): boolean;
@@ -164,7 +172,11 @@ export function createInterruptController(message: string): InterruptController 
   let interrupts = 0;
   const onSignal = (): void => {
     interrupts++;
-    if (interrupts > 1) process.exit(130);
+    if (interrupts > 1) {
+      process.off("SIGINT", onSignal);
+      process.kill(process.pid, "SIGINT");
+      return;
+    }
     process.stderr.write(`\n${message}\n`);
     controller.abort();
   };

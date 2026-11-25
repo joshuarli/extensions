@@ -31,6 +31,8 @@ Options:
   --out DIR       output directory (default ~/.local/share/x/discovery, or X_DISCOVERY_OUT)
   --check-links   probe up to three resource links per derivation
   --dry-run       report follow decisions without following
+  --handles a,b   comma-separated account handles for enrich and follow
+  --ledger PATH   override the project ledger path for track and follow
   --help, -h      show this help
   --version, -v   print the version
 
@@ -75,6 +77,7 @@ export function parseArgs(argv: readonly string[]): Command {
   if (!["collect", "derive", "report", "bootstrap", "track", "observe", "enrich", "follow"].includes(command)) {
     throw new UsageError("Unknown x discover command \"" + command + "\".\n\n" + USAGE);
   }
+  if (rest.includes("--help") || rest.includes("-h")) return { kind: "help" };
   const parsed = parseCliArgs(rest, SCHEMA);
   const feed = parsed.values.get("feed") ?? "home-for-you";
   if (feed !== "home-for-you" && feed !== "home-following") {
