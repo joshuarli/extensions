@@ -76,6 +76,8 @@ jobs:
         run: |
           export TMPDIR="$PWD/.work/tmp"
           pnpm run test:browser:chatgpt --output="$PWD/.work/tmp/playwright-results-chatgpt"
+      - name: Exercise right-click page behavior
+        run: pnpm run test:browser:right-click
       - name: Upload ChatGPT browser failure output
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

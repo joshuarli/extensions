@@ -57,15 +57,6 @@ Next: 46
 - **Fix with:** durable-state
 - **Effort:** M
 
-### EXT-45 · P2 · Wire the right-click browser test into a runner
-
-- **Area:** Tests / invariants
-- **Where:** AGENTS.md:58; extension-allow-right-click/test/user-select-restoration.browser.test.ts; vitest.config.ts:6; extension-onefile/playwright.config.ts:4; extension-chatgpt/playwright.config.ts:4; package.json:21-22
-- **Problem:** The documented user-select restoration spec is excluded from Vitest and sits outside both Playwright testDirs, so no command or CI job runs it. EXT-28 was closed by a CI-artifact change that did not fix this; ticket re-filed because IDs are not reusable.
-- **Recommendation:** Add a Playwright config whose testDir includes the spec and run it in the installed-browser job.
-- **Fix with:** none
-- **Effort:** S
-
 ### EXT-37 · P3 · X capture operation sets are duplicated between core and CLI
 
 - **Area:** X archive / credential capture

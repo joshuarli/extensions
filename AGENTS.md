@@ -13,7 +13,7 @@ The ticket queue, [TODO.md](TODO.md), holds current and deferred work; `todo lis
 - Check types and unit tests: `pnpm run check`
 - Build development or production bundles: `pnpm run build` or `pnpm run dist`; `pnpm run dist` also regenerates the embedded runtime assets in `lib/generated/assets.ts`
 - Run a CLI: `pnpm tools <x|onefile|youtube|chatgpt|ig> [args...]`; X discovery is `pnpm x:discover [args...]`
-- Run browser tests: `pnpm run test:browser`
+- Run browser tests: `pnpm run test:browser`, `pnpm run test:browser:chatgpt`, or `pnpm run test:browser:right-click`
 
 ## Invariants
 

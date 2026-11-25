@@ -21,6 +21,7 @@
     "test": "pnpm run vitest run",
     "test:browser": "playwright test --config extension-onefile/playwright.config.ts",
     "test:browser:chatgpt": "playwright test --config extension-chatgpt/playwright.config.ts",
+    "test:browser:right-click": "vitest --config extension-allow-right-click/vitest.config.ts run",
     "perf:onefile": "playwright test --config extension-onefile/playwright.perf.config.ts",
     "x": "node x-archive-cli/src/cli.ts",
     "x:discover": "node x-discovery-cli/src/cli.ts",
@@ -35,6 +36,7 @@
   "devDependencies": {
     "@types/chrome": "0.2.2",
     "@types/node": "26.6.2",
+    "@vitest/browser-playwright": "5.0.5",
     "@vitest/coverage-v8": "5.0.5",
     "fake-indexeddb": "^6.2.7",
     "oxlint": "1.93.0",

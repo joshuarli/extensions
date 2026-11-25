@@ -9,7 +9,7 @@ The root package owns dependencies and scripts for the unified extension. Node.j
 - `pnpm run typecheck` runs `tsrs --noEmit` using the strict options in [tsconfig.json](../tsconfig.json).
 - `make lint` runs that independent typecheck and `pnpm run lint`, which checks TypeScript unsafe arguments through Oxlint and the matching tsrs-lint provider.
 - `pnpm run test` runs unit tests.
-- `pnpm run test:browser` runs the Onefile Playwright browser tests.
+- `pnpm run test:browser` runs the Onefile Playwright browser tests. `pnpm run test:browser:right-click` runs the Vitest browser test for user-select restoration.
 - `pnpm run build` builds development bundles; `pnpm run dist` builds production bundles. Both typecheck first.
 - `pnpm run assets:check` fails when the embedded runtime snapshot in `lib/generated/assets.ts` differs from a production build.
 - `pnpm run dev` watches extension source files and rebuilds the suite.
