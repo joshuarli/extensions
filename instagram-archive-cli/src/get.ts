@@ -25,6 +25,7 @@ export interface GetDeps {
   readonly fs: ArchiveFs;
   readonly reporter: ProgressReporter;
   readonly signal: AbortSignal;
+  readonly pause: (signal: AbortSignal) => Promise<void>;
 }
 
 export interface GetSummary {
@@ -43,7 +44,7 @@ async function runGet(
   deps: GetDeps,
   onPark: (failure: InstagramRequestFailure, key: string, last: string | null) => void,
 ): Promise<GetSummary> {
-  const { client, fs, reporter, signal } = deps;
+  const { client, fs, reporter, signal, pause } = deps;
   const dir = collectionDir(accountDir(input.outRoot, input.accountId), input.key);
   const output = join(dir, input.mediaDir);
   fs.mkdir(output);
@@ -60,8 +61,11 @@ async function runGet(
   reporter.update({ phase: "media " + input.key, done: 0, total });
 
   try {
+    let first = true;
     outer: for (const post of pending) {
       if (signal.aborted) throw new InstagramRequestFailure("stopped", "Stopped by user.", "media.download");
+      if (!first) await pause(signal);
+      first = false;
       let effective = post;
       if (post.media.length === 0) {
         const resolved = await client.postPage(post.shortcode, signal);

@@ -4,6 +4,8 @@ import { homedir } from "node:os";
 
 export { UsageError };
 
+export const DEFAULT_PAUSE_MS = 1500;
+
 export const COMMANDS = ["scan", "get", "update", "build", "info", "following", "follow", "get-post"] as const;
 export type CommandName = (typeof COMMANDS)[number];
 
@@ -26,7 +28,7 @@ Options:
   --saved              target the logged-in account's saved collection
   --out DIR            archive root (default: ~/.local/share/instagram-archive)
   --media-dir DIR      media directory inside the archive (default: images)
-  --jobs N             concurrent downloads (default: 2)
+  --pause-ms N         wait N ms between posts and pages (default: 1500)
   --limit N            stop after N posts in this run
   --resume             deliberately resume a parked job
   --refresh            fetch a fresh following list
@@ -52,7 +54,7 @@ export interface CommandOptions {
   readonly saved: boolean;
   readonly outRoot: string;
   readonly mediaDir: string;
-  readonly jobs: number;
+  readonly pauseMs: number;
   readonly limit: number | null;
   readonly resume: boolean;
   readonly refresh: boolean;
@@ -69,10 +71,19 @@ export type ParsedCommand =
   | { readonly kind: "run"; readonly options: CommandOptions };
 
 const schema: ArgSchema = {
-  values: ["out", "media-dir", "jobs", "limit", "backend", "session", "cdp-url"],
+  values: ["out", "media-dir", "pause-ms", "limit", "backend", "session", "cdp-url"],
   flags: ["saved", "resume", "refresh", "dry-run"],
   maxPositionals: 64,
 };
+
+function nonNegative(value: string | undefined, name: string, fallback: number): number {
+  if (value === undefined) return fallback;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    throw new UsageError(`--${name} must be a non-negative integer, got "${value}".\n\n${USAGE}`);
+  }
+  return parsed;
+}
 
 function positive(value: string | undefined, name: string, fallback: number): number {
   if (value === undefined || value === "") return fallback;
@@ -107,7 +118,7 @@ export function parseArgs(argv: readonly string[]): ParsedCommand {
       saved: parsed.flags.has("saved"),
       outRoot: parsed.values.get("out") ?? downloadsRoot(),
       mediaDir: parsed.values.get("media-dir") ?? "images",
-      jobs: positive(parsed.values.get("jobs") ?? "", "jobs", 2),
+      pauseMs: nonNegative(parsed.values.get("pause-ms"), "pause-ms", DEFAULT_PAUSE_MS),
       limit: limit === undefined ? null : positive(limit, "limit", 1),
       resume: parsed.flags.has("resume"),
       refresh: parsed.flags.has("refresh"),

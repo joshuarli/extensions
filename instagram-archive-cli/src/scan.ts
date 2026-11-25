@@ -32,6 +32,7 @@ export interface ScanDeps {
   readonly reporter: ProgressReporter;
   readonly now: () => number;
   readonly signal: AbortSignal;
+  readonly pause: (signal: AbortSignal) => Promise<void>;
 }
 
 export interface ScanSummary {
@@ -53,7 +54,7 @@ async function runScan(
   target: { key: string; kind: "profile" | "saved"; username: string | null },
   onPark: (failure: InstagramRequestFailure, key: string, last: string | null) => void,
 ): Promise<ScanSummary> {
-  const { client, fs, reporter, signal } = deps;
+  const { client, fs, reporter, signal, pause } = deps;
   const dir = collectionDir(accountDir(input.outRoot, input.accountId), target.key);
   fs.mkdir(dir);
   let state = readState(fs, dir, target.kind, target.key);
@@ -94,8 +95,11 @@ async function runScan(
       const profile = await client.openProfile(target.username ?? target.key, signal);
       let cursor = state.complete ? null : state.cursor;
       let hasNext = true;
+      let first = true;
       while (hasNext) {
         if (signal.aborted) throw new InstagramRequestFailure("stopped", "Stopped by user.", "profile.posts");
+        if (!first) await pause(signal);
+        first = false;
         const page = await client.profilePage(profile, cursor, signal);
         const parsed = parseTimelinePage(page.posts, target.username);
         const fresh = parsed.filter((post) => !known.has(post.shortcode));

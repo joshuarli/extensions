@@ -1,6 +1,7 @@
 import { createInterruptController, UsageError } from "../../lib/cli.ts";
 import { createProgressReporter } from "../../lib/progress.ts";
 import {
+  abortableSleep,
   connectInstagram,
   InstagramRequestFailure,
   parksJob,
@@ -63,6 +64,7 @@ async function run(options: CommandOptions, signal: AbortSignal): Promise<number
     const targets = targetsFor(options, accountId, fs);
     if (targets.length === 0) throw new UsageError("No targets. Pass @username or --saved.\n\n" + USAGE);
     const now = () => Date.now();
+    const pause = (pauseSignal: AbortSignal): Promise<void> => abortableSleep(options.pauseMs, pauseSignal);
     let written = 0;
     let downloaded = 0;
 
@@ -85,7 +87,7 @@ async function run(options: CommandOptions, signal: AbortSignal): Promise<number
           outRoot: options.outRoot,
           accountId,
           limit: options.limit,
-        }, { client, fs, reporter, now, signal }, onPark);
+        }, { client, fs, reporter, now, signal, pause }, onPark);
         written += summary.written;
       }
       if (options.command === "get" || options.command === "update") {
@@ -96,7 +98,7 @@ async function run(options: CommandOptions, signal: AbortSignal): Promise<number
           key,
           mediaDir: options.mediaDir,
           limit: options.limit,
-        }, { client, fs, reporter, signal }, onPark);
+        }, { client, fs, reporter, signal, pause }, onPark);
         downloaded += summary.downloaded;
       }
     }

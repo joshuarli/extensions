@@ -2,9 +2,10 @@ import { describe, expect, it } from "vitest";
 import { join } from "node:path";
 import { parseArgs, UsageError } from "../src/args.ts";
 import type { ArchiveFs } from "../src/fs.ts";
+import { getTarget } from "../src/get.ts";
 import { assertRunnable, parkJob, readJob } from "../src/job.ts";
 import { scanTarget } from "../src/scan.ts";
-import { accountDir, collectionDir, readPosts, readState, recordsPath } from "../src/store.ts";
+import { accountDir, appendPosts, collectionDir, readPosts, readState, recordsPath } from "../src/store.ts";
 import type { InstagramClient } from "../../instagram-client-core/src/index.ts";
 import { InstagramRequestFailure } from "../../instagram-client-core/src/index.ts";
 import type { ProgressReporter } from "../../lib/progress.ts";
@@ -97,6 +98,15 @@ describe("parseArgs", () => {
     });
   });
 
+  it("pauses 1500 ms by default, accepts 0, and rejects the retired --jobs", () => {
+    const parsed = parseArgs(["get", "@alice"]);
+    expect(parsed.kind === "run" && parsed.options.pauseMs).toBe(1500);
+    const off = parseArgs(["get", "@alice", "--pause-ms", "0"]);
+    expect(off.kind === "run" && off.options.pauseMs).toBe(0);
+    expect(() => parseArgs(["get", "@alice", "--pause-ms", "-1"])).toThrow(UsageError);
+    expect(() => parseArgs(["get", "@alice", "--jobs", "2"])).toThrow(/Unknown option/);
+  });
+
   it("rejects an unknown command and a bad limit", () => {
     expect(() => parseArgs(["nope"])).toThrow(UsageError);
     expect(() => parseArgs(["scan", "@alice", "--limit", "0"])).toThrow(/positive integer/);
@@ -133,7 +143,7 @@ describe("scanTarget", () => {
     const client = fakeClient([[POST], [POST, { code: "def", video_versions: [{ url: "https://cdn/v.mp4", width: 1, height: 1 }] }]]);
     const first = await scanTarget(
       { target: "@alice", saved: false, outRoot: "/archive", accountId: "acct-1", limit: null },
-      { client, fs, reporter: reporter(), now: () => 0, signal: new AbortController().signal },
+      { client, fs, reporter: reporter(), now: () => 0, signal: new AbortController().signal, pause: async () => {} },
       () => {},
     );
     expect(first.written).toBe(2);
@@ -143,7 +153,7 @@ describe("scanTarget", () => {
 
     const second = await scanTarget(
       { target: "@alice", saved: false, outRoot: "/archive", accountId: "acct-1", limit: null },
-      { client: fakeClient([[POST]]), fs, reporter: reporter(), now: () => 0, signal: new AbortController().signal },
+      { client: fakeClient([[POST]]), fs, reporter: reporter(), now: () => 0, signal: new AbortController().signal, pause: async () => {} },
       () => {},
     );
     expect(second.written).toBe(0);
@@ -159,11 +169,51 @@ describe("scanTarget", () => {
     const parked: string[] = [];
     await expect(scanTarget(
       { target: "@alice", saved: false, outRoot: "/archive", accountId: "acct-1", limit: null },
-      { client, fs, reporter: reporter(), now: () => 0, signal: new AbortController().signal },
+      { client, fs, reporter: reporter(), now: () => 0, signal: new AbortController().signal, pause: async () => {} },
       (failure, key) => { parked.push(failure.kind + ":" + key); },
     )).rejects.toMatchObject({ kind: "rate_limit" });
     expect(parked).toEqual(["rate_limit:alice"]);
     const dir = collectionDir(accountDir("/archive", "acct-1"), "alice");
     expect(readPosts(fs, dir)).toHaveLength(0);
+  });
+});
+
+describe("pacing", () => {
+  it("pauses between scan pages, not before the first", async () => {
+    const fs = new MemoryFs();
+    const events: string[] = [];
+    const client = fakeClient([[POST], [{ code: "def", image_versions2: POST.image_versions2 }]]);
+    const profilePage = client.profilePage.bind(client);
+    (client as unknown as { profilePage: typeof profilePage }).profilePage = async (...args) => {
+      events.push("page");
+      return profilePage(...args);
+    };
+    await scanTarget(
+      { target: "@alice", saved: false, outRoot: "/archive", accountId: "acct-1", limit: null },
+      { client, fs, reporter: reporter(), now: () => 0, signal: new AbortController().signal, pause: async () => { events.push("pause"); } },
+      () => {},
+    );
+    expect(events).toEqual(["page", "pause", "page"]);
+  });
+
+  it("pauses between posts during get, not before the first", async () => {
+    const fs = new MemoryFs();
+    const dir = collectionDir(accountDir("/archive", "acct-1"), "alice");
+    const image = (shortcode: string) => ({ shortcode, username: "alice", postType: "image" as const, caption: null, media: [{ url: "https://cdn/" + shortcode + ".jpg", kind: "image" as const, width: 1, height: 1 }] });
+    fs.mkdir(dir);
+    appendPosts(fs, dir, [image("abc"), image("def")]);
+    const events: string[] = [];
+    const client = fakeClient([]);
+    (client as unknown as { mediaBytes: (url: string) => Promise<Uint8Array> }).mediaBytes = async (url) => {
+      events.push("fetch " + url);
+      return new Uint8Array([1]);
+    };
+    const summary = await getTarget(
+      { outRoot: "/archive", accountId: "acct-1", key: "alice", mediaDir: "images", limit: null },
+      { client, fs, reporter: reporter(), signal: new AbortController().signal, pause: async () => { events.push("pause"); } },
+      () => {},
+    );
+    expect(summary.downloaded).toBe(2);
+    expect(events).toEqual(["fetch https://cdn/abc.jpg", "pause", "fetch https://cdn/def.jpg"]);
   });
 });

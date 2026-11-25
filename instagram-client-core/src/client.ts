@@ -109,7 +109,7 @@ const QUERY_SCRIPT = `async (docId, variables, friendly) => {
   } catch (error) { return { status: 0, error: String(error), retryAfter: null }; }
 }`;
 
-function defaultSleep(ms: number, signal: AbortSignal): Promise<void> {
+export function abortableSleep(ms: number, signal: AbortSignal): Promise<void> {
   if (signal.aborted) return Promise.reject(new InstagramRequestFailure("stopped", "Stopped by user.", "session"));
   return new Promise<void>((resolve, reject) => {
     const onAbort = (): void => {
@@ -234,7 +234,7 @@ export async function connectInstagram(options: ConnectInstagramOptions = {}): P
       return new Uint8Array(await response.arrayBuffer());
     }),
     capture: options.dependencies?.capture ?? ((url, onBytes) => requirePage().capture(url, onBytes)),
-    sleep: options.dependencies?.sleep ?? defaultSleep,
+    sleep: options.dependencies?.sleep ?? abortableSleep,
   };
 
   try {

@@ -20,12 +20,18 @@ pnpm ig <command> [options] [@username ...]
 | `info` | Summarize the archive. |
 | `following` | Print the logged-in account's following list. |
 
-Options: `--saved`, `--out DIR`, `--media-dir DIR`, `--jobs N`, `--limit N`,
+Options: `--saved`, `--out DIR`, `--media-dir DIR`, `--pause-ms N`, `--limit N`,
 `--resume`, `--refresh`, `--dry-run`, `--backend`, `--session`, `--cdp-url`,
 `--help`, `--version`. Run `pnpm tools ig --help` for the full text.
 
 The default backend attaches to Helium on `127.0.0.1:9222`. Sign in to Instagram
 once in that browser. No cookies, tokens, or headers are written to disk.
+
+## Pacing
+
+`scan` waits between timeline pages and `get` waits between posts, 1500 ms by
+default (`--pause-ms N`; 0 disables). Requests are serial: one post and one
+media file at a time.
 
 ## Storage and resume
 
