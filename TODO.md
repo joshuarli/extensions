@@ -1,5 +1,5 @@
 Prefix: EXT
-Next: 45
+Next: 46
 
 ### EXT-1 · P1 · Run the X archive CLI inside a bctl appliance instead of everyday Helium
 
@@ -30,20 +30,11 @@ Next: 45
 - **Effort:** M
 - **Design:** docs/rfc/EXT-26-discovery-ledger-privacy.md
 
-### EXT-29 · P2 · Browser CI failures leave no diagnostic artifacts
-
-- **Area:** CI / operability
-- **Where:** .github/workflows/ci.yml:63-71; extension-onefile/playwright.config.ts:6-8; extension-chatgpt/playwright.config.ts:5-7
-- **Problem:** Playwright retries are zero, the reporter is line, and output goes to .work/tmp on an ephemeral runner with no upload step, so a failed run leaves no screenshots or traces to inspect.
-- **Recommendation:** Upload the Playwright output directories from failing installed-browser steps.
-- **Fix with:** none
-- **Effort:** S
-
 ### EXT-30 · P2 · Credentialed media fetches accept URLs from archived data
 
 - **Area:** X / Instagram archive / security
 - **Where:** x-archive-cli/src/media.ts:77-81; lib/x-session.ts:61-66; x-archive-core/src/media.ts:69-95; instagram-client-core/src/client.ts:424-430
-- **Problem:** Media URLs come from archived posts and manifests and are fetched with the full cookie header and no host allowlist; an attacker-controlled URL would exfiltrate the session. Reachability from a live X or Instagram response is unproven.
+- **Problem:** Media URLs come from archived posts and manifests and are fetched with the full cookie header and no host allowlist; an attacker-controlled URL would exfiltrate the session. Parked: no reachable attacker-controlled URL source was proven, and an allowlist could drop legitimate CDN hosts. Unblock by proving a live X or Instagram response can supply an off-host media URL, then enumerate the exact host set.
 - **Recommendation:** Allowlist media hosts before attaching cookies, record rejected URLs as failures, and prove a reachable input source with a fixture first.
 - **Fix with:** security
 - **Effort:** S
@@ -66,6 +57,15 @@ Next: 45
 - **Fix with:** durable-state
 - **Effort:** M
 
+### EXT-45 · P2 · Wire the right-click browser test into a runner
+
+- **Area:** Tests / invariants
+- **Where:** AGENTS.md:58; extension-allow-right-click/test/user-select-restoration.browser.test.ts; vitest.config.ts:6; extension-onefile/playwright.config.ts:4; extension-chatgpt/playwright.config.ts:4; package.json:21-22
+- **Problem:** The documented user-select restoration spec is excluded from Vitest and sits outside both Playwright testDirs, so no command or CI job runs it. EXT-28 was closed by a CI-artifact change that did not fix this; ticket re-filed because IDs are not reusable.
+- **Recommendation:** Add a Playwright config whose testDir includes the spec and run it in the installed-browser job.
+- **Fix with:** none
+- **Effort:** S
+
 ### EXT-37 · P3 · X capture operation sets are duplicated between core and CLI
 
 - **Area:** X archive / credential capture
@@ -79,7 +79,7 @@ Next: 45
 
 - **Area:** ChatGPT archive / durable state
 - **Where:** chatgpt-archive-cli/src/download.ts:102-105,200-208; chatgpt-archive-core/src/index.ts:84
-- **Problem:** complete is never reset and listScope stops when the first page is fully covered, so a chat updated later outside that page can stay unarchived; whether live ordering produces this is unproven.
+- **Problem:** complete is never reset and listScope stops when the first page is fully covered, so a chat updated later outside that page can stay unarchived. Parked: the live ordering sequence that produces this is unproven. Unblock with a fixture that marks the scope complete, then adds an unarchived chat outside the first page and shows it missing from a later export.
 - **Recommendation:** Require a full enumeration before marking or keeping complete, and clear complete on partial or stopped runs; prove the ordering case with a fixture.
 - **Fix with:** durable-state
 - **Effort:** M
