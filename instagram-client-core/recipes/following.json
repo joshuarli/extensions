@@ -1,0 +1,15 @@
+{
+  "operation": "following",
+  "semantic_name": "following.page",
+  "description": "Pages the signed-in account's following list. Following sync is the only operation that can change account state for the follow command; reads never do.",
+  "method": "GET",
+  "path": "/api/v1/friendships/{userId}/following/?count=20&max_id={cursor}",
+  "caller_inputs": ["userId", "cursor"],
+  "response_dependencies": ["next_max_id", "users[].pk", "users[].username"],
+  "captured_config": [],
+  "session_material": ["sessionid", "csrftoken"],
+  "app_generated": [],
+  "observation_recipe": ["open the following list and record the friendships request", "scroll to record a page with max_id"],
+  "verification_cases": ["identity: users come from the response", "pagination: the next page uses next_max_id", "rate limit: 429 parks the job"],
+  "fixtures": []
+}

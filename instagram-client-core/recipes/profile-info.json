@@ -1,0 +1,15 @@
+{
+  "operation": "profile.info",
+  "semantic_name": "profile.id",
+  "description": "Resolves a username to the numeric profile id for following-list requests.",
+  "method": "GET",
+  "path": "/api/v1/users/web_profile_info/?username={username}",
+  "caller_inputs": ["username"],
+  "response_dependencies": ["data.user.id"],
+  "captured_config": [],
+  "session_material": ["sessionid", "csrftoken"],
+  "app_generated": [],
+  "observation_recipe": ["open a profile and record the web_profile_info request"],
+  "verification_cases": ["identity: the returned id belongs to the requested username", "shape drift: a missing user id fails the run", "rate limit: 429 parks the job"],
+  "fixtures": []
+}

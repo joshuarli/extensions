@@ -1,0 +1,15 @@
+{
+  "operation": "media.download",
+  "semantic_name": "media.bytes",
+  "description": "Fetches media bytes through the signed-in page. Response-body capture provides DASH segments for muxing; complete files use the same page context.",
+  "method": "GET",
+  "path": "{cdnUrl}",
+  "caller_inputs": ["url"],
+  "response_dependencies": [],
+  "captured_config": [],
+  "session_material": ["sessionid"],
+  "app_generated": [],
+  "observation_recipe": ["open a carousel and record the image CDN requests", "open a reel and record the video and audio track requests"],
+  "verification_cases": ["identity: bytes are written to the path derived from the shortcode", "capture: incomplete segment ranges never become a final file", "mux: video and audio tracks are combined with ffmpeg", "rate limit: 429 parks the job"],
+  "fixtures": []
+}

@@ -1,0 +1,15 @@
+{
+  "operation": "session",
+  "semantic_name": "session.read",
+  "description": "Reads the signed-in account id and cookies from the attached browser. Missing sessionid, csrftoken or ds_user_id stops the run before any archive request.",
+  "method": "CDP",
+  "path": "context.cookies(domain=instagram.com)",
+  "caller_inputs": [],
+  "response_dependencies": ["ds_user_id", "sessionid", "csrftoken"],
+  "captured_config": [],
+  "session_material": ["sessionid", "csrftoken", "ds_user_id"],
+  "app_generated": [],
+  "observation_recipe": ["attach to the signed-in browser", "read instagram.com cookies", "confirm the account id matches the saved archive"],
+  "verification_cases": ["signed out: missing cookies fail with auth", "account change: expectedAccountId mismatch stops the run", "no cookie value is logged or written to disk"],
+  "fixtures": []
+}
