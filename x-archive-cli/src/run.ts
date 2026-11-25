@@ -350,6 +350,7 @@ export async function downloadProfile(handle: string, options: RunOptions): Prom
   const outDir = join(options.outRoot, profileDir);
   mkdirSync(outDir, { recursive: true });
   const store = new SqliteProfileStore(profileDbPath(outDir), targetUserId);
+  let contextGaps: { failed: number; unreachable: number } | null = null;
   status.say("session", "Checking legacy extension archives…");
   if (options.backend.kind === "bctl") {
     status.say("session", "Seeding needs the Helium extension, which the bctl appliance does not have; continuing with the local store.");
@@ -391,6 +392,7 @@ export async function downloadProfile(handle: string, options: RunOptions): Prom
           signal: runSignal(options),
           report: (text) => status.add(text),
         });
+        contextGaps = { failed: context.failed, unreachable: context.unreachable };
         status.say("collecting", "Context: " + context.stored + " posts stored (" + context.fetched + " pages fetched, " + context.failed + " failed, " + context.unreachable + " unreachable).");
       } catch (error) {
         status.say("collecting", "Context backfill failed: " + (error instanceof Error ? error.message : String(error)) + ". Re-running `x download " + screenName + "` resumes it; the archive exports with what it has.");
@@ -413,6 +415,13 @@ export async function downloadProfile(handle: string, options: RunOptions): Prom
   status.say("export", "Assembling posts.json…");
   const archive = assembleProfileArchive(raw, state, session.userId, targetUserId, rawContext);
   (archive.export_metadata as Record<string, unknown>)["requested_profile"] = screenName;
+  if (contextGaps) {
+    const stats = (archive.export_metadata as { stats?: Record<string, unknown> }).stats;
+    if (stats) {
+      stats["context_failed"] = contextGaps.failed;
+      stats["context_unreachable"] = contextGaps.unreachable;
+    }
+  }
   const folder = profileDir;
   mkdirSync(outDir, { recursive: true });
   writeJsonFile(join(outDir, "posts.json"), archive, 0o644);

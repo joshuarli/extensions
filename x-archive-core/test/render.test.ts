@@ -124,6 +124,24 @@ describe("renderArchive", () => {
     }
   });
 
+  it("reports thread context gaps", async () => {
+    mkdirSync(scratchRoot, { recursive: true });
+    const folder = mkdtempSync(join(scratchRoot, "x-render-context-"));
+    try {
+      writeFileSync(join(folder, "posts.json"), JSON.stringify({
+        posts: [{ tweet_id: "1", full_text: "reply", conversation_id: "c" }],
+        context_posts: [{ tweet_id: "9", full_text: "ancestor", conversation_id: "c" }],
+        export_metadata: { exported_at: "2026-01-01", stats: { context_failed: 2, context_unreachable: 1 } },
+      }));
+      const result = await renderArchive({ folder, noFetch: true });
+      const html = readFileSync(result.output, "utf8");
+      expect(html).toContain("thread-context posts (text only)");
+      expect(html).toContain("2 context pages failed, 1 unreachable");
+    } finally {
+      rmSync(folder, { recursive: true, force: true });
+    }
+  });
+
   it("renders folders, verification, source and entity links", async () => {
     mkdirSync(scratchRoot, { recursive: true });
     const folder = mkdtempSync(join(scratchRoot, "x-render-fields-"));

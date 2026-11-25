@@ -75,15 +75,6 @@ Next: 45
 - **Fix with:** durable-state
 - **Effort:** M
 
-### EXT-23 · P3 · Label context posts and report thread-context gaps
-
-- **Area:** X archive · collection and HTML export
-- **Where:** x-archive-core/src/conversation.ts:148-199; x-archive-cli/src/context.ts:83-197; render.ts:444-449
-- **Problem:** Context ancestors are intentionally text-only with media, quotes and cards nulled but the thread viewer says fully offline, and failed or unreachable context pages appear only in status_log, so partial thread reconstruction cannot be distinguished in the export.
-- **Recommendation:** Add context_failed and context_unreachable counts to export_metadata.stats and mark context posts as text-only in the page.
-- **Fix with:** none
-- **Effort:** S
-
 ### EXT-24 · P3 · Seed legacy archives by content rather than record count
 
 - **Area:** X archive · migration
