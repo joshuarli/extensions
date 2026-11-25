@@ -107,7 +107,11 @@ function decodeResult(result: unknown, observedAt: string, entryId?: string): De
   if (isTombstone(unwrapped)) return { kind: "unavailable" };
   const author = get(unwrapped, "core", "user_results", "result");
   const authorType = string(get(author, "__typename"));
-  if (authorType !== null && authorType !== "User") return { kind: "unavailable" };
+  if (authorType !== null && authorType !== "User"
+      && !string(get(author, "rest_id"))
+      && !string(get(author, "legacy", "screen_name"))) {
+    return { kind: "unavailable" };
+  }
   const bookmark = normalizeTweetResult(result, observedAt);
   if (!bookmark) return { kind: "unsupported" };
   if (bookmark.status === "unavailable") return { kind: "unavailable" };

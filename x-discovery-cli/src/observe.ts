@@ -117,11 +117,13 @@ async function waitForExchange(
   exchanges: readonly RecordedExchange[],
   consumed: ReadonlySet<number>,
   signal: AbortSignal,
+  settle: () => Promise<void>,
   dependencyCursors?: readonly string[],
 ): Promise<number | null> {
   const deadline = Date.now() + 15_000;
   for (;;) {
     if (signal.aborted) throw new Error("Interrupted while observing the continuation.");
+    await settle();
     const selected = selectExchange(exchanges, consumed, dependencyCursors);
     if (selected !== null) return selected;
     if (Date.now() >= deadline) return null;
@@ -144,6 +146,14 @@ export async function observeOperation(options: {
   const persistObservations = (): void => {
     writeJsonFile(join(options.outDir, "observations", options.operation + ".json"), observations, 0o644);
   };
+  let pending: Promise<void>[] = [];
+  const track = (task: Promise<void>): void => { pending.push(task); };
+  const settle = async (): Promise<void> => {
+    if (pending.length === 0) return;
+    const tasks = pending;
+    pending = [];
+    await Promise.allSettled(tasks);
+  };
   try {
     const context = browser.contexts()[0];
     if (!context) throw new Error("The browser at " + options.cdpUrl + " has no page context.");
@@ -153,12 +163,15 @@ export async function observeOperation(options: {
     for (const spec of steps) {
       if (options.signal.aborted) throw new Error("Interrupted while observing " + options.operation + ".");
       if (!spec.reusePage || page === null) {
+        await settle();
         if (page) await page.close().catch(() => {});
         page = await context.newPage();
         exchanges = [];
+        pending = [];
         consumed.clear();
+        const pageExchanges = exchanges;
         page.on("response", (response) => {
-          void (async () => {
+          const task = (async () => {
             try {
               const parsed = new URL(response.url());
               if (!parsed.pathname.endsWith("/" + options.operation)) return;
@@ -172,7 +185,7 @@ export async function observeOperation(options: {
               const shape = object(data) ?? object(body) ?? {};
               const headers: Record<string, string> = {};
               for (const name of Object.keys(request.headers())) headers[name] = "<present>";
-              exchanges.push({
+              pageExchanges.push({
                 method: request.method(),
                 path: parsed.pathname,
                 values,
@@ -182,6 +195,7 @@ export async function observeOperation(options: {
               });
             } catch { /* Ignore responses that are not X GraphQL observations. */ }
           })();
+          track(task);
         });
         const url = (spec.url ?? "").replace("{userId}", options.accountId ?? "");
         await page.goto(url, { waitUntil: "domcontentloaded", timeout: 20_000 }).catch(() => {});
@@ -194,7 +208,7 @@ export async function observeOperation(options: {
       const dependencyCursors = spec.reusePage
         ? [...consumed].flatMap((index) => exchanges[index]?.cursors ?? [])
         : undefined;
-      const selected = await waitForExchange(exchanges, consumed, options.signal, dependencyCursors);
+      const selected = await waitForExchange(exchanges, consumed, options.signal, settle, dependencyCursors);
       if (selected === null) {
         persistObservations();
         throw new Error(
@@ -214,8 +228,10 @@ export async function observeOperation(options: {
         ...(spec.reusePage ? { continuationOf: "initial" } : {}),
       });
     }
+    await settle();
     if (page) await page.close().catch(() => {});
   } finally {
+    await settle().catch(() => {});
     await browser.close();
   }
   persistObservations();

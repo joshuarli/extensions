@@ -8,7 +8,7 @@ export const TopicJudgmentSchema = Schema.Struct({
   verdict: Schema.Literals(["relevant", "unrelated", "insufficient_evidence"]),
   score: Schema.Number,
   matched_terms: Schema.Array(Schema.String),
-  penalized_terms: Schema.Array(Schema.String),
+  penalized_terms: Schema.optional(Schema.Array(Schema.String)),
   reason: Schema.String,
   version: Schema.String,
 });
@@ -44,7 +44,7 @@ export function classifyTopic(post: DiscoveredPost, project: ProjectConfig): Top
       score += weight;
     }
   }
-  for (const [term, weight] of project.negative_terms) {
+  for (const [term, weight] of project.negative_terms ?? []) {
     if (normalized.includes(term.toLowerCase())) {
       penalized_terms.push(term);
       score -= weight;

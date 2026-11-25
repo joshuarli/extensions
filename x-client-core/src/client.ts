@@ -144,13 +144,8 @@ async function captureHomeTab(
   }
 }
 
-function operationFingerprint(credentials: Credentials, operation: Operation): string {
-  return JSON.stringify({
-    queryId: credentials.queryIds[operation] ?? null,
-    method: credentials.methods?.[operation] ?? "GET",
-    features: credentials.features[operation] ?? null,
-    fieldToggles: credentials.fieldToggles?.[operation] ?? null,
-  });
+function credentialFingerprint(credentials: Credentials): string {
+  return JSON.stringify(credentials);
 }
 
 function persistCredentials(credentials: Credentials): void {
@@ -189,10 +184,10 @@ export async function connectX(options: ConnectXOptions = {}): Promise<XClient> 
     signal,
   });
   const absorb = (fresh: Credentials): void => {
-    const before = operationFingerprint(credentials, operation);
+    const before = credentialFingerprint(credentials);
     const merged = mergeCredentials(credentials, fresh);
     Object.assign(credentials, merged);
-    if (operationFingerprint(credentials, operation) !== before) deps.persist(credentials);
+    if (credentialFingerprint(credentials) !== before) deps.persist(credentials);
   };
   if (!credentials.queryIds[operation]) {
     absorb(await deps.captureHome(resolved.cdpUrl, operation, feed === "home-following", signal, options.onStatus));
@@ -214,9 +209,9 @@ export async function connectX(options: ConnectXOptions = {}): Promise<XClient> 
       if (!(error instanceof RequestFailure) || error.kind !== "query" || target !== operation || refreshed) throw error;
       refreshed = true;
       options.onStatus?.("X rejected the captured " + target + " configuration; re-observing it once…");
-      const before = operationFingerprint(credentials, target);
+      const before = credentialFingerprint(credentials);
       absorb(await deps.captureHome(resolved.cdpUrl, operation, feed === "home-following", requestSignal, options.onStatus));
-      if (operationFingerprint(credentials, target) === before) {
+      if (credentialFingerprint(credentials) === before) {
         throw new RequestFailure("query", "X rejected " + target + " and re-observation returned the same configuration. A manual refresh is needed.");
       }
       return await rawRequest(target, variables, requestSignal);

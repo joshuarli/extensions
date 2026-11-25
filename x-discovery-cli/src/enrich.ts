@@ -123,7 +123,12 @@ export async function enrichCandidates(options: EnrichOptions): Promise<{
           runReason = "failed";
           throw error;
         } finally {
-          store.finishRun(run.runId, options.signal.aborted ? "stopped" : runReason);
+          try {
+            store.finishRun(run.runId, options.signal.aborted ? "stopped" : runReason);
+          } catch (error) {
+            options.onStatus?.("Could not finish the profile run record: "
+              + (error instanceof Error ? error.message : String(error)));
+          }
         }
       } catch (error) {
         failures.push(handle + ": " + (error instanceof Error ? error.message : String(error)));

@@ -112,6 +112,14 @@ describe("DiscoveryStore", () => {
     expect(() => store.finishRun(first.runId, "budget_reached")).toThrow("taken over");
   });
 
+  it("refuses to finish a run whose lease has expired", () => {
+    const account = "900";
+    const run = newRun(account, "home-for-you", 5);
+    expect(store.acquireJobLock(account, run.runId, "2026-11-25T00:00:00.000Z")).toBe(true);
+    store.beginRun(run);
+    expect(() => store.finishRun(run.runId, "max_pages", "2026-11-25T00:20:00.000Z")).toThrow("expired");
+  });
+
   it("keeps a failing response and its reason", () => {
     const run = newRun("1725684628491739136", "home-for-you", 5);
     store.beginRun(run);

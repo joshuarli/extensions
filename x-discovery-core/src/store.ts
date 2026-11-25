@@ -90,16 +90,25 @@ export class DiscoveryStore {
       );
       this.db.exec("COMMIT");
     } catch (error) {
-      this.db.exec("ROLLBACK");
+      try {
+        this.db.exec("ROLLBACK");
+      } catch {
+        /* The migration failure is the primary error. */
+      }
       throw error;
     }
   }
 
-  private assertLease(accountId: string, runId: string): void {
-    const row = this.db.prepare("SELECT run_id FROM job_locks WHERE account_id = ?").get(accountId) as
-      | { run_id: string } | undefined;
-    if (row && row.run_id !== runId) {
+  private assertLease(accountId: string, runId: string, at: Date = new Date()): void {
+    const row = this.db.prepare("SELECT run_id, acquired_at FROM job_locks WHERE account_id = ?").get(accountId) as
+      | { run_id: string; acquired_at: string } | undefined;
+    if (!row) return;
+    if (row.run_id !== runId) {
       throw new Error("The discovery lease for this account was taken over by another run; stopping this run.");
+    }
+    const acquired = Date.parse(row.acquired_at);
+    if (!Number.isFinite(acquired) || at.getTime() - acquired >= LEASE_MS) {
+      throw new Error("The discovery lease expired before this write; stopping this run.");
     }
   }
 
@@ -113,7 +122,7 @@ export class DiscoveryStore {
   acquireJobLock(accountId: string, runId: string, at: string = new Date().toISOString()): boolean {
     const now = Date.parse(at);
     if (!Number.isFinite(now)) throw new Error("Invalid lease clock.");
-    this.db.exec("BEGIN");
+    this.db.exec("BEGIN IMMEDIATE");
     try {
       const existing = this.db.prepare(
         "SELECT run_id, acquired_at FROM job_locks WHERE account_id = ?",
@@ -163,14 +172,20 @@ export class DiscoveryStore {
   }
 
   finishRun(runId: string, stopReason: string, at: string = new Date().toISOString()): void {
-    const run = this.db.prepare("SELECT account_id FROM runs WHERE run_id = ?").get(runId) as
-      | { account_id: string } | undefined;
-    if (run) this.assertLease(run["account_id"], runId);
-    this.db.prepare("UPDATE runs SET ended_at = ?, stop_reason = ? WHERE run_id = ?").run(at, stopReason, runId);
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const run = this.db.prepare("SELECT account_id FROM runs WHERE run_id = ?").get(runId) as
+        | { account_id: string } | undefined;
+      if (run) this.assertLease(run["account_id"], runId, new Date(at));
+      this.db.prepare("UPDATE runs SET ended_at = ?, stop_reason = ? WHERE run_id = ?").run(at, stopReason, runId);
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
   }
 
   commitPage(input: CommitPageInput): void {
-    this.assertLease(input.accountId, input.runId);
     const insertPost = this.db.prepare(
       "INSERT OR IGNORE INTO posts (tweet_id, hash, json, observed_at) VALUES (?, ?, ?, ?)",
     );
@@ -178,8 +193,9 @@ export class DiscoveryStore {
       "INSERT OR IGNORE INTO observations (run_id, page, entry_id, position, tweet_id, author_id, author_handle, relationship, observed_at)"
       + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
     );
-    this.db.exec("BEGIN");
+    this.db.exec("BEGIN IMMEDIATE");
     try {
+      this.assertLease(input.accountId, input.runId);
       this.db.prepare("INSERT OR REPLACE INTO raw_pages (run_id, page, json) VALUES (?, ?, ?)")
         .run(input.runId, input.page, JSON.stringify(input.data));
       this.db.prepare("INSERT OR REPLACE INTO page_accounting (run_id, page, json) VALUES (?, ?, ?)")
@@ -207,12 +223,12 @@ export class DiscoveryStore {
   }
 
   saveFailure(runId: string, page: number, data: unknown, detail: string): void {
-    const run = this.db.prepare("SELECT account_id FROM runs WHERE run_id = ?").get(runId) as
-      | { account_id: string } | undefined;
-    if (run) this.assertLease(run["account_id"], runId);
     const json = JSON.stringify(data);
-    this.db.exec("BEGIN");
+    this.db.exec("BEGIN IMMEDIATE");
     try {
+      const run = this.db.prepare("SELECT account_id FROM runs WHERE run_id = ?").get(runId) as
+        | { account_id: string } | undefined;
+      if (run) this.assertLease(run["account_id"], runId);
       this.db.prepare("INSERT OR REPLACE INTO raw_pages (run_id, page, json) VALUES (?, ?, ?)")
         .run(runId, page, json);
       this.db.prepare("INSERT OR REPLACE INTO page_failures (run_id, page, detail, json) VALUES (?, ?, ?, ?)")

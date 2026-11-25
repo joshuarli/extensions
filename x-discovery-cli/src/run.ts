@@ -111,8 +111,16 @@ export async function collectFeed(options: DiscoverOptions): Promise<CollectSumm
       const posts = result.posts;
       report("Committed " + posts + " observed posts in " + result.pages + " pages.", options.onStatus);
     } finally {
-      store.finishRun(runId, options.signal.aborted ? "stopped" : stopReason);
-      store.releaseJobLock(client.accountId, runId);
+      try {
+        store.finishRun(runId, options.signal.aborted ? "stopped" : stopReason);
+      } catch (error) {
+        report("Could not finish the run record: " + (error instanceof Error ? error.message : String(error)), options.onStatus);
+      }
+      try {
+        store.releaseJobLock(client.accountId, runId);
+      } catch (error) {
+        report("Could not release the job lease: " + (error instanceof Error ? error.message : String(error)), options.onStatus);
+      }
     }
     const all = store.allPosts();
     return {
