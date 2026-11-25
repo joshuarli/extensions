@@ -264,15 +264,6 @@ Next: 45
 - **Fix with:** durable-state
 - **Effort:** M
 
-### EXT-42 · P3 · X credential capture queue is unbounded and swallows failures
-
-- **Area:** Extension / error model
-- **Where:** extension-x-archive/src/background.ts:14-28
-- **Problem:** Every GraphQL request appends a promise with no coalescing or cap, and catch discards storage and API errors, so capture can fail silently while pending work grows.
-- **Recommendation:** Coalesce and cap the queue and persist a last-error status that credential reads can surface.
-- **Fix with:** error-model
-- **Effort:** S
-
 ### EXT-43 · P3 · X discovery follow decision paths have no tests
 
 - **Area:** X discovery / tests

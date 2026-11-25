@@ -35,6 +35,10 @@ export function credentialKey(userId: string): string {
   return "x_bookmarks_credentials_" + userId;
 }
 
+export function captureErrorKey(userId: string): string {
+  return "x_bookmarks_capture_error_" + userId;
+}
+
 export function parseUserId(value: string | undefined): string | null {
   try {
     return /^u=(\d+)$/u.exec(decodeURIComponent(value ?? "").replaceAll('"', ""))?.[1] ?? null;

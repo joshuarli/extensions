@@ -3,6 +3,7 @@ import { join } from "node:path";
 import {
   CredentialsSchema,
   PROFILE_OPERATIONS,
+  captureErrorKey,
   SOCIAL_OPERATIONS,
   captureRequest,
   credentialKey,
@@ -159,6 +160,29 @@ export function capturePages(required: RequiredCaptures, screenName: string | un
   return pages;
 }
 
+async function workerCaptureError(
+  context: BrowserContext,
+  extensionId: string,
+  userId: string,
+): Promise<string | null> {
+  let worker;
+  try {
+    worker = await suiteWorker(context, extensionId, 2_000);
+  } catch {
+    return null;
+  }
+  try {
+    const raw = await worker.evaluate(async (key: string): Promise<unknown> => {
+      const all = await chrome.storage.local.get(key);
+      return all[key] ?? null;
+    }, captureErrorKey(userId));
+    const stored = raw as { message?: unknown } | null;
+    return typeof stored?.["message"] === "string" ? stored["message"] : null;
+  } catch {
+    return null;
+  }
+}
+
 async function workerCredentials(
   context: BrowserContext,
   extensionId: string,
@@ -249,9 +273,11 @@ export async function readCapturedCredentials(
       return credentials;
     }
     const missing = credentials ? missingCaptures(credentials, required) : ["all operations"];
+    const captureError = await workerCaptureError(context, extensionId, session.userId);
     throw new Error(
       "X credentials are incomplete (" + missing.join(", ") + "). "
-      + (pages.length ? "Visit " + pages.join(" and ") + " in Helium once, then retry." : "Open x.com in Helium once, then retry."),
+      + (pages.length ? "Visit " + pages.join(" and ") + " in Helium once, then retry." : "Open x.com in Helium once, then retry.")
+      + (captureError ? " Last capture failed: " + captureError : ""),
     );
   } finally {
     await browser.close();

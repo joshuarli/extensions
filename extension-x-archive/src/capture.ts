@@ -1,5 +1,6 @@
 import {
   CredentialsSchema,
+  captureErrorKey,
   credentialKey,
   parseUserId,
   type Credentials,
@@ -21,4 +22,16 @@ export async function readCredentials(userId: string): Promise<Credentials> {
   } catch {
     return { queryIds: {}, features: {} };
   }
+}
+
+export interface CaptureError {
+  readonly message: string;
+  readonly at: string;
+}
+
+export async function readCaptureError(userId: string): Promise<CaptureError | null> {
+  const key = captureErrorKey(userId);
+  const stored = (await chrome.storage.local.get(key))[key] as Partial<CaptureError> | undefined;
+  if (!stored || typeof stored["message"] !== "string" || typeof stored["at"] !== "string") return null;
+  return { message: stored["message"], at: stored["at"] };
 }

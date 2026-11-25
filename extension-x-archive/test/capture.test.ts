@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { handleXArchiveRequest } from "../src/background.ts";
-import { captureRequest, mergeCapture, parseProfileScreenName, parseUserId } from "../src/capture.ts";
+import { captureErrorKey, captureRequest, mergeCapture, parseProfileScreenName, parseUserId } from "../src/capture.ts";
 
 const bookmarkUrl = "https://x.com/i/api/graphql/AbC_123/Bookmarks?features=%7B%22enabled%22%3Atrue%7D";
 
@@ -124,6 +124,70 @@ describe("credential capture handler", () => {
       authorization: "Bearer actual",
       features: { Bookmarks: '{"enabled":true}' },
     });
+  });
+});
+
+describe("credential capture queue", () => {
+  async function flush(): Promise<void> {
+    for (let index = 0; index < 10; index++) await new Promise((resolve) => setImmediate(resolve));
+  }
+
+  it("coalesces repeated requests for the same operation", async () => {
+    const stored: Record<string, unknown> = {},
+      writes: Array<Record<string, unknown>> = [];
+    (globalThis as Record<string, unknown>)["chrome"] = {
+      cookies: { get: async () => ({ value: "u=123" }) },
+      storage: {
+        local: {
+          get: async (key: string) => ({ [key]: stored[key] }),
+          set: async (items: Record<string, unknown>) => { writes.push(items); Object.assign(stored, items); },
+        },
+      },
+    };
+    const request = {
+      url: bookmarkUrl,
+      initiator: "https://x.com",
+      requestHeaders: [{ name: "Authorization", value: "Bearer actual" }],
+    } as chrome.webRequest.OnSendHeadersDetails;
+    handleXArchiveRequest(request);
+    handleXArchiveRequest(request);
+    await flush();
+    expect(writes.filter((items) => "x_bookmarks_credentials_123" in items)).toHaveLength(1);
+  });
+
+  it("persists a capture failure and keeps draining the queue", async () => {
+    const stored: Record<string, unknown> = {};
+    let credentialWrites = 0;
+    (globalThis as Record<string, unknown>)["chrome"] = {
+      cookies: { get: async () => ({ value: "u=123" }) },
+      storage: {
+        local: {
+          get: async (key: string) => ({ [key]: stored[key] }),
+          set: async (items: Record<string, unknown>) => {
+            if ("x_bookmarks_credentials_123" in items) {
+              credentialWrites++;
+              throw new Error("storage full");
+            }
+            Object.assign(stored, items);
+          },
+        },
+      },
+    };
+    handleXArchiveRequest({
+      url: bookmarkUrl,
+      initiator: "https://x.com",
+      requestHeaders: [{ name: "Authorization", value: "Bearer actual" }],
+    } as chrome.webRequest.OnSendHeadersDetails);
+    await flush();
+    expect(stored[captureErrorKey("123")]).toMatchObject({ message: "storage full" });
+
+    handleXArchiveRequest({
+      url: bookmarkUrl.replace("Bookmarks", "Likes"),
+      initiator: "https://x.com",
+      requestHeaders: [],
+    } as unknown as chrome.webRequest.OnSendHeadersDetails);
+    await flush();
+    expect(credentialWrites).toBe(2);
   });
 });
 
