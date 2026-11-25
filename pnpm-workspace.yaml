@@ -1,0 +1,4 @@
+supportedArchitectures:
+  libc:
+    - current
+    - glibc
