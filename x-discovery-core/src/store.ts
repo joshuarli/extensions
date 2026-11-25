@@ -196,13 +196,16 @@ export class DiscoveryStore {
     );
     this.db.exec("BEGIN IMMEDIATE");
     try {
-      this.assertLease(input.accountId, input.runId, input.feed);
+      const run = this.db.prepare("SELECT account_id, feed FROM runs WHERE run_id = ?").get(input.runId) as
+        | { account_id: string; feed: Feed } | undefined;
+      const feed = run?.feed ?? input.feed;
+      this.assertLease(run?.account_id ?? input.accountId, input.runId, feed);
       this.db.prepare("INSERT OR REPLACE INTO raw_pages (run_id, page, json) VALUES (?, ?, ?)")
         .run(input.runId, input.page, JSON.stringify(input.data));
       this.db.prepare("INSERT OR REPLACE INTO page_accounting (run_id, page, json) VALUES (?, ?, ?)")
         .run(input.runId, input.page, JSON.stringify(input.accounting));
       input.posts.forEach((post, index) => {
-        insertPost.run(post.tweet_id, contentHash(post), JSON.stringify({ ...post, feed: input.feed }), post.observed_at);
+        insertPost.run(post.tweet_id, contentHash(post), JSON.stringify({ ...post, feed }), post.observed_at);
         insertObservation.run(
           input.runId,
           input.page,
