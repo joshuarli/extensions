@@ -1,12 +1,21 @@
 import { delay } from "../../x-archive-core/src/collector.ts";
-import { parseHomeTimeline } from "./parser.ts";
+import { parseHomeTimeline, type HomeEntryAccounting } from "./parser.ts";
 import type { DiscoveredPost } from "./post.ts";
+
+export interface PageCommit {
+  page: number;
+  data: unknown;
+  posts: DiscoveredPost[];
+  cursor: string | null;
+  accounting: HomeEntryAccounting;
+}
 
 export interface HomeTimelineDeps {
   request(variables: Record<string, unknown>, signal: AbortSignal): Promise<unknown>;
   savePosts(posts: DiscoveredPost[]): Promise<void>;
   readCursor(): Promise<string | null>;
   writeCursor(cursor: string | null): Promise<void>;
+  commitPage?(commit: PageCommit): Promise<void>;
   signal: AbortSignal;
   report(message: string): void;
   maxPages: number;
@@ -53,19 +62,30 @@ export async function collectHomeTimeline(deps: HomeTimelineDeps): Promise<Colle
     if (!parsed.valid) {
       return { pages, posts, cursor, completed: false, reason: "unexpected_shape" };
     }
-    await deps.savePosts(parsed.posts);
+    if (deps.commitPage) {
+      await deps.commitPage({
+        page: pages,
+        data,
+        posts: parsed.posts,
+        cursor: parsed.nextCursor,
+        accounting: parsed.accounting,
+      });
+    } else {
+      await deps.savePosts(parsed.posts);
+    }
     posts += parsed.posts.length;
     deps.report("page " + pages + ": " + parsed.posts.length + " posts"
+      + " (entries " + parsed.accounting.total + ", unsupported " + parsed.accounting.unsupported + ")"
       + (parsed.nextCursor === null ? " (end of feed)" : ""));
     if (parsed.nextCursor === null) {
-      await deps.writeCursor(null);
+      if (!deps.commitPage) await deps.writeCursor(null);
       return { pages, posts, cursor: null, completed: true, reason: "timeline_complete" };
     }
     if (parsed.nextCursor === cursor) {
       return { pages, posts, cursor, completed: false, reason: "cursor_stalled" };
     }
     cursor = parsed.nextCursor;
-    await deps.writeCursor(cursor);
+    if (!deps.commitPage) await deps.writeCursor(cursor);
     if (pages < deps.maxPages) {
       try {
         await delay((deps.pageDelayMs ?? 2500) + Math.random() * 500, deps.signal);

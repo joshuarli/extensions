@@ -87,6 +87,21 @@ describe("collectHomeTimeline", () => {
     expect(collected.cursors).toEqual([]);
   });
 
+  it("passes each page to a transactional commit hook", async () => {
+    const collected = deps([page("cursor-2", "1"), page(null, "2")]);
+    const commits: Array<{ page: number; cursor: string | null; entries: number }> = [];
+    collected.commitPage = async (input) => {
+      commits.push({ page: input.page, cursor: input.cursor, entries: input.accounting.total });
+    };
+    collected.writeCursor = async () => { throw new Error("commit hook owns checkpoints"); };
+    const result = await collectHomeTimeline(collected);
+    expect(result.completed).toBe(true);
+    expect(commits).toEqual([
+      { page: 1, cursor: "cursor-2", entries: 2 },
+      { page: 2, cursor: null, entries: 1 },
+    ]);
+  });
+
   it("does not send a request when already stopped", async () => {
     const collected = deps([page(null, "1")]);
     const controller = new AbortController();

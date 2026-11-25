@@ -2,6 +2,7 @@ import { createInterruptController, UsageError } from "../../lib/cli.ts";
 import { parseArgs, USAGE } from "./args.ts";
 import { resolveBackend } from "./backend.ts";
 import { readBrowserSession } from "./deps.ts";
+import { main as discoverMain } from "../../x-discovery-cli/src/main.ts";
 import { downloadSocialLists } from "./social.ts";
 import {
   downloadProfile,
@@ -11,6 +12,7 @@ import {
 } from "./run.ts";
 
 export async function main(argv: readonly string[]): Promise<number> {
+  if (argv[0] === "discover") return discoverMain(argv.slice(1));
   const interrupt = createInterruptController(
     "Stopping after the current page. Saved data is kept; re-running resumes. Ctrl-C again to force exit.",
   );
@@ -61,6 +63,7 @@ export async function main(argv: readonly string[]): Promise<number> {
       interrupt.close();
     }
   }
+  if (command.kind === "discover") return discoverMain(command.args);
   const { targets, options } = command.args;
   try {
     const resolved = resolveBackend({ backend: options.backend, session: options.session, cdpUrl: options.cdpUrl });

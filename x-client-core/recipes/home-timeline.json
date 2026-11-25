@@ -1,0 +1,28 @@
+{
+  "operation": "HomeTimeline",
+  "semantic_name": "home.page",
+  "description": "One page of the For you home feed, decoded into posts and a continuation cursor. The HTTP method, query id and features are observed from x.com and refreshed when rejected.",
+  "method": "POST",
+  "path": "/i/api/graphql/{queryId}/HomeTimeline",
+  "caller_inputs": ["count"],
+  "response_dependencies": ["cursor", "seenTweetIds"],
+  "captured_config": ["features", "fieldToggles", "queryId"],
+  "session_material": ["authorization", "x-csrf-token", "cookie"],
+  "app_generated": ["x-client-transaction-id"],
+  "observation_recipe": [
+    "open https://x.com/home and record the HomeTimeline request",
+    "open https://x.com/home again in a fresh run and record the request",
+    "scroll to record a continuation with a cursor from the first response",
+    "re-observe after a rejected query id"
+  ],
+  "verification_cases": [
+    "identity: tweet ids match the browser response",
+    "attribution: author id and handle come from core.user_results",
+    "links: expanded_url entities survive normalization",
+    "continuation: page two uses the Bottom cursor from page one",
+    "auth failure: 401 or 403 stops the run",
+    "rate limit: 429 is retried with backoff",
+    "unknown shape: post-bearing modules fail the page"
+  ],
+  "fixtures": ["x-discovery-core/test/fixtures/home-timeline.json"]
+}

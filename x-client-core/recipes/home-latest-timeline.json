@@ -1,0 +1,27 @@
+{
+  "operation": "HomeLatestTimeline",
+  "semantic_name": "home.page",
+  "description": "One page of the Following home feed, reached by clicking the Following tab on x.com/home. Observed as a POST with variables and features in the JSON body.",
+  "method": "POST",
+  "path": "/i/api/graphql/{queryId}/HomeLatestTimeline",
+  "caller_inputs": ["count"],
+  "response_dependencies": ["cursor"],
+  "captured_config": ["features", "fieldToggles", "queryId"],
+  "session_material": ["authorization", "x-csrf-token", "cookie"],
+  "app_generated": ["x-client-transaction-id"],
+  "observation_recipe": [
+    "open https://x.com/home and click the Following tab",
+    "repeat in a fresh run and compare variables",
+    "scroll to record a continuation cursor",
+    "re-observe after a rejected query id"
+  ],
+  "verification_cases": [
+    "identity: tweet ids match the browser response",
+    "attribution: author id and handle come from core.user_results",
+    "links: expanded URL entities are preserved",
+    "continuation: page two uses the Bottom cursor from page one",
+    "auth failure: 401 or 403 stops the run",
+    "unknown shape: post-bearing modules fail the page"
+  ],
+  "fixtures": []
+}

@@ -39,6 +39,8 @@
     "x-discovery-core/test/**/*.ts",
     "x-discovery-cli/src/**/*.ts",
     "x-discovery-cli/test/**/*.ts",
+    "x-client-core/src/**/*.ts",
+    "x-client-core/test/**/*.ts",
     "onefile-cli/src/**/*.ts",
     "onefile-cli/test/**/*.ts",
     "scripts/**/*.ts",

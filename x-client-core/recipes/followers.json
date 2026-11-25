@@ -1,0 +1,25 @@
+{
+  "operation": "Followers",
+  "semantic_name": "social.followers",
+  "description": "One page of accounts following a user. An empty list is a valid result; X may answer a rejected continuation with 404.",
+  "method": "GET",
+  "path": "/i/api/graphql/{queryId}/Followers",
+  "caller_inputs": ["userId", "count", "includePromotedContent", "withGrokTranslatedBio"],
+  "response_dependencies": ["cursor"],
+  "captured_config": ["features", "queryId"],
+  "session_material": ["authorization", "x-csrf-token", "cookie"],
+  "app_generated": [],
+  "observation_recipe": [
+    "open /<handle>/followers and record the Followers request",
+    "open /<handle>/followers in a fresh run and compare variables",
+    "scroll to record a continuation cursor",
+    "re-observe after a rejected query id"
+  ],
+  "verification_cases": [
+    "identity: user ids match the browser response",
+    "empty result: zero users is recorded, never treated as a parse failure",
+    "continuation: rejected cursors stop with an explicit reason",
+    "auth failure: 401 or 403 stops the run"
+  ],
+  "fixtures": []
+}

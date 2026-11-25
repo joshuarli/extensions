@@ -1,55 +1,77 @@
 import { describe, expect, it } from "vitest";
-import { ARTHOUSE_THRESHOLD, classifyPost, classifyPosts, summarizeAccounts } from "../src/classifier.ts";
+import { deriveAccounts } from "../src/accounts.ts";
+import { extractResourceLinks } from "../src/links.ts";
 import type { DiscoveredPost } from "../src/post.ts";
+import { classifyTopic, RELEVANCE_THRESHOLD } from "../src/topic.ts";
 
-function post(id: string, handle: string, full_text: string, url?: string): DiscoveredPost {
+function post(id: string, handle: string, authorId: string, text: string, drive?: string, repost = false): DiscoveredPost {
   return {
     tweet_id: id,
-    author_id: handle === "dave" ? "900" : "901",
+    author_id: authorId,
     author_handle: handle,
     author_name: null,
     created_at: "",
-    full_text,
+    full_text: text,
     lang: "en",
-    urls: url ? [{ url, display_url: "drive.google.com/file" }] : [],
+    urls: drive ? [{ url: drive, display_url: "drive.google.com/file" }] : [],
     favorite_count: 0,
     retweet_count: 0,
-    observed_at: "now",
+    relationship: { kind: repost ? "repost" : "original", source_tweet_id: null, source_handle: null },
+    observed_at: "2026-11-25T00:00:00.000Z",
   };
 }
 
-describe("classifyPost", () => {
-  it("scores arthouse signals and extracts a drive link from an expanded URL", () => {
-    const signal = classifyPost(post("1", "dave", "Criterion and MUBI picks tonight", "https://drive.google.com/file/d/abc/view"));
-    expect(signal.score).toBeGreaterThanOrEqual(ARTHOUSE_THRESHOLD);
-    expect(signal.is_arthouse).toBe(true);
-    expect(signal.matched_terms).toContain("criterion");
-    expect(signal.links).toEqual([{
-      url: "https://drive.google.com/file/d/abc/view",
-      host: "drive.google.com",
-      display_url: "drive.google.com/file",
-    }]);
+describe("classifyTopic", () => {
+  it("marks strong cinema signals as relevant with an explanation", () => {
+    const judgment = classifyTopic(post("1", "dave", "900", "Criterion and MUBI picks tonight"));
+    expect(judgment.score).toBeGreaterThanOrEqual(RELEVANCE_THRESHOLD);
+    expect(judgment.verdict).toBe("relevant");
+    expect(judgment.matched_terms).toContain("criterion");
+    expect(judgment.reason).toContain("criterion");
   });
 
-  it("ignores a film word below the threshold and non-drive hosts", () => {
-    const signal = classifyPost(post("2", "other", "Saw a movie today https://example.com/thing"));
-    expect(signal.score).toBe(1);
-    expect(signal.is_arthouse).toBe(false);
-    expect(signal.links).toEqual([]);
+  it("reports insufficient textual evidence instead of guessing", () => {
+    const judgment = classifyTopic(post("2", "dave", "900", "📼"));
+    expect(judgment.verdict).toBe("insufficient_evidence");
   });
 });
 
-describe("summarizeAccounts", () => {
-  it("ranks accounts by score and link count", () => {
+describe("extractResourceLinks", () => {
+  it("keeps query parameters in the dedupe key and records association", () => {
+    const links = extractResourceLinks(post("3", "dave", "900", "mirror", "https://drive.google.com/file/d/abc/view?usp=sharing"));
+    expect(links).toHaveLength(1);
+    expect(links[0]).toMatchObject({
+      host: "drive.google.com",
+      association: "entity",
+      source_tweet_id: "3",
+    });
+    expect(links[0]?.dedupe_key).toContain("usp=sharing");
+  });
+
+  it("ignores non-resource hosts", () => {
+    expect(extractResourceLinks(post("4", "dave", "900", "https://example.com/thing"))).toEqual([]);
+  });
+});
+
+describe("deriveAccounts", () => {
+  it("produces an explainable ranking with roles and uncertainty", () => {
     const posts = [
-      post("1", "dave", "criterion mubi", "https://mega.nz/file/one"),
-      post("2", "dave", "auteur cinema", "https://mega.nz/file/two"),
-      post("3", "other", "movie"),
+      post("1", "dave", "900", "criterion mubi", "https://mega.nz/file/one"),
+      post("2", "dave", "900", "auteur cinema", "https://mega.nz/file/two", true),
+      post("3", "other", "901", "movie"),
     ];
-    const accounts = summarizeAccounts(posts, classifyPosts(posts));
-    expect(accounts[0]?.handle).toBe("dave");
-    expect(accounts[0]).toMatchObject({ posts: 2, arthouse_posts: 2, drive_links: 2 });
-    expect(accounts[0]?.sample_links).toHaveLength(2);
-    expect(accounts[1]).toMatchObject({ handle: "other", arthouse_posts: 0 });
+    const topics = posts.map(classifyTopic);
+    const links = posts.flatMap(extractResourceLinks);
+    const accounts = deriveAccounts(posts, topics, links);
+    expect(accounts[0]).toMatchObject({
+      handle: "dave",
+      role: "both",
+      posts_examined: 2,
+      relevant_posts: 2,
+      resource_links: 2,
+      uncertainty: "thin",
+    });
+    expect(accounts[0]?.examples[0]?.source_url).toBe("https://x.com/dave/status/1");
+    expect(accounts[1]).toMatchObject({ handle: "other", relevant_posts: 0 });
   });
 });

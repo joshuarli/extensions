@@ -1,0 +1,26 @@
+{
+  "operation": "Following",
+  "semantic_name": "social.following",
+  "description": "One page of accounts followed by a user. The viewer and target account are explicit inputs; the cursor comes from the previous response.",
+  "method": "GET",
+  "path": "/i/api/graphql/{queryId}/Following",
+  "caller_inputs": ["userId", "count", "includePromotedContent", "withGrokTranslatedBio"],
+  "response_dependencies": ["cursor"],
+  "captured_config": ["features", "queryId"],
+  "session_material": ["authorization", "x-csrf-token", "cookie"],
+  "app_generated": [],
+  "observation_recipe": [
+    "open /<handle>/following and record the Following request",
+    "open /<handle>/following in a fresh run and compare variables",
+    "scroll to record a continuation cursor",
+    "re-observe after a rejected query id"
+  ],
+  "verification_cases": [
+    "identity: user ids match the browser response",
+    "attribution: handles come from user_results core",
+    "continuation: page two uses the Bottom cursor",
+    "unknown shape: non-user modules are counted, not dropped",
+    "auth failure: 401 or 403 stops the run"
+  ],
+  "fixtures": []
+}

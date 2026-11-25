@@ -92,7 +92,8 @@ export type Command =
   | { kind: "help" }
   | { kind: "version" }
   | { kind: "download"; args: ParsedArgs }
-  | { kind: "lists"; args: ParsedArgs };
+  | { kind: "lists"; args: ParsedArgs }
+  | { kind: "discover"; args: readonly string[] };
 
 export { DEFAULT_MAX_MEDIA_BYTES };
 
@@ -115,6 +116,7 @@ export function parseArgs(argv: readonly string[]): Command {
   const [command, ...rest] = argv;
   if (!command || command === "--help" || command === "-h") return { kind: "help" };
   if (command === "--version" || command === "-v") return { kind: "version" };
+  if (command === "discover") return { kind: "discover", args: rest };
   if (command !== "download" && command !== "lists") throw new UsageError(`Unknown command "${command}".\n\n${USAGE}`);
   if (rest.includes("--help") || rest.includes("-h")) return { kind: "help" };
   const parsed = parseCliArgs(rest, command === "lists" ? { values: schema.values, flags: [], maxPositionals: 0 } : schema);

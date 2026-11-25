@@ -1,6 +1,6 @@
 import { Schema } from "effect";
 
-const HOME_OPERATIONS = ["HomeTimeline"] as const;
+const HOME_OPERATIONS = ["HomeTimeline", "HomeLatestTimeline"] as const;
 export const SOCIAL_OPERATIONS = ["Following", "Followers"] as const;
 const BOOKMARK_OPERATIONS = ["Bookmarks", "BookmarkFoldersSlice", "BookmarkFolderTimeline"] as const;
 const LIKES_OPERATIONS = ["Likes"] as const;
