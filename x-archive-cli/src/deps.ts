@@ -22,6 +22,7 @@ export interface CaptureOptions {
   readonly required?: RequiredCaptures;
   readonly screenName?: string | undefined;
   readonly onStatus?: ((text: string) => void) | undefined;
+  readonly signal?: AbortSignal | undefined;
 }
 const CACHE_MAX_AGE_DAYS = 30;
 
@@ -162,6 +163,7 @@ export async function readCapturedCredentials(
   capture: CaptureOptions = {},
 ): Promise<Credentials> {
   const required = capture.required ?? [];
+  if (capture.signal?.aborted) throw new Error("Interrupted while reading X credentials.");
   const cached = cachedCredentials();
   if (backend.kind === "bctl") {
     if (cached && hasRequiredCaptures(cached, required)) return cached;
@@ -193,6 +195,7 @@ export async function readCapturedCredentials(
     if ((!credentials || !hasRequiredCaptures(credentials, required)) && pages.length > 0) {
       capture.onStatus?.("Capturing X GraphQL credentials from " + pages.length + " page(s)…");
       for (const url of pages) {
+        if (capture.signal?.aborted) throw new Error("Interrupted while capturing X credentials.");
         if (credentials && hasRequiredCaptures(credentials, required)) break;
         const page = await context.newPage();
         try {
@@ -203,6 +206,7 @@ export async function readCapturedCredentials(
           }
           const deadline = Date.now() + 20_000;
           while (Date.now() < deadline) {
+            if (capture.signal?.aborted) throw new Error("Interrupted while capturing X credentials.");
             const latest = await workerCredentials(context, extensionId, session.userId);
             if (latest) {
               credentials = credentials ? mergeCredentials(credentials, latest) : latest;

@@ -105,6 +105,13 @@ retained either way.
   size) before landing — the same atomics you get from the extension's
   downloads.
 
+## Interrupting a run
+
+Ctrl-C stops gracefully: the current page finishes or the current media file is
+discarded, partial media is cleaned up, and the archive is exported from what
+was saved. No further targets are started and the exit code is 130. Re-running
+resumes from the saved checkpoints. A second Ctrl-C forces an immediate exit.
+
 ## Media size limit
 
 By default `x` saves only media files up to 16 MB. A skipped file's path stays

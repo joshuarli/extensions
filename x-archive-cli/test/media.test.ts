@@ -31,6 +31,10 @@ beforeEach(async () => {
       response.write(Buffer.alloc(1024, 7));
       response.write(Buffer.alloc(1024, 8));
       response.end();
+    } else if (request.url === "/slow") {
+      const body = Buffer.alloc(1024, 7);
+      response.writeHead(200, { "content-type": "image/jpeg", "content-length": String(body.length) });
+      setTimeout(() => response.end(body), 300);
     } else if (request.url === "/error") {
       response.writeHead(500, { "content-type": "text/plain" });
       response.end("nope");
@@ -61,7 +65,7 @@ describe("media size limit", () => {
     const result = await downloadPostsMedia([
       job("small.jpg", baseUrl + "/small"),
       job("large.mp4", baseUrl + "/declared-large"),
-    ], { session, folder: root, maxBytes: 1024 });
+    ], { session, folder: root, maxBytes: 1024, signal: new AbortController().signal });
 
     expect(result.downloaded).toBe(1);
     expect(result.failed).toEqual([]);
@@ -73,7 +77,7 @@ describe("media size limit", () => {
   it("discards a streamed download that passes the limit with no content-length", async () => {
     const result = await downloadPostsMedia([
       job("chunked.mp4", baseUrl + "/chunked-large"),
-    ], { session, folder: root, maxBytes: 1024 });
+    ], { session, folder: root, maxBytes: 1024, signal: new AbortController().signal });
 
     expect(result.downloaded).toBe(0);
     expect(result.failed).toEqual([]);
@@ -85,7 +89,7 @@ describe("media size limit", () => {
   it("downloads above the default limit when the limit is disabled", async () => {
     const result = await downloadPostsMedia([
       job("chunked.mp4", baseUrl + "/chunked-large"),
-    ], { session, folder: root, maxBytes: 0 });
+    ], { session, folder: root, maxBytes: 0, signal: new AbortController().signal });
 
     expect(result.downloaded).toBe(1);
     expect(result.skipped).toEqual([]);
@@ -95,11 +99,37 @@ describe("media size limit", () => {
   it("keeps HTTP failures distinct from skipped media", async () => {
     const result = await downloadPostsMedia([
       job("error.jpg", baseUrl + "/error"),
-    ], { session, folder: root, maxBytes: 1024 });
+    ], { session, folder: root, maxBytes: 1024, signal: new AbortController().signal });
 
     expect(result.downloaded).toBe(0);
     expect(result.skipped).toEqual([]);
     expect(result.failed[0]!.error).toBe("HTTP 500");
+    expect(mediaFiles()).toEqual([]);
+  });
+
+  it("starts nothing when already interrupted", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const result = await downloadPostsMedia([
+      job("small.jpg", baseUrl + "/small"),
+    ], { session, folder: root, maxBytes: 1024, signal: controller.signal });
+
+    expect(result.stopped).toBe(true);
+    expect(result.downloaded).toBe(0);
+    expect(result.failed).toEqual([]);
+    expect(mediaFiles()).toEqual([]);
+  });
+
+  it("discards an in-flight download when interrupted", async () => {
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), 20);
+    const result = await downloadPostsMedia([
+      job("slow.jpg", baseUrl + "/slow"),
+    ], { session, folder: root, maxBytes: 1024, signal: controller.signal });
+
+    expect(result.stopped).toBe(true);
+    expect(result.downloaded).toBe(0);
+    expect(result.failed).toEqual([]);
     expect(mediaFiles()).toEqual([]);
   });
 });

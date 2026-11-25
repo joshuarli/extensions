@@ -16,6 +16,8 @@ Usage:
 
 Multiple targets are processed serially in the order given. A failure stops the
 run; re-running resumes each target from its saved checkpoint.
+Press Ctrl-C once to stop after the current page; saved data is kept and the
+next run resumes. Press it again to force exit.
 
 Options:
   --export-only   skip collection; rebuild JSON/media/render from saved data

@@ -17,7 +17,7 @@ import {
 } from "../../x-archive-core/src/export-paths.ts";
 import { buildDebugReport } from "../../x-archive-core/src/debug.ts";
 import { Effect } from "effect";
-import { graphqlRequest } from "../../x-archive-core/src/api.ts";
+import { graphqlRequest, RequestFailure } from "../../x-archive-core/src/api.ts";
 import { extractLookupUserId } from "../../x-archive-core/src/collector.ts";
 import { renderArchive } from "../../x-archive-core/src/render.ts";
 import { PROFILE_OPERATIONS, parseProfileScreenName, type Credentials } from "../../x-archive-core/src/capture.ts";
@@ -48,6 +48,15 @@ export interface RunOptions {
   cdpUrl: string;
   noContext?: boolean;
   maxMediaBytes: number;
+  signal: AbortSignal;
+}
+
+function runSignal(options: RunOptions): AbortSignal {
+  return AbortSignal.any([options.signal, AbortSignal.timeout(SAFETY_TIMEOUT_MS)]);
+}
+
+function wasStopped(error: unknown): boolean {
+  return error instanceof RequestFailure && error.kind === "stopped";
 }
 
 export interface RunSummary {
@@ -97,6 +106,7 @@ async function resolveTargetUserId(
   credentials: Credentials,
   screenName: string,
   status: StatusLog,
+  signal: AbortSignal,
 ): Promise<string> {
   const cached = await buildDeps(session, credentials).readProfileTarget(session.userId);
   if (cached?.screenName === screenName && cached.targetUserId) return cached.targetUserId;
@@ -109,8 +119,9 @@ async function resolveTargetUserId(
   status.say("session", "Resolving @" + screenName + " to an X user id…");
   void queryId;
   const body = await Effect.runPromise(
-    graphqlRequest(session.userId, credentials, "UserByScreenName", { screen_name: screenName }, AbortSignal.timeout(30_000), async () => cookieSession(session)),
+    graphqlRequest(session.userId, credentials, "UserByScreenName", { screen_name: screenName }, AbortSignal.any([signal, AbortSignal.timeout(30_000)]), async () => cookieSession(session)),
   ).catch((cause: unknown) => {
+    if (wasStopped(cause)) throw cause;
     throw new Error("X could not resolve @" + screenName + ": " + (cause instanceof Error ? cause.message : String(cause)));
   });
   const restId = extractLookupUserId(body);
@@ -158,6 +169,7 @@ async function finishExport(input: FinishExportInput): Promise<RunSummary> {
     session,
     folder: outDir,
     maxBytes: options.maxMediaBytes,
+    signal: options.signal,
     onProgress: ({ downloaded, failed, skipped, total }) => {
       const done = downloaded + failed + skipped;
       if (done % 25 === 0 || done === total) {
@@ -169,6 +181,9 @@ async function finishExport(input: FinishExportInput): Promise<RunSummary> {
   });
   if (media.skipped.length > 0) {
     status.add("Skipped " + media.skipped.length + " media file(s) over " + limitText + "; nothing was written to disk for them.");
+  }
+  if (media.stopped) {
+    status.add("Media download stopped; saved media files are kept.");
   }
   const mediaDownloaded = jobsAll.jobs.length - jobs.length + media.downloaded;
   const report = buildDebugReport(
@@ -222,14 +237,19 @@ async function downloadBookmarks(session: XSession, credentials: Credentials, op
   const deps = buildDeps(session, credentials);
   if (options.action !== "export") {
     status.say("collecting", "Scanning bookmarks (existing saved posts are retained)…");
-    await collect({
-      userId: session.userId,
-      store,
-      deps,
-      signal: AbortSignal.timeout(SAFETY_TIMEOUT_MS),
-      report: (text) => status.add(text),
-      onProgress: progressLogger(status.progress, "bookmarks"),
-    });
+    try {
+      await collect({
+        userId: session.userId,
+        store,
+        deps,
+        signal: runSignal(options),
+        report: (text) => status.add(text),
+        onProgress: progressLogger(status.progress, "bookmarks"),
+      });
+    } catch (error) {
+      if (!wasStopped(error)) throw error;
+      status.say("stopping", "Stopped; exporting what was saved.");
+    }
     if (options.action === "collect") {
       const state = await store.loadState();
       return { folder: "-", jsonFile: "-", posts: (await store.allRecords()).length,
@@ -267,14 +287,19 @@ async function downloadLikes(session: XSession, credentials: Credentials, option
   const deps = buildDeps(session, credentials);
   if (options.action !== "export") {
     status.say("collecting", "Scanning likes (existing saved posts are retained)…");
-    await collectLikes({
-      userId: session.userId,
-      store,
-      deps,
-      signal: AbortSignal.timeout(SAFETY_TIMEOUT_MS),
-      report: (text) => status.add(text),
-      onProgress: progressLogger(status.progress, "likes"),
-    });
+    try {
+      await collectLikes({
+        userId: session.userId,
+        store,
+        deps,
+        signal: runSignal(options),
+        report: (text) => status.add(text),
+        onProgress: progressLogger(status.progress, "likes"),
+      });
+    } catch (error) {
+      if (!wasStopped(error)) throw error;
+      status.say("stopping", "Stopped; exporting what was saved.");
+    }
     if (options.action === "collect") {
       const state = await store.loadState();
       return { folder: "-", jsonFile: "-", posts: (await store.allRecords()).length,
@@ -320,8 +345,9 @@ export async function downloadProfile(handle: string, options: RunOptions): Prom
     required: [["UserByScreenName"], PROFILE_OPERATIONS],
     screenName,
     onStatus: (text) => status.say("session", text),
+    signal: options.signal,
   });
-  const targetUserId = await resolveTargetUserId(session, credentials, screenName, status);
+  const targetUserId = await resolveTargetUserId(session, credentials, screenName, status, options.signal);
   const profileDir = screenName.toLowerCase();
   const outDir = join(options.outRoot, profileDir);
   mkdirSync(outDir, { recursive: true });
@@ -340,15 +366,22 @@ export async function downloadProfile(handle: string, options: RunOptions): Prom
   const deps = buildDeps(session, credentials);
   if (options.action !== "export") {
     status.say("collecting", "Scanning @" + screenName + " (existing saved posts are retained)…");
-    await collectProfile({
-      userId: session.userId,
-      store,
-      deps,
-      signal: AbortSignal.timeout(SAFETY_TIMEOUT_MS),
-      report: (text) => status.add(text),
-      onProgress: progressLogger(status.progress, screenName),
-    });
-    if (options.noContext) {
+    try {
+      await collectProfile({
+        userId: session.userId,
+        store,
+        deps,
+        signal: runSignal(options),
+        report: (text) => status.add(text),
+        onProgress: progressLogger(status.progress, screenName),
+      });
+    } catch (error) {
+      if (!wasStopped(error)) throw error;
+      status.say("stopping", "Stopped; exporting what was saved.");
+    }
+    if (options.signal.aborted) {
+      status.say("stopping", "Skipping thread context after interrupt.");
+    } else if (options.noContext) {
       status.say("collecting", "Skipping thread context fetch (--no-context).");
     } else {
       status.say("collecting", "Fetching thread context — ancestors of archived replies (text only, no media)…");
@@ -356,7 +389,7 @@ export async function downloadProfile(handle: string, options: RunOptions): Prom
         const context = await syncContextThreads({
           store,
           targetUserId,
-          signal: AbortSignal.timeout(SAFETY_TIMEOUT_MS),
+          signal: runSignal(options),
           report: (text) => status.add(text),
         });
         status.say("collecting", "Context: " + context.stored + " posts stored (" + context.fetched + " pages fetched, " + context.failed + " failed, " + context.unreachable + " unreachable).");
@@ -406,6 +439,7 @@ export async function downloadSelf(options: RunOptions): Promise<RunSummary[]> {
   const credentials = await readCapturedCredentials(session, options.cdpUrl, options.backend, {
     required: [["Bookmarks"], ["Likes"]],
     onStatus: (text) => status.say("session", text),
+    signal: options.signal,
   });
   if (options.backend.kind === "bctl") {
     status.say("session", "Seeding needs the Helium extension, which the bctl appliance does not have; continuing with the local store.");
@@ -422,18 +456,18 @@ export async function downloadSelf(options: RunOptions): Promise<RunSummary[]> {
     }
   }
   const summaries: RunSummary[] = [];
-  if (credentials.queryIds["Bookmarks"]) {
+  if (credentials.queryIds["Bookmarks"] && !options.signal.aborted) {
     summaries.push(await downloadBookmarks(session, credentials, options, status));
-  } else {
+  } else if (!options.signal.aborted) {
     status.say("collecting", "Skipping bookmarks: never captured (open https://x.com/i/history in Helium once).");
   }
-  if (credentials.queryIds["Likes"]) {
+  if (credentials.queryIds["Likes"] && !options.signal.aborted) {
     summaries.push(await downloadLikes(session, credentials, options, status));
-  } else {
+  } else if (!options.signal.aborted) {
     status.say("collecting", "Skipping likes: never captured (open https://x.com/i/history/likes in Helium once).");
   }
   progress.finish();
-  if (summaries.length === 0) {
+  if (summaries.length === 0 && !options.signal.aborted) {
     throw new Error("Nothing captured yet. Open https://x.com/i/history and https://x.com/i/history/likes in Helium once, then retry.");
   }
   return summaries;

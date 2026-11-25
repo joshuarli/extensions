@@ -143,6 +143,10 @@ export async function syncContextThreads(options: ContextSyncOptions): Promise<C
       tweetsById = new Map(page.tweets.map((tweet) => [String(tweet["rest_id"]), tweet]));
       consecutiveFailures = 0;
     } catch (error) {
+      if (signal.aborted) {
+        report("Context backfill stopped; re-running resumes.");
+        break;
+      }
       consecutiveFailures += 1;
       result.failed += 1;
       await store.markContextPage(focalId, "failed");

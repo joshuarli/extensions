@@ -22,7 +22,8 @@ const MIN_BYTES = 512;
 type FetchResult =
   | { kind: "downloaded"; bytes: number }
   | { kind: "skipped"; bytes: number }
-  | { kind: "failed"; error: string };
+  | { kind: "failed"; error: string }
+  | { kind: "interrupted" };
 
 function fixPhotoUrl(url: string): string {
   const match = /^(https:\/\/pbs\.twimg\.com\/media\/[^?]+)\.(png|webp|gif)\?format=jpg(&name=orig)?$/u.exec(url);
@@ -68,16 +69,18 @@ async function fetchOne(
   job: MediaJob,
   attempts: number,
   maxBytes: number,
+  signal: AbortSignal,
 ): Promise<FetchResult> {
   const target = join(folder, "media", job.filename);
   let lastError = "unknown";
   for (let attempt = 0; attempt < attempts; attempt++) {
+    if (signal.aborted) return { kind: "interrupted" };
     let temporary: string | null = null;
     let handle: number | null = null;
     try {
       const response = await fetch(fixPhotoUrl(job.url), {
         headers: cookieHeaders(session),
-        signal: AbortSignal.timeout(120_000),
+        signal: AbortSignal.any([signal, AbortSignal.timeout(120_000)]),
         redirect: "follow",
       });
       const type = (response.headers.get("content-type") ?? "").split(";")[0]!.trim().toLowerCase();
@@ -140,6 +143,7 @@ async function fetchOne(
       temporary = null;
       return { kind: "downloaded", bytes: total };
     } catch (error) {
+      if (signal.aborted) return { kind: "interrupted" };
       lastError = String(error instanceof Error ? error.message : error).slice(0, 160);
     } finally {
       if (handle !== null) {
@@ -160,6 +164,7 @@ export interface MediaDownloadOptions {
   session: XSession;
   folder: string;
   maxBytes: number;
+  signal: AbortSignal;
   onProgress?: (progress: MediaExportProgress) => void;
 }
 
@@ -167,23 +172,25 @@ export async function downloadPostsMedia(
   jobs: readonly MediaJob[],
   options: MediaDownloadOptions,
 ): Promise<MediaExportResult> {
-  const { session, folder, maxBytes } = options;
+  const { session, folder, maxBytes, signal } = options;
   mkdirSync(join(folder, "media"), { recursive: true });
   const tempDir = mkdtempSync(join(tmpdir(), "x-archive-media-"));
   const failed: Array<{ filename: string; error: string }> = [];
   const skipped: Array<{ filename: string; bytes: number }> = [];
   let downloaded = 0;
   let cursor = 0;
+  let stopped = false;
   const total = jobs.length;
   try {
     const workers = Array.from({ length: Math.min(CONCURRENCY, jobs.length) }, async () => {
-      while (cursor < jobs.length) {
+      while (cursor < jobs.length && !signal.aborted) {
         const index = cursor;
         cursor += 1;
         const job = jobs[index]!;
-        const result = await fetchOne(session, tempDir, folder, job, 3, maxBytes);
+        const result = await fetchOne(session, tempDir, folder, job, 3, maxBytes, signal);
         if (result.kind === "downloaded") downloaded += 1;
         else if (result.kind === "skipped") skipped.push({ filename: job.filename, bytes: result.bytes });
+        else if (result.kind === "interrupted") { stopped = true; break; }
         else failed.push({ filename: job.filename, error: result.error });
         options.onProgress?.({ downloaded, failed: failed.length, skipped: skipped.length, total });
       }
@@ -194,5 +201,5 @@ export async function downloadPostsMedia(
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }
-  return { total, downloaded, failed, skipped, stopped: false };
+  return { total, downloaded, failed, skipped, stopped: stopped || signal.aborted };
 }
