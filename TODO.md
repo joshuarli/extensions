@@ -192,15 +192,6 @@ Next: 45
 - **Fix with:** none
 - **Effort:** M
 
-### EXT-34 · P3 · Dead x-bookmarks workflow claims coverage for a removed extension
-
-- **Area:** CI
-- **Where:** .github/workflows/x-bookmarks.yml:7,14,42
-- **Problem:** The workflow filters on extension-x-bookmarks/** which does not exist and runs vitest on a path with no tests, so it can never trigger and would fail if dispatched manually.
-- **Recommendation:** Delete the workflow.
-- **Fix with:** none
-- **Effort:** S
-
 ### EXT-35 · P3 · Onefile scoped CI duplicates the full check with narrower inputs
 
 - **Area:** CI
