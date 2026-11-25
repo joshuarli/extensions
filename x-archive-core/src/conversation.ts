@@ -1,5 +1,5 @@
-import { Schema } from "effect";
-import { BookmarkSchema, type Bookmark } from "./parser.ts";
+import { decodeBookmark } from "./raw.ts";
+import type { RawBookmark } from "./parser.ts";
 
 export interface ConversationPage {
   tweets: Array<Record<string, unknown>>;
@@ -149,7 +149,7 @@ export function parseContextTweet(
   tweet: Record<string, unknown>,
   conversationId: string,
   observedAt: string,
-): Bookmark | null {
+): RawBookmark | null {
   const tweetId = string(tweet["rest_id"]);
   if (!tweetId || !/^\d+$/u.test(tweetId)) return null;
   const details = object(tweet["details"]);
@@ -196,5 +196,5 @@ export function parseContextTweet(
     folder_ids: [],
     observed_at: observedAt,
   };
-  return Schema.decodeUnknownSync(BookmarkSchema)(record);
+  return decodeBookmark({ ...record, raw_tweet: tweet });
 }

@@ -1,7 +1,7 @@
-import { Schema } from "effect";
-import { BookmarkSchema, type Bookmark } from "./parser.ts";
+import { decodeBookmark } from "./raw.ts";
+import type { RawBookmark } from "./parser.ts";
 
-export function mergeBookmark(old: Bookmark | undefined, incoming: Bookmark, folderId?: string): Bookmark {
+export function mergeBookmark(old: RawBookmark | undefined, incoming: RawBookmark, folderId?: string): RawBookmark {
   const ids = new Set([...(old?.folder_ids ?? []), ...incoming.folder_ids]);
   if (folderId) ids.add(folderId);
   const keepOld = old?.status === "available" && incoming.status === "unavailable";
@@ -11,7 +11,8 @@ export function mergeBookmark(old: Bookmark | undefined, incoming: Bookmark, fol
     ...(!incoming.quoted_tweet ? { quoted_tweet: old.quoted_tweet } : {}),
     ...(!incoming.card ? { card: old.card } : {}),
   } : {};
-  const merged: Bookmark = {
+  const raw = keepOld && old?.raw_tweet !== undefined ? old.raw_tweet : incoming.raw_tweet ?? old?.raw_tweet;
+  const merged: RawBookmark = {
     ...(old ?? {}),
     ...(keepOld ? {} : incoming),
     ...preserve,
@@ -21,6 +22,7 @@ export function mergeBookmark(old: Bookmark | undefined, incoming: Bookmark, fol
     folder_ids: [...ids],
     observed_at: incoming.observed_at,
     ...(keepOld || incoming.status === "available" ? { unavailable_reason: undefined } : {}),
+    ...(raw !== undefined ? { raw_tweet: raw } : {}),
   };
-  return Schema.decodeUnknownSync(BookmarkSchema)(merged);
+  return decodeBookmark(merged);
 }

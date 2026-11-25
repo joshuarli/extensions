@@ -10,15 +10,6 @@ Next: 45
 - **Fix with:** none
 - **Effort:** M
 
-### EXT-12 · P1 · Preserve raw X tweet payloads and stop schema-decode field loss
-
-- **Area:** X archive · collection and storage
-- **Where:** x-archive-core/src/parser.ts:113-230, merge.ts:25, storage.ts:86/130/176/216; x-archive-cli/src/fs-store.ts:60/115, profile-db.ts:95/124/132/154
-- **Problem:** The normalized Bookmark is the only persisted record and Effect decodeUnknownSync strips undeclared keys at every hop, so card bindings, note-tweet entities, reposter identity and future fields are discarded at collection and cannot be recovered without re-fetching a post X may have deleted.
-- **Recommendation:** Store the raw tweet result beside each record in a separate SQLite column and JSON field outside BookmarkSchema, bump schema_version with a re-derivation path, and generate the renderer's normalized view from it.
-- **Fix with:** architect
-- **Effort:** L
-
 ### EXT-13 · P1 · Record media download outcomes and stop emitting broken HTML media links
 
 - **Area:** X archive · media and HTML export
