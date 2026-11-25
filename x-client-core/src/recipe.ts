@@ -33,6 +33,7 @@ export interface Observation {
   values: Record<string, unknown>;
   responseKeys: string[];
   headers: Record<string, string>;
+  continuationOf?: string | undefined;
 }
 
 const CALLER_INPUTS = new Set(["userId", "screenName", "feed", "count", "lang"]);
