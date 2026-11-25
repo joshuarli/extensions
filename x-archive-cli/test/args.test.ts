@@ -72,7 +72,15 @@ describe("x arguments", () => {
     expect(() => parseArgs(["nope"])).toThrow("Unknown command");
   });
 
+  it("parses the lists command without targets", () => {
+    const command = parseArgs(["lists", "--out", "/tmp/x-lists"]);
+    expect(command.kind).toBe("lists");
+    if (command.kind !== "lists") throw new Error("expected lists");
+    expect(command.args.options.outRoot).toBe("/tmp/x-lists");
+  });
+
   it("exposes the usage text for the entry point", () => {
     expect(USAGE).toContain("x download self");
+    expect(USAGE).toContain("x lists");
   });
 });

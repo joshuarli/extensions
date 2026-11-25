@@ -19,6 +19,7 @@ pnpm x download token___garden       # @handle or x.com profile URL: posts, repo
 pnpm x download token___garden       # same command updates it: only newer posts are fetched
 pnpm x download inve1ns cleanjpg     # several profiles, one after another (serial)
 pnpm x download self inve1ns         # self and profiles in one run
+pnpm x lists                         # save your following and followers lists
 pnpm x download self --export-only   # re-export from saved data, no re-collection
 pnpm x download self --no-render     # skip archive.html
 pnpm x download self --collect-only  # collect only
@@ -28,6 +29,14 @@ pnpm x download token___garden --out=/path   # downloads root (default ~/.local/
 
 Targets are processed serially in the order given; a failure stops the run, and
 re-running resumes each target from its saved checkpoint.
+
+`x download self` also writes your following and followers lists to
+`~/.local/share/x/downloads/social-<date>/following.json` and `followers.json`.
+Each file records the account id, capture time and the observed user ids,
+handles and names. The lists are re-observed from x.com when their query IDs
+are missing or rejected, so a rotated GraphQL operation does not silently
+produce an empty file. `x lists` saves only the two lists without re-running
+bookmarks or likes.
 
 `x` writes exports to a well-known root, `~/.local/share/x/downloads`
 (`X_ARCHIVE_DOWNLOADS` or `XDG_DATA_HOME` override it; `--out=DIR` sets it

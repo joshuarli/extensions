@@ -7,6 +7,7 @@ export { UsageError };
 export const USAGE = `x — archive X data to your machine
 
 Usage:
+  x lists                         Save your following and followers lists
   x download self                 Archive your bookmarks and likes
   x download <handle>             Archive a profile's posts, reposts and replies
   x download <handle> <handle>    Archive several profiles, one after another
@@ -90,7 +91,8 @@ export interface ParsedArgs {
 export type Command =
   | { kind: "help" }
   | { kind: "version" }
-  | { kind: "download"; args: ParsedArgs };
+  | { kind: "download"; args: ParsedArgs }
+  | { kind: "lists"; args: ParsedArgs };
 
 export { DEFAULT_MAX_MEDIA_BYTES };
 
@@ -113,9 +115,25 @@ export function parseArgs(argv: readonly string[]): Command {
   const [command, ...rest] = argv;
   if (!command || command === "--help" || command === "-h") return { kind: "help" };
   if (command === "--version" || command === "-v") return { kind: "version" };
-  if (command !== "download") throw new UsageError(`Unknown command "${command}".\n\n${USAGE}`);
+  if (command !== "download" && command !== "lists") throw new UsageError(`Unknown command "${command}".\n\n${USAGE}`);
   if (rest.includes("--help") || rest.includes("-h")) return { kind: "help" };
-  const parsed = parseCliArgs(rest, schema);
+  const parsed = parseCliArgs(rest, command === "lists" ? { values: schema.values, flags: [], maxPositionals: 0 } : schema);
+  if (command === "lists") {
+    return { kind: "lists", args: {
+      command,
+      targets: [],
+      options: {
+        action: "download",
+        outRoot: parsed.values.get("out") ?? downloadsRoot(),
+        render: false,
+        noContext: false,
+        maxMediaBytes: DEFAULT_MAX_MEDIA_BYTES,
+        backend: parsed.values.get("backend"),
+        session: parsed.values.get("session"),
+        cdpUrl: parsed.values.get("cdp-url"),
+      },
+    } };
+  }
   const targets = parsed.positional;
   if (targets.length === 0) throw new UsageError(`download needs at least one target: self, @handle, or a profile URL.\n\n${USAGE}`);
   if (parsed.flags.has("export-only") && parsed.flags.has("collect-only")) {

@@ -398,3 +398,54 @@ export function parseFolders(data: unknown): ParsedFolders {
   }
   return { valid: true, folders, nextCursor: string(cursor) };
 }
+
+export interface ListedUser {
+  user_id: string;
+  handle: string;
+  name: string | null;
+  observed_at: string;
+}
+
+export interface ParsedUserList {
+  valid: boolean;
+  users: ListedUser[];
+  nextCursor: string | null;
+  unsupported: number;
+  detail?: string;
+}
+
+export function parseUserList(data: unknown, observedAt: string): ParsedUserList {
+  const instructions = array(get(data, "data", "user", "result", "timeline", "timeline", "instructions"));
+  const addEntries = instructions.find((instruction) => get(instruction, "type") === "TimelineAddEntries");
+  if (addEntries === undefined) {
+    return { valid: false, users: [], nextCursor: null, unsupported: 0,
+      detail: "User list response has no TimelineAddEntries instruction." };
+  }
+  const users: ListedUser[] = [];
+  let nextCursor: string | null = null;
+  let unsupported = 0;
+  for (const entry of array(get(addEntries, "entries"))) {
+    const content = get(entry, "content");
+    if (get(content, "entryType") === "TimelineTimelineCursor") {
+      if (get(content, "cursorType") === "Bottom") nextCursor = string(get(content, "value")) ?? null;
+      continue;
+    }
+    if (get(content, "entryType") !== "TimelineTimelineItem") {
+      unsupported++;
+      continue;
+    }
+    const user = get(content, "itemContent", "user_results", "result");
+    if (get(user, "__typename") !== "User") {
+      unsupported++;
+      continue;
+    }
+    const userId = string(get(user, "rest_id"));
+    const handle = string(get(user, "core", "screen_name"));
+    if (!userId || !handle) {
+      unsupported++;
+      continue;
+    }
+    users.push({ user_id: userId, handle, name: string(get(user, "core", "name")), observed_at: observedAt });
+  }
+  return { valid: true, users, nextCursor, unsupported };
+}

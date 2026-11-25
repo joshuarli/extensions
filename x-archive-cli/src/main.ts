@@ -1,6 +1,8 @@
 import { createInterruptController, UsageError } from "../../lib/cli.ts";
 import { parseArgs, USAGE } from "./args.ts";
 import { resolveBackend } from "./backend.ts";
+import { readBrowserSession } from "./deps.ts";
+import { downloadSocialLists } from "./social.ts";
 import {
   downloadProfile,
   downloadSelf,
@@ -29,6 +31,35 @@ export async function main(argv: readonly string[]): Promise<number> {
   if (command.kind === "version") {
     process.stdout.write("x-archive-cli 0.1.0\n");
     return 0;
+  }
+  if (command.kind === "lists") {
+    try {
+      const resolved = resolveBackend({
+        backend: command.args.options.backend,
+        session: command.args.options.session,
+        cdpUrl: command.args.options.cdpUrl,
+      });
+      const session = await readBrowserSession(resolved.cdpUrl, resolved.backend);
+      const social = await downloadSocialLists(session, {
+        cdpUrl: resolved.cdpUrl,
+        outRoot: command.args.options.outRoot,
+        signal: interrupt.signal,
+        backend: resolved.backend,
+        onStatus: (text) => process.stderr.write(text + "\n"),
+      });
+      process.stdout.write(social.folder + "/following.json " + social.following + " users"
+        + " · followers.json " + social.followers + " users · " + social.reason + "\n");
+      return interrupt.stopped() ? 130 : 0;
+    } catch (error) {
+      if (interrupt.stopped()) {
+        process.stderr.write("Interrupted. Saved lists are kept; re-running resumes.\n");
+        return 130;
+      }
+      process.stderr.write("x lists failed: " + (error instanceof Error ? error.message : String(error)) + "\n");
+      return 1;
+    } finally {
+      interrupt.close();
+    }
   }
   const { targets, options } = command.args;
   try {

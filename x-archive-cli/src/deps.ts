@@ -3,7 +3,10 @@ import { join } from "node:path";
 import {
   CredentialsSchema,
   PROFILE_OPERATIONS,
+  SOCIAL_OPERATIONS,
+  captureRequest,
   credentialKey,
+  mergeCapture,
   parseUserId,
   parseProfileScreenName,
   type Credentials,
@@ -78,10 +81,55 @@ export function hasRequiredCaptures(credentials: Credentials, required: Required
     && missingCaptures(credentials, required).length === 0;
 }
 
+export async function captureOperationsFromBrowser(
+  cdpUrl: string,
+  pages: readonly (readonly [Operation, string])[],
+  signal: AbortSignal,
+  onStatus: (text: string) => void = () => {},
+): Promise<Credentials> {
+  const browser = await chromium.connectOverCDP(cdpUrl, { timeout: 10_000 });
+  let credentials: Credentials = { queryIds: {}, features: {} };
+  try {
+    const context = browser.contexts()[0];
+    if (!context) throw new Error("The browser at " + cdpUrl + " has no page context.");
+    for (const [operation, url] of pages) {
+      if (signal.aborted) throw new Error("Interrupted while capturing X credentials.");
+      if (credentials.queryIds[operation]) continue;
+      onStatus("Capturing " + operation + " from " + url + "…");
+      const page = await context.newPage();
+      try {
+        page.on("request", (request) => {
+          try {
+            const headers = Object.entries(request.headers()).map(([name, value]) => ({ name, value }));
+            const capture = captureRequest(request.url(), "https://x.com", headers,
+              request.method(), request.postData() ?? undefined);
+            if (capture) credentials = mergeCapture(credentials, capture);
+          } catch { /* Ignore requests that are not X GraphQL captures. */ }
+        });
+        await page.goto(url, { waitUntil: "domcontentloaded", timeout: 20_000 }).catch(() => {});
+        const deadline = Date.now() + 20_000;
+        while (!credentials.queryIds[operation] && Date.now() < deadline) {
+          if (signal.aborted) throw new Error("Interrupted while capturing X credentials.");
+          await new Promise((resolvePromise) => setTimeout(resolvePromise, 500));
+        }
+      } finally {
+        await page.close().catch(() => {});
+      }
+    }
+    return credentials;
+  } finally {
+    await browser.close();
+  }
+}
+
 export function capturePages(required: RequiredCaptures, screenName: string | undefined): string[] {
   const operations = required.flat();
   const pages: string[] = [];
   if (operations.some((operation) => operation === "HomeTimeline")) pages.push("https://x.com/home");
+  if (operations.some((operation) => (SOCIAL_OPERATIONS as readonly Operation[]).includes(operation))) {
+    if (!screenName) throw new Error("Cannot capture following and followers without a valid @handle.");
+    pages.push("https://x.com/" + screenName + "/following", "https://x.com/" + screenName + "/followers");
+  }
   if (operations.some((operation) => BOOKMARK_CAPTURE_OPERATIONS.has(operation))) pages.push("https://x.com/i/history");
   if (operations.some((operation) => LIKE_CAPTURE_OPERATIONS.has(operation))) pages.push("https://x.com/i/history/likes");
   if (operations.some((operation) => operation === "UserByScreenName" || PROFILE_CAPTURE_OPERATIONS.has(operation))) {

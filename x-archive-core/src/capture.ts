@@ -1,16 +1,22 @@
 import { Schema } from "effect";
 
 const HOME_OPERATIONS = ["HomeTimeline"] as const;
+export const SOCIAL_OPERATIONS = ["Following", "Followers"] as const;
 const BOOKMARK_OPERATIONS = ["Bookmarks", "BookmarkFoldersSlice", "BookmarkFolderTimeline"] as const;
 const LIKES_OPERATIONS = ["Likes"] as const;
 export const PROFILE_OPERATIONS = ["UserTweets", "UserTweetsAndReplies", "UserOriginalsTimeline", "UserRepliesTimeline"] as const;
 const LOOKUP_OPERATIONS = ["UserByScreenName"] as const;
-const OPERATIONS = [...HOME_OPERATIONS, ...BOOKMARK_OPERATIONS, ...LIKES_OPERATIONS, ...PROFILE_OPERATIONS, ...LOOKUP_OPERATIONS] as const;
+const OPERATIONS = [...HOME_OPERATIONS, ...SOCIAL_OPERATIONS, ...BOOKMARK_OPERATIONS, ...LIKES_OPERATIONS, ...PROFILE_OPERATIONS, ...LOOKUP_OPERATIONS] as const;
 export type Operation = (typeof OPERATIONS)[number];
 export type ProfileOperation = (typeof PROFILE_OPERATIONS)[number];
+export type SocialOperation = (typeof SOCIAL_OPERATIONS)[number];
 
 export function isProfileOperation(operation: Operation): operation is ProfileOperation {
   return (PROFILE_OPERATIONS as readonly Operation[]).includes(operation);
+}
+
+export function isSocialOperation(operation: Operation): operation is SocialOperation {
+  return (SOCIAL_OPERATIONS as readonly Operation[]).includes(operation);
 }
 
 export const CredentialsSchema = Schema.Struct({
@@ -83,7 +89,7 @@ export function captureRequest(
     ?? (bodyValues ? booleanFeatureRecord(bodyValues["fieldToggles"]) : undefined);
   const rawVariables = requestUrl.searchParams.get("variables")
     ?? (bodyValues ? stringifyVariables(bodyValues["variables"]) : null);
-  const targetUserId = isProfileOperation(operation)
+  const targetUserId = isProfileOperation(operation) || isSocialOperation(operation)
     ? profileTargetFromVariables(requestUrl) ?? profileTargetFromBody(bodyValues)
     : undefined;
   return {

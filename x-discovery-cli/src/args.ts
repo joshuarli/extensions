@@ -24,7 +24,8 @@ Options:
 
 A signed-in Helium must be reachable. The X Archive extension captures the
 home-timeline query ID, features and bearer token on first use; no manual
-extension install is needed. Press Ctrl-C to stop after the current page.
+extension install is needed. Press Ctrl-C to stop after the current page;
+press it again to force exit. The exit code is 130.
 `;
 
 const SCHEMA: ArgSchema = {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseFolders, parseTimeline } from "../src/parser.ts";
+import { parseFolders, parseTimeline, parseUserList } from "../src/parser.ts";
 
 const now = "2026-10-30T00:00:00.000Z";
 const entry = (result: unknown, id = "123") => ({
@@ -131,5 +131,30 @@ describe("timeline modules", () => {
     const result = parseTimeline(data, now);
     expect(result.valid).toBe(true);
     expect(result.terminated).toBe(true);
+  });
+});
+
+describe("parseUserList", () => {
+  const listPage = (entries: unknown[]) => ({
+    data: { user: { result: { timeline: { timeline: { instructions: [{ type: "TimelineAddEntries", entries }] } } } } },
+  });
+
+  it("extracts users and the bottom cursor and accounts for unsupported entries", () => {
+    const data = listPage([
+      { entryId: "user-1", content: { entryType: "TimelineTimelineItem", itemContent: { user_results: { result: {
+        __typename: "User", rest_id: "1", core: { screen_name: "dave", name: "Dave" },
+      } } } } },
+      { entryId: "module-1", content: { entryType: "TimelineTimelineModule", items: [] } },
+      { entryId: "cursor-bottom", content: { entryType: "TimelineTimelineCursor", cursorType: "Bottom", value: "next" } },
+    ]);
+    const result = parseUserList(data, now);
+    expect(result).toMatchObject({ valid: true, nextCursor: "next", unsupported: 1 });
+    expect(result.users).toEqual([{ user_id: "1", handle: "dave", name: "Dave", observed_at: now }]);
+  });
+
+  it("fails loudly when the user list envelope is missing", () => {
+    const result = parseUserList({ data: { user: {} } }, now);
+    expect(result.valid).toBe(false);
+    expect(result.detail).toContain("TimelineAddEntries");
   });
 });

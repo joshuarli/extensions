@@ -32,6 +32,7 @@ import {
   type XSession,
 } from "./deps.ts";
 import { downloadPostsMedia, filterCompletedMedia, formatSize } from "./media.ts";
+import { downloadSocialLists } from "./social.ts";
 import { writeJsonFile } from "./state.ts";
 import { syncContextThreads } from "./context.ts";
 import { seedFromHelium } from "./seed.ts";
@@ -467,6 +468,22 @@ export async function downloadSelf(options: RunOptions): Promise<RunSummary[]> {
     summaries.push(await downloadLikes(session, credentials, options, status));
   } else if (!options.signal.aborted) {
     status.say("collecting", "Skipping likes: never captured (open https://x.com/i/history/likes in Helium once).");
+  }
+  if (!options.signal.aborted) {
+    try {
+      const social = await downloadSocialLists(session, {
+        cdpUrl: options.cdpUrl,
+        outRoot: options.outRoot,
+        signal: options.signal,
+        backend: options.backend,
+        onStatus: (text) => status.say("session", text),
+      });
+      status.say("social", "Saved " + social.following + " following and " + social.followers
+        + " followers to " + social.folder + "/ (" + social.reason + ").");
+    } catch (error) {
+      status.say("social", "Following/followers capture failed: "
+        + (error instanceof Error ? error.message : String(error)));
+    }
   }
   progress.finish();
   if (summaries.length === 0 && !options.signal.aborted) {
