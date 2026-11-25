@@ -22,6 +22,7 @@
     "test:browser:chatgpt": "playwright test --config extension-chatgpt/playwright.config.ts",
     "perf:onefile": "playwright test --config extension-onefile/playwright.perf.config.ts",
     "x": "node x-archive-cli/src/cli.ts",
+    "x:discover": "node x-discovery-cli/src/cli.ts",
     "onefile": "node onefile-cli/src/cli.ts",
     "youtube": "node youtube-transcript-cli/src/cli.ts",
     "tools": "node cli/src/cli.ts"
