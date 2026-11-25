@@ -268,7 +268,8 @@ function renderPost(postValue: unknown, mode: string, assets: ProfileAssets | nu
     parentAttr = parentId ? text(parentId) : "",
     convSize = convCounts.get(conversationId) ?? 1,
     showThread = conversationId.length > 0 && (Boolean(parentId) || convSize > 1),
-    dataAttrs = ` data-tweet="${esc(tweetId)}" data-conversation="${esc(conversationId)}" data-sort-index="${esc(sortIndex)}" data-parent="${esc(parentAttr)}"`;
+    createdMs = parseCreatedAt(post["created_at"])?.getTime(),
+    dataAttrs = ` data-tweet="${esc(tweetId)}" data-conversation="${esc(conversationId)}" data-sort-index="${esc(sortIndex)}" data-parent="${esc(parentAttr)}" data-created-ms="${createdMs ?? ""}"`;
   const headBits: string[] = [];
   if (post["repost_of"]) {
     const reposter = record(post["reposted_by"]),

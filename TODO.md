@@ -84,15 +84,6 @@ Next: 45
 - **Fix with:** none
 - **Effort:** S
 
-### EXT-22 · P3 · Fix thread ordering across archived and context posts
-
-- **Area:** X archive · HTML export
-- **Where:** x-archive-core/src/conversation.ts:168; render-assets.ts:15 (THREAD_HTML); render.ts:241-243
-- **Problem:** The thread overlay sorts every article of a conversation by data-sort-index, but archived posts carry a timeline index while context posts carry their tweet id as sort_index, so reconstructed threads can render out of order.
-- **Recommendation:** Store a consistent chronological key on both record kinds, created_at epoch where available, and sort the overlay by it.
-- **Fix with:** none
-- **Effort:** S
-
 ### EXT-23 · P3 · Label context posts and report thread-context gaps
 
 - **Area:** X archive · collection and HTML export

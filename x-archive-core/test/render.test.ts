@@ -124,6 +124,26 @@ describe("renderArchive", () => {
     }
   });
 
+  it("gives thread posts a chronological key", async () => {
+    mkdirSync(scratchRoot, { recursive: true });
+    const folder = mkdtempSync(join(scratchRoot, "x-render-thread-"));
+    try {
+      writeFileSync(join(folder, "posts.json"), JSON.stringify({
+        posts: [
+          { tweet_id: "1", created_at: "Wed Oct 10 20:19:24 +0000 2018", full_text: "reply", conversation_id: "c", in_reply_to_tweet_id: "9" },
+          { tweet_id: "2", created_at: "Mon Jan 01 00:00:00 +0000 2024", full_text: "later", conversation_id: "c" },
+        ],
+        export_metadata: { exported_at: "2026-01-01" },
+      }));
+      const result = await renderArchive({ folder, noFetch: true });
+      const html = readFileSync(result.output, "utf8");
+      expect(html.match(/data-created-ms="\d+"/gu)?.length).toBe(2);
+      expect(html).toContain('Number(a.getAttribute("data-created-ms") || 0)');
+    } finally {
+      rmSync(folder, { recursive: true, force: true });
+    }
+  });
+
   it("keeps the export order for bookmarks", async () => {
     mkdirSync(scratchRoot, { recursive: true });
     const folder = mkdtempSync(join(scratchRoot, "x-render-order-"));
