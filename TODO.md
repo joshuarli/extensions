@@ -39,15 +39,6 @@ Next: 46
 - **Fix with:** security
 - **Effort:** S
 
-### EXT-32 · P2 · Concurrent X archive writers lose records
-
-- **Area:** X archive / durable state
-- **Where:** x-archive-cli/src/fs-store.ts:55-67,110-122; x-archive-cli/src/state.ts:36-55; docs/development.md:34
-- **Problem:** Each save reloads the whole JSON, merges and renames a PID-suffixed temp file with no lock or version check, so two overlapping runs overwrite each other's pages.
-- **Recommendation:** Serialize writers with an exclusive lock or make record storage append-only with idempotent merge on load.
-- **Fix with:** durable-state
-- **Effort:** M
-
 ### EXT-41 · P3 · ChatGPT archive completeness is sticky and early stop checks one page
 
 - **Area:** ChatGPT archive / durable state

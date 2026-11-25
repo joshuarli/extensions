@@ -58,6 +58,17 @@ describe("filesystem archive stores", () => {
     expect((all[0] as Record<string, unknown>)["full_text"]).toBe("first");
   });
 
+  it("serializes concurrent page saves", async () => {
+    useTempStateRoot();
+    const store = new FsBookmarksStore("123");
+    await Promise.all([
+      store.savePage([post("1", "first") as never]),
+      store.savePage([post("2", "second") as never]),
+    ]);
+    const all = await store.allRecords();
+    expect(all.map((record) => (record as { tweet_id: string }).tweet_id).sort()).toEqual(["1", "2"]);
+  });
+
   it("round-trips scan state with cursors", async () => {
     useTempStateRoot();
     const store = new FsLikesStore("123");

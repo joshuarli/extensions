@@ -14,7 +14,7 @@ import type {
   BookmarksStore,
   LikesStore,
 } from "../../x-archive-core/src/collector.ts";
-import { storeDir, stateDir, readJsonFile, writeJsonFile } from "./state.ts";
+import { storeDir, stateDir, readJsonFile, writeJsonFile, withStoreLock } from "./state.ts";
 
 function readRecords(path: string): unknown[] {
   let bytes: Buffer;
@@ -55,25 +55,29 @@ export class FsBookmarksStore implements BookmarksStore {
 
   async savePage(items: RawBookmark[], folderId?: string): Promise<void> {
     if (items.length === 0) return;
-    const records = readRecords(this.itemsPath);
-    const byId = new Map<string, RawBookmark>();
-    for (const record of records) {
-      const parsed = decodeBookmark(record);
-      byId.set(parsed.tweet_id, parsed);
-    }
-    for (const item of items) {
-      byId.set(item.tweet_id, mergeBookmark(byId.get(item.tweet_id), item, folderId));
-    }
-    writeRecords(this.itemsPath, [...byId.values()]);
+    await withStoreLock(this.itemsPath, async () => {
+      const records = readRecords(this.itemsPath);
+      const byId = new Map<string, RawBookmark>();
+      for (const record of records) {
+        const parsed = decodeBookmark(record);
+        byId.set(parsed.tweet_id, parsed);
+      }
+      for (const item of items) {
+        byId.set(item.tweet_id, mergeBookmark(byId.get(item.tweet_id), item, folderId));
+      }
+      writeRecords(this.itemsPath, [...byId.values()]);
+    });
   }
 
   async saveFolders(folders: ReadonlyArray<{ id: string; name: string }>): Promise<void> {
-    const existing = new Map<string, { id: string; name: string }>();
-    for (const record of readRecords(this.foldersPath)) {
-      if (typeof (record as { id?: unknown }).id === "string") existing.set((record as { id: string }).id, record as { id: string; name: string });
-    }
-    for (const folder of folders) existing.set(folder.id, folder);
-    writeJsonFile(this.foldersPath, [...existing.values()]);
+    await withStoreLock(this.foldersPath, async () => {
+      const existing = new Map<string, { id: string; name: string }>();
+      for (const record of readRecords(this.foldersPath)) {
+        if (typeof (record as { id?: unknown }).id === "string") existing.set((record as { id: string }).id, record as { id: string; name: string });
+      }
+      for (const folder of folders) existing.set(folder.id, folder);
+      writeJsonFile(this.foldersPath, [...existing.values()]);
+    });
   }
 
   async loadState(): Promise<ScanState | null> {
@@ -87,7 +91,9 @@ export class FsBookmarksStore implements BookmarksStore {
   }
 
   async saveState(state: ScanState): Promise<void> {
-    writeJsonFile(this.statePath, Schema.decodeUnknownSync(ScanStateSchema)(state));
+    await withStoreLock(this.statePath, async () => {
+      writeJsonFile(this.statePath, Schema.decodeUnknownSync(ScanStateSchema)(state));
+    });
   }
 
   async allRecords(): Promise<unknown[]> {
@@ -110,16 +116,18 @@ export class FsLikesStore implements LikesStore {
 
   async savePage(items: RawBookmark[]): Promise<void> {
     if (items.length === 0) return;
-    const records = readRecords(this.itemsPath);
-    const byId = new Map<string, RawBookmark>();
-    for (const record of records) {
-      const parsed = decodeBookmark(record);
-      byId.set(parsed.tweet_id, parsed);
-    }
-    for (const item of items) {
-      byId.set(item.tweet_id, mergeBookmark(byId.get(item.tweet_id), item));
-    }
-    writeRecords(this.itemsPath, [...byId.values()]);
+    await withStoreLock(this.itemsPath, async () => {
+      const records = readRecords(this.itemsPath);
+      const byId = new Map<string, RawBookmark>();
+      for (const record of records) {
+        const parsed = decodeBookmark(record);
+        byId.set(parsed.tweet_id, parsed);
+      }
+      for (const item of items) {
+        byId.set(item.tweet_id, mergeBookmark(byId.get(item.tweet_id), item));
+      }
+      writeRecords(this.itemsPath, [...byId.values()]);
+    });
   }
 
   async loadState(): Promise<LikesScanState | null> {
@@ -133,7 +141,9 @@ export class FsLikesStore implements LikesStore {
   }
 
   async saveState(state: LikesScanState): Promise<void> {
-    writeJsonFile(this.statePath, Schema.decodeUnknownSync(LikesScanStateSchema)(state));
+    await withStoreLock(this.statePath, async () => {
+      writeJsonFile(this.statePath, Schema.decodeUnknownSync(LikesScanStateSchema)(state));
+    });
   }
 
   async allRecords(): Promise<unknown[]> {

@@ -1,4 +1,4 @@
-import { closeSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync, writeSync } from "node:fs";
+import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, statSync, unlinkSync, writeSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 
@@ -23,6 +23,27 @@ export function downloadsRoot(): string {
   if (process.env["X_ARCHIVE_DOWNLOADS"]) return process.env["X_ARCHIVE_DOWNLOADS"];
   const base = process.env["XDG_DATA_HOME"] ?? join(homedir(), ".local", "share");
   return join(base, "x", "downloads");
+}
+
+export async function withStoreLock<T>(path: string, work: () => Promise<T>): Promise<T> {
+  const lock = path + ".lock";
+  mkdirSync(dirname(lock), { recursive: true });
+  const deadline = Date.now() + 10_000;
+  for (;;) {
+    try {
+      mkdirSync(lock);
+      break;
+    } catch {
+      if (existsSync(lock) && Date.now() - statSync(lock).mtimeMs > 60_000) rmSync(lock, { recursive: true, force: true });
+      else if (Date.now() >= deadline) throw new Error("Timed out waiting for the archive lock at " + lock + ".");
+      else await new Promise((resolvePromise) => setTimeout(resolvePromise, 10));
+    }
+  }
+  try {
+    return await work();
+  } finally {
+    rmSync(lock, { recursive: true, force: true });
+  }
 }
 
 export function readJsonFile(path: string): unknown {
