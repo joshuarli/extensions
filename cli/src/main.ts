@@ -1,4 +1,5 @@
 import { main as chatgptMain } from "../../chatgpt-archive-cli/src/main.ts";
+import { main as instagramMain } from "../../instagram-archive-cli/src/main.ts";
 import { main as onefileMain } from "../../onefile-cli/src/main.ts";
 import { main as xMain } from "../../x-archive-cli/src/main.ts";
 import { main as youtubeMain } from "../../youtube-transcript-cli/src/main.ts";
@@ -8,6 +9,7 @@ const COMMANDS: Record<string, { description: string; run: (argv: readonly strin
   onefile: { description: "save a page as a .u.zip.html archive", run: onefileMain },
   youtube: { description: "fetch a YouTube transcript or SRT", run: youtubeMain },
   chatgpt: { description: "archive ChatGPT conversations", run: chatgptMain },
+  ig: { description: "archive Instagram posts, reels and saved collections", run: instagramMain },
 };
 
 const USAGE = `tools — terminal tools for the browser extensions

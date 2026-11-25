@@ -1,0 +1,15 @@
+{
+  "operation": "profile.posts",
+  "semantic_name": "profile.page",
+  "description": "One page of profile posts through the app's PolarisProfilePostsQuery. The document id and variables are observed from browser traffic and reused; a changed response shape fails the run.",
+  "method": "POST",
+  "path": "/api/graphql",
+  "caller_inputs": ["username", "cursor"],
+  "response_dependencies": ["end_cursor", "edges[].node.code", "page_info.has_next_page"],
+  "captured_config": ["doc_id", "variables", "dtsg", "lsd"],
+  "session_material": ["sessionid", "csrftoken"],
+  "app_generated": ["fb_dtsg", "lsd"],
+  "observation_recipe": ["open a profile page and record the PolarisProfilePostsQuery POST body", "page a second time and record the after cursor", "re-observe after the query is rejected"],
+  "verification_cases": ["identity: post shortcodes come from edges", "pagination: the next page uses end_cursor", "shape drift: an unrecognized edge fails the page", "rate limit: 429 parks the job", "auth: a login redirect parks the job"],
+  "fixtures": []
+}

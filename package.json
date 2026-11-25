@@ -25,6 +25,7 @@
     "x:discover": "node x-discovery-cli/src/cli.ts",
     "onefile": "node onefile-cli/src/cli.ts",
     "youtube": "node youtube-transcript-cli/src/cli.ts",
+    "ig": "node instagram-archive-cli/src/cli.ts",
     "tools": "node cli/src/cli.ts"
   },
   "dependencies": {

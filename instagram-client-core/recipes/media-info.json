@@ -1,0 +1,15 @@
+{
+  "operation": "media.info",
+  "semantic_name": "media.hq_tracks",
+  "description": "Reads high-quality DASH video and audio track metadata for a media id. Absent tracks are a normal result; a rate limit is not.",
+  "method": "GET",
+  "path": "/api/v1/media/{mediaId}/info/",
+  "caller_inputs": ["mediaId"],
+  "response_dependencies": ["items[0].video_versions", "items[0].audio_versions"],
+  "captured_config": [],
+  "session_material": ["sessionid", "csrftoken"],
+  "app_generated": [],
+  "observation_recipe": ["open a reel and record the media info request"],
+  "verification_cases": ["identity: the requested media id is the one returned", "absent tracks: missing DASH data falls back to standard media", "rate limit: 429 parks the job"],
+  "fixtures": []
+}

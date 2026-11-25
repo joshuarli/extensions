@@ -1,0 +1,15 @@
+{
+  "operation": "saved",
+  "semantic_name": "saved.collection",
+  "description": "Reads the logged-in account's saved collection from the grid page. It refuses to run while signed out so public-profile posts are never recorded as saved.",
+  "method": "CDP",
+  "path": "/saved/all-posts/",
+  "caller_inputs": [],
+  "response_dependencies": ["shortcodes", "cursor"],
+  "captured_config": [],
+  "session_material": ["sessionid", "csrftoken"],
+  "app_generated": [],
+  "observation_recipe": ["open /saved/all-posts/ while signed in and record the grid request", "confirm a signed-out page does not yield post shortcodes"],
+  "verification_cases": ["auth: signed out refuses to scan", "identity: shortcodes come from the saved grid", "rate limit: 429 parks the job"],
+  "fixtures": []
+}
