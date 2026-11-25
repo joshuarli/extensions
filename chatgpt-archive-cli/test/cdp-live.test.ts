@@ -16,9 +16,9 @@ const ACCESS_TOKEN = "fixture-access-token";
 const IDS = ["conv-cdp-1", "conv-cdp-2"] as const;
 const NOW = Date.parse("2026-11-22T10:30:00Z");
 const OUT_ROOT = "/chatgpt-cdp-live-downloads";
-const DAY_DIR = join(OUT_ROOT, `chatgpt-${new Date(NOW).toISOString().slice(0, 10)}`);
-const RECORDS = join(DAY_DIR, "records.jsonl");
-const MANIFEST = join(DAY_DIR, "manifest.json");
+const ACCOUNT_DIR = join(OUT_ROOT, "chatgpt-user-cdp-live");
+const RECORDS = join(ACCOUNT_DIR, "records.jsonl");
+const MANIFEST = join(ACCOUNT_DIR, "manifest.json");
 
 interface FixtureState {
   readonly recordRequests: string[];
@@ -190,6 +190,7 @@ function options(overrides: Partial<DownloadOptions> = {}): DownloadOptions {
     includeArchived: false,
     limit: null,
     noMedia: true,
+    maxMediaBytes: 16 * 1024 * 1024,
     backend: undefined,
     session: undefined,
     cdpUrl: undefined,
@@ -227,7 +228,7 @@ describe("live CDP archive", () => {
       { archive, fs, reporter: firstReporter, now: () => NOW },
     );
 
-    expect(first).toMatchObject({ written: 1, skipped: 0, total: 1, archived: 0, outputDir: DAY_DIR });
+    expect(first).toMatchObject({ written: 1, skipped: 0, total: 1, archived: 0, outputDir: ACCOUNT_DIR });
     const firstRecords = fs.files.get(RECORDS) ?? "";
     expect(splitLines(firstRecords).map((line) => (JSON.parse(line) as { id: string }).id)).toEqual([IDS[0]]);
     expect(firstRecords).not.toContain(IDS[1]);
@@ -247,7 +248,7 @@ describe("live CDP archive", () => {
       { archive, fs, reporter: secondReporter, now: () => NOW },
     );
 
-    expect(second).toMatchObject({ written: 1, skipped: 1, total: 2, archived: 0, outputDir: DAY_DIR });
+    expect(second).toMatchObject({ written: 1, skipped: 1, total: 2, archived: 0, outputDir: ACCOUNT_DIR });
     const secondRecords = fs.files.get(RECORDS) ?? "";
     expect(secondRecords.startsWith(firstRecords)).toBe(true);
     expect(splitLines(secondRecords).map((line) => (JSON.parse(line) as { id: string }).id)).toEqual([...IDS]);

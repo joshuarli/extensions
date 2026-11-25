@@ -6,7 +6,7 @@ import { sha256Hex, splitLines } from "../src/storage.ts";
 import { chat, createFakeArchive, createMemoryFs, createReporter, lineFor } from "./fakes.ts";
 
 const NOW = Date.parse("2026-11-22T10:30:00Z");
-const OUTPUT = "/downloads/chatgpt-2026-11-22";
+const OUTPUT = "/downloads/chatgpt-account-1";
 const RECORDS = join(OUTPUT, "records.jsonl");
 const MANIFEST = join(OUTPUT, "manifest.json");
 
@@ -20,6 +20,7 @@ function options(overrides: Partial<DownloadOptions> = {}): DownloadOptions {
     outRoot: "/downloads",
     includeArchived: false,
     noMedia: false,
+    maxMediaBytes: 16 * 1024 * 1024,
     limit: null,
     backend: undefined,
     session: undefined,
@@ -36,8 +37,8 @@ const chats = [
 
 describe("append-only archive and resume", () => {
   it("skips completed ids and appends only missing records", async () => {
-    const first = lineFor("a", "Alpha");
-    const second = lineFor("b", "Bravo");
+    const first = lineFor("a", "Alpha", 100, 300);
+    const second = lineFor("b", "Bravo", 200, 200);
     const fs = createMemoryFs({ [RECORDS]: `${first}\n${second}\n` });
     const reporter = createReporter();
     const summary = await runDownload(
@@ -79,7 +80,7 @@ describe("append-only archive and resume", () => {
   });
 
   it("preserves undecodable lines and does not count them as completed", async () => {
-    const valid = lineFor("a", "Alpha");
+    const valid = lineFor("a", "Alpha", 100, 300);
     const fs = createMemoryFs({ [RECORDS]: `not-json\n${valid}\n` });
     const summary = await runDownload(
       { options: options() },
@@ -88,7 +89,7 @@ describe("append-only archive and resume", () => {
     const lines = splitLines(fs.files.get(RECORDS)!);
     expect(lines[0]).toBe("not-json");
     expect(lines[1]).toBe(valid);
-    expect(summary).toMatchObject({ written: 2, skipped: 1, total: 4 });
+    expect(summary).toMatchObject({ written: 2, skipped: 1, total: 3 });
     expect(fs.files.get(MANIFEST)).toContain('"sha256OfRecords": "' + await sha256Hex(fs.files.get(RECORDS)!) + '"');
   });
 });

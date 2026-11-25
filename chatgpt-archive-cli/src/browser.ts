@@ -1,5 +1,6 @@
 import { chromium, type Browser, type Page } from "playwright";
 import type { ChatgptTransport } from "../../chatgpt-archive-core/src/index.ts";
+import { mediaErrorBody } from "../../lib/media.ts";
 
 const CHATGPT_ORIGIN = "https://chatgpt.com/";
 
@@ -19,16 +20,42 @@ export interface ChatgptConnection {
   close(): Promise<void>;
 }
 
-export function createPageTransport(connection: ChatgptConnection): ChatgptTransport {
+export function createPageTransport(connection: ChatgptConnection, signal?: AbortSignal): ChatgptTransport {
   let page = connection.page;
+
+  function stopped(): Error {
+    return new DOMException("Stopped", "AbortError");
+  }
+
+  async function abortable<T>(run: (target: Page) => Promise<T>): Promise<T> {
+    if (signal?.aborted) throw stopped();
+    const operation = run(page);
+    if (signal === undefined) return operation;
+    return await new Promise<T>((resolve, reject) => {
+      const onAbort = (): void => {
+        reject(stopped());
+      };
+      signal.addEventListener("abort", onAbort, { once: true });
+      operation.then(
+        (value) => {
+          signal.removeEventListener("abort", onAbort);
+          resolve(value);
+        },
+        (error: unknown) => {
+          signal.removeEventListener("abort", onAbort);
+          reject(error);
+        },
+      );
+    });
+  }
 
   async function retry<T>(run: (target: Page) => Promise<T>): Promise<T> {
     try {
-      return await run(page);
+      return await abortable(run);
     } catch (error) {
-      if (!DETACHED.test(String(error))) throw error;
+      if (signal?.aborted || !DETACHED.test(String(error))) throw error;
       page = await connection.reattach();
-      return run(page);
+      return abortable(run);
     }
   }
 
@@ -66,25 +93,15 @@ export function createPageTransport(connection: ChatgptConnection): ChatgptTrans
             ? { credentials: "include" }
             : { headers: requestHeaders, credentials: "include" });
           const buffer = await response.arrayBuffer();
-          const preview = new TextDecoder().decode(buffer.slice(0, 2048));
+          const bytes = new Uint8Array(buffer);
           if (!response.ok) {
-            return { ok: false as const, status: response.status, body: preview.slice(0, 200) };
+            return { ok: false as const, status: response.status, body: new TextDecoder().decode(bytes.slice(0, 200)) };
           }
-          try {
-            const value: unknown = JSON.parse(preview);
-            if (value !== null && typeof value === "object" && !Array.isArray(value)) {
-              const object = value as Record<string, unknown>;
-              const errorCode = object["error_code"];
-              const errorType = object["error_type"];
-              if (object["status"] === "error" &&
-                  (typeof errorCode === "string" || typeof errorType === "string")) {
-                return { ok: false as const, status: response.status, body: preview.slice(0, 200) };
-              }
-            }
-          } catch {
-            return { ok: true as const, bytes: Array.from(new Uint8Array(buffer)) };
+          const errorBody = mediaErrorBody(bytes);
+          if (errorBody !== null) {
+            return { ok: false as const, status: response.status, body: errorBody };
           }
-          return { ok: true as const, bytes: Array.from(new Uint8Array(buffer)) };
+          return { ok: true as const, bytes: Array.from(bytes) };
         } catch (error) {
           return { ok: false as const, status: 0, body: String(error).slice(0, 200) };
         }

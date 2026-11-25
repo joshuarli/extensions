@@ -20,6 +20,7 @@ describe("chatgpt-archive arguments", () => {
       "--out", "./saved",
       "--include-archived",
       "--no-media",
+      "--max-media-size", "2MB",
       "--limit", "3",
       "--backend", "bctl",
       "--session", "research",
@@ -34,6 +35,7 @@ describe("chatgpt-archive arguments", () => {
       outRoot: "./saved",
       includeArchived: true,
       noMedia: true,
+      maxMediaBytes: 2 * 1024 * 1024,
       limit: 3,
       backend: "bctl",
       session: "research",
@@ -48,6 +50,7 @@ describe("chatgpt-archive arguments", () => {
       outRoot: downloadsRoot(),
       includeArchived: false,
       noMedia: false,
+      maxMediaBytes: 16 * 1024 * 1024,
       limit: null,
       backend: undefined,
       session: undefined,
@@ -72,6 +75,8 @@ describe("chatgpt-archive arguments", () => {
     expect(() => parseArgs(["download", "--limit", "0"])).toThrow("positive integer");
     expect(() => parseArgs(["download", "--limit", "-2"])).toThrow("Missing value for --limit");
     expect(() => parseArgs(["download", "--limit", "1.5"])).toThrow("positive integer");
+    expect(() => parseArgs(["download", "--max-media-size", "1.5MB"])).toThrow("--max-media-size");
+    expect(parseArgs(["download", "--max-media-size=0"])).toMatchObject({ options: { maxMediaBytes: 0 } });
     expect(() => parseArgs(["download", "--include-archived", "--include-archived"])).toThrow("Repeated option");
   });
 
@@ -83,5 +88,8 @@ describe("chatgpt-archive arguments", () => {
     expect(USAGE).toContain("resumes");
     expect(USAGE).toContain("--no-media");
     expect(USAGE).toContain("best-effort");
+    expect(USAGE).toContain("--max-media-size");
+    expect(USAGE).toContain("state.json");
+    expect(USAGE).toContain("Ctrl-C");
   });
 });

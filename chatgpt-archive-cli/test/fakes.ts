@@ -13,17 +13,22 @@ export interface FakeFs {
   files: Map<string, string>;
   bytes: Map<string, Uint8Array>;
   renames: Array<readonly [string, string]>;
+  dirs: Set<string>;
 }
 
 export function createMemoryFs(files: Record<string, string> = {}): ArchiveFs & FakeFs {
   const filesByName = new Map(Object.entries(files));
   const bytesByName = new Map<string, Uint8Array>();
   const renames: Array<readonly [string, string]> = [];
+  const dirs = new Set<string>();
   return {
     files: filesByName,
     bytes: bytesByName,
     renames,
-    mkdir() {},
+    dirs,
+    mkdir(path) {
+      dirs.add(path);
+    },
     readText(path) {
       return filesByName.get(path) ?? null;
     },
@@ -32,6 +37,16 @@ export function createMemoryFs(files: Record<string, string> = {}): ArchiveFs & 
     },
     writeText(path, text) {
       filesByName.set(path, text);
+    },
+    writeAtomicText(path, text) {
+      filesByName.delete(path + ".part");
+      filesByName.set(path, text);
+    },
+    listDirs(path) {
+      const prefix = path.endsWith("/") ? path : path + "/";
+      return [...dirs]
+        .filter((dir) => dir.startsWith(prefix) && !dir.slice(prefix.length).includes("/"))
+        .map((dir) => dir.slice(prefix.length));
     },
     exists(path) {
       return filesByName.has(path) || bytesByName.has(path);
@@ -71,6 +86,7 @@ export function chat(id: string, title: string, createdMs: number, updatedMs = c
 export interface FakeArchiveOptions {
   readonly active?: readonly ChatRef[];
   readonly archived?: readonly ChatRef[];
+  readonly pages?: Readonly<Partial<Record<"active" | "archived", readonly (readonly ChatRef[])[]>>>;
   readonly session?: Session;
   readonly records?: Readonly<Record<string, unknown>>;
   readonly media?: Readonly<Record<string, Uint8Array | Error>>;
@@ -86,8 +102,15 @@ export function createFakeArchive(options: FakeArchiveOptions = {}): ChatgptArch
     },
     async list(scope, onPage) {
       const items = scope === "active" ? [...(options.active ?? [])] : [...(options.archived ?? [])];
-      if (onPage !== undefined && items.length > 0) onPage(items);
-      return items;
+      const pages = options.pages?.[scope] ?? (items.length === 0 ? [] : [items]);
+      const delivered: ChatRef[] = [];
+      let seen = 0;
+      for (const page of pages) {
+        seen += page.length;
+        delivered.push(...page);
+        if (onPage !== undefined && onPage([...page], seen) === true) break;
+      }
+      return delivered;
     },
     async record(id) {
       const custom = options.records?.[id];

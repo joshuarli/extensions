@@ -14,6 +14,7 @@ const archive = createChatgptArchive({
   sleep: (ms) => delay(ms),
   now: () => Date.now(),
   requestGapMs: 1200,        // optional; defaults to 1200
+  signal: controller.signal, // optional; stops before the next request
 });
 
 const session = await archive.session(); // also stores session.accessToken internally
@@ -34,7 +35,9 @@ Every `getJson` call is preceded by one `await deps.sleep(requestGapMs)` call �
 no timers are used directly. `list` requests
 `/backend-api/conversations?offset={n}&limit=100&order=updated`, adding
 `&is_archived=true` for the `archived` scope, and advances the offset by the
-number of rows actually returned until the reported `total` is reached. Rows
+number of rows actually returned until the reported `total` is reached. Its
+optional `onPage(chats, total)` callback may return `true` to stop paging early,
+which makes a re-run that is already caught up cost a single page. Rows
 are normalized from `create_time`/`update_time` (epoch seconds) into epoch
 milliseconds; a row missing or mistyping a required field throws rather than
 being dropped. `record(id)` GETs `/backend-api/conversation/{id}` and returns the
@@ -54,12 +57,21 @@ path separators or credentials can reach the filesystem.
 
 `getMediaBytes(path)` uses the stored token, applies the same request gap as
 other calls and delegates the response to the optional
-`ChatgptTransport.getBytes(path, headers?)`. Existing transports that only
+`ChatgptTransport.getBytes(path, headers?, signal?)`. Existing transports that only
 implement `getJson` keep working; calling `getMediaBytes` with such a transport
 throws. Bytes are returned as `Uint8Array` — the core never writes files and
 never interprets the response body. Media downloads are best-effort in the CLI:
 missing library files, expired links, non-2xx responses and JSON error bodies
 are reported as per-file failures rather than failing the archive.
+
+## Checkpoint state
+
+`emptyArchiveState(accountId)`, `encodeArchiveState(state)` and
+`decodeArchiveState(text)` handle the CLI's `state.json`. Each of the `active`
+and `archived` scopes carries a `complete` flag and a count of pages
+`scanned`; a complete scope lets the CLI stop listing at the first page covered
+by saved records. Decoding validates the format, version, account and counts
+with Effect Schema and returns `null` for unreadable state.
 
 ## Archive format
 
@@ -90,7 +102,7 @@ records hash identically regardless of key order.
   "total": 0,
   "archived": 0,
   "sha256OfRecords": "…",
-  "media": { "downloaded": 0, "failed": 0, "skipped": 0, "errors": [] }
+  "media": { "downloaded": 0, "failed": 0, "skipped": 0, "errors": [], "oversized": [] }
 }
 ```
 

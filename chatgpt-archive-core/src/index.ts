@@ -17,10 +17,12 @@ import type {
 } from "./types.ts";
 
 export { extractMediaJobs, sanitizeMediaFilename } from "./media.ts";
+export { decodeArchiveState, emptyArchiveState, encodeArchiveState } from "./state.ts";
 
 export type {
   ArchiveDeps,
   ArchiveManifest,
+  ArchiveState,
   ArchivedRecord,
   ChatgptArchive,
   ChatRef,
@@ -28,6 +30,7 @@ export type {
   MediaFailure,
   MediaJob,
   MediaManifest,
+  ScanCheckpoint,
   Session,
   TimeField,
 } from "./types.ts";
@@ -39,11 +42,14 @@ export function createChatgptArchive(deps: ArchiveDeps): ChatgptArchive {
   const gap = deps.requestGapMs ?? DEFAULT_REQUEST_GAP_MS;
   let token: string | null = null;
 
-  async function getJson(path: string, headers?: Record<string, string>): Promise<unknown> {
+  async function pause(): Promise<void> {
     await deps.sleep(gap);
-    return headers === undefined
-      ? deps.transport.getJson(path)
-      : deps.transport.getJson(path, headers);
+    if (deps.signal?.aborted) throw new DOMException("Stopped", "AbortError");
+  }
+
+  async function getJson(path: string, headers?: Record<string, string>): Promise<unknown> {
+    await pause();
+    return deps.transport.getJson(path, headers, deps.signal);
   }
 
   function requireToken(): string {
@@ -68,6 +74,7 @@ export function createChatgptArchive(deps: ArchiveDeps): ChatgptArchive {
     },
 
     async list(scope, onPage): Promise<ChatRef[]> {
+      if (deps.signal?.aborted) throw new DOMException("Stopped", "AbortError");
       const authorization = "Bearer " + requireToken();
       const headers = { Authorization: authorization };
       const all: ChatRef[] = [];
@@ -76,8 +83,9 @@ export function createChatgptArchive(deps: ArchiveDeps): ChatgptArchive {
         const archived = scope === "archived" ? "&is_archived=true" : "";
         const path = "/backend-api/conversations?offset=" + offset + "&limit=" + LIMIT + "&order=updated" + archived;
         const page = parseConversationsPage(await getJson(path, headers), offset);
-        if (onPage !== undefined) onPage(page.items);
+        const stop = onPage !== undefined && onPage(page.items, page.total) === true;
         all.push(...page.items);
+        if (stop) break;
         if (page.items.length === 0) break;
         offset += page.items.length;
         if (offset >= page.total) break;
@@ -126,8 +134,8 @@ export function createChatgptArchive(deps: ArchiveDeps): ChatgptArchive {
       if (getBytes === undefined) {
         throw new Error("The attached ChatGPT transport cannot download media bytes.");
       }
-      await deps.sleep(gap);
-      return getBytes.call(deps.transport, path, { Authorization: authorization });
+      await pause();
+      return getBytes.call(deps.transport, path, { Authorization: authorization }, deps.signal);
     },
 
     encodeRecordLine(record: ArchivedRecord): string {

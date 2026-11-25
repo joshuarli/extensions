@@ -1,6 +1,6 @@
 export interface ChatgptTransport {
-  getJson(path: string, headers?: Record<string, string>): Promise<unknown>;
-  getBytes?(path: string, headers?: Record<string, string>): Promise<Uint8Array>;
+  getJson(path: string, headers?: Record<string, string>, signal?: AbortSignal): Promise<unknown>;
+  getBytes?(path: string, headers?: Record<string, string>, signal?: AbortSignal): Promise<Uint8Array>;
 }
 
 export interface MediaJob {
@@ -19,6 +19,7 @@ export interface MediaManifest {
   readonly failed: number;
   readonly skipped: number;
   readonly errors: readonly MediaFailure[];
+  readonly oversized: readonly string[];
 }
 
 export interface ArchiveDeps {
@@ -26,6 +27,7 @@ export interface ArchiveDeps {
   sleep(ms: number): Promise<void>;
   now(): number;
   requestGapMs?: number;
+  signal?: AbortSignal;
 }
 
 export interface Session {
@@ -67,10 +69,25 @@ export interface ArchiveManifest {
   media?: MediaManifest | undefined;
 }
 
+export interface ScanCheckpoint {
+  readonly complete: boolean;
+  readonly scanned: number;
+}
+
+export interface ArchiveState {
+  readonly format: string;
+  readonly version: number;
+  readonly accountId: string;
+  readonly scopes: {
+    readonly active: ScanCheckpoint;
+    readonly archived: ScanCheckpoint;
+  };
+}
+
 export interface ChatgptArchive {
   setToken(token: string): void;
   session(): Promise<Session>;
-  list(scope: "active" | "archived", onPage?: (chats: ChatRef[]) => void): Promise<ChatRef[]>;
+  list(scope: "active" | "archived", onPage?: (chats: ChatRef[], total: number) => boolean | void): Promise<ChatRef[]>;
   record(id: string): Promise<unknown>;
   withinTimeframe(chat: ChatRef, sinceMs: number | null, untilMs: number | null, field: TimeField): boolean;
   toArchivedRecord(chat: ChatRef, record: unknown): Promise<ArchivedRecord>;

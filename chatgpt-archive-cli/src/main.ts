@@ -1,11 +1,13 @@
-import { installInterrupt, UsageError } from "../../lib/cli.ts";
+import { createInterruptController, UsageError } from "../../lib/cli.ts";
 import { createProgressReporter } from "../../lib/progress.ts";
 import { parseArgs, USAGE, type DownloadOptions } from "./args.ts";
 import { resolveBackend } from "./backend.ts";
 import { formatSummary, runDownload } from "./download.ts";
 import { createNodeArchiveFs } from "./storage.ts";
 
-async function download(options: DownloadOptions): Promise<number> {
+const INTERRUPT_MESSAGE = "Stopping after the current record or media file. Saved data is kept; re-running resumes. Ctrl-C again to force exit.";
+
+async function download(options: DownloadOptions, signal: AbortSignal): Promise<number> {
   const resolved = resolveBackend({
     backend: options.backend,
     session: options.session,
@@ -16,9 +18,10 @@ async function download(options: DownloadOptions): Promise<number> {
   const connection = await connectChatgpt(resolved.cdpUrl);
   try {
     const archive = createChatgptArchive({
-      transport: createPageTransport(connection),
+      transport: createPageTransport(connection, signal),
       sleep: (ms) => new Promise<void>((resolve) => { setTimeout(resolve, ms); }),
       now: () => Date.now(),
+      signal,
     });
     const summary = await runDownload(
       { options },
@@ -27,21 +30,23 @@ async function download(options: DownloadOptions): Promise<number> {
         fs: createNodeArchiveFs(),
         reporter: createProgressReporter(),
         now: () => Date.now(),
+        signal,
       },
     );
     process.stdout.write(formatSummary(summary) + "\n");
-    return 0;
+    return summary.stopped ? 130 : 0;
   } finally {
     await connection.close();
   }
 }
 
 export async function main(argv: readonly string[]): Promise<number> {
-  installInterrupt("Stopping. Saved records are kept; rerun this command to resume from the last completed record.");
+  const interrupt = createInterruptController(INTERRUPT_MESSAGE);
   let command: ReturnType<typeof parseArgs>;
   try {
     command = parseArgs(argv);
   } catch (error) {
+    interrupt.close();
     if (error instanceof UsageError) {
       process.stderr.write(error.message + "\n");
       return 2;
@@ -49,19 +54,25 @@ export async function main(argv: readonly string[]): Promise<number> {
     throw error;
   }
   if (command.kind === "help") {
+    interrupt.close();
     process.stdout.write(USAGE);
     return 0;
   }
   if (command.kind === "version") {
+    interrupt.close();
     process.stdout.write("chatgpt-archive-cli 0.1.0\n");
     return 0;
   }
   try {
-    return await download(command.options);
+    return await download(command.options, interrupt.signal);
   } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error);
-    process.stderr.write(`chatgpt-archive download failed: ${detail}\n`);
+    if (interrupt.stopped()) {
+      process.stderr.write("Interrupted. Saved data is kept; re-running resumes.\n");
+      return 130;
+    }
+    process.stderr.write(`chatgpt-archive download failed: ${error instanceof Error ? error.message : String(error)}\n`);
     return 1;
+  } finally {
+    interrupt.close();
   }
 }
-

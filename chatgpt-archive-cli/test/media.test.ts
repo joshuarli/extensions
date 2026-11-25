@@ -8,7 +8,7 @@ import type { ArchiveFs } from "../src/storage.ts";
 import { chat, createFakeArchive, createMemoryFs, createReporter, type FakeFs } from "./fakes.ts";
 
 const NOW = Date.parse("2026-11-22T10:30:00Z");
-const OUTPUT = join("/downloads", "chatgpt-2026-11-22");
+const OUTPUT = join("/downloads", "chatgpt-account-1");
 const MEDIA = join(OUTPUT, MEDIA_DIRECTORY);
 const MANIFEST = join(OUTPUT, "manifest.json");
 
@@ -78,6 +78,7 @@ describe("media download in the archive CLI", () => {
       failed: 1,
       skipped: 0,
       errors: [{ id: "file-vid-2", error: "expired link" }],
+      oversized: [],
     });
     expect(JSON.parse(fs.files.get(MANIFEST)!)).toMatchObject({ media: summary.media });
     expect(formatSummary(summary)).toContain("file-vid-2 (expired link)");
@@ -115,6 +116,7 @@ describe("media download in the archive CLI", () => {
       reporter,
       outputDir: OUTPUT,
       jobs: extractMediaJobs(imageRecord),
+      maxMediaBytes: 16 * 1024 * 1024,
     });
 
     expect(result).toEqual({
@@ -122,6 +124,7 @@ describe("media download in the archive CLI", () => {
       failed: 1,
       skipped: 0,
       errors: [{ id: "file-img-1", error: "disk full" }],
+      oversized: [],
     });
     expect(fs.bytes.size).toBe(0);
     expect(fs.renames).toEqual([]);
@@ -150,6 +153,7 @@ describe("media download in the archive CLI", () => {
       reporter: createReporter(),
       outputDir: OUTPUT,
       jobs: extractMediaJobs(many),
+      maxMediaBytes: 16 * 1024 * 1024,
     });
 
     expect(result.downloaded).toBe(8);
@@ -168,7 +172,7 @@ describe("media download in the archive CLI", () => {
     expect(parseArgs(["download", "--no-media"])).toMatchObject({
       options: { noMedia: true },
     });
-    expect(summary.media).toEqual({ downloaded: 0, failed: 0, skipped: 0, errors: [] });
+    expect(summary.media).toEqual({ downloaded: 0, failed: 0, skipped: 0, errors: [], oversized: [] });
     expect(fs.bytes.size).toBe(0);
     expect(reporter.reports.find((report) => report.phase === "media")?.note).toBe("disabled");
     expect(JSON.parse(fs.files.get(MANIFEST)!)).toMatchObject({ media: summary.media });

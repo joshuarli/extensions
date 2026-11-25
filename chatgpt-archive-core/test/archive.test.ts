@@ -129,4 +129,32 @@ describe("list", () => {
     await archive.list("active");
     expect(sleepCalls).toEqual([1200]);
   });
+
+  it("stops paging when the page callback asks it to", async () => {
+    const second = "/backend-api/conversations?offset=2&limit=100&order=updated";
+    const transport = new FakeTransport()
+      .add(ACTIVE_PAGE_0, page([row("a", 1, 2), row("b", 1, 2)], 4))
+      .add(second, page([row("c", 1, 2)], 4));
+    const archive = createChatgptArchive(makeDeps(transport).deps);
+    archive.setToken("tok");
+    const totals: number[] = [];
+    const chats = await archive.list("active", (_page, total) => {
+      totals.push(total);
+      return true;
+    });
+    expect(chats.map((chat) => chat.id)).toEqual(["a", "b"]);
+    expect(totals).toEqual([4]);
+    expect(transport.calls).toHaveLength(1);
+  });
+
+  it("stops before a request when the run is aborted", async () => {
+    const controller = new AbortController();
+    const transport = new FakeTransport().add(ACTIVE_PAGE_0, page([], 0));
+    const { deps } = makeDeps(transport);
+    const archive = createChatgptArchive({ ...deps, signal: controller.signal });
+    archive.setToken("tok");
+    controller.abort();
+    await expect(archive.list("active")).rejects.toThrow("Stopped");
+    expect(transport.calls).toHaveLength(0);
+  });
 });

@@ -152,3 +152,28 @@ export function installInterrupt(message: string, onInterrupt?: () => void): voi
     else process.exit(130);
   });
 }
+
+export interface InterruptController {
+  readonly signal: AbortSignal;
+  stopped(): boolean;
+  close(): void;
+}
+
+export function createInterruptController(message: string): InterruptController {
+  const controller = new AbortController();
+  let interrupts = 0;
+  const onSignal = (): void => {
+    interrupts++;
+    if (interrupts > 1) process.exit(130);
+    process.stderr.write(`\n${message}\n`);
+    controller.abort();
+  };
+  process.on("SIGINT", onSignal);
+  return {
+    signal: controller.signal,
+    stopped: () => controller.signal.aborted,
+    close() {
+      process.off("SIGINT", onSignal);
+    },
+  };
+}

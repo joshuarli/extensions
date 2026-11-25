@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createBackendResolver, HELIUM_BACKEND, parseCliArgs, type ArgSchema, type BackendConfig } from "../cli.ts";
+import { createBackendResolver, createInterruptController, HELIUM_BACKEND, parseCliArgs, type ArgSchema, type BackendConfig } from "../cli.ts";
 
 const xConfig: BackendConfig = {
   envPrefix: "X_ARCHIVE",
@@ -69,6 +69,20 @@ describe("createBackendResolver", () => {
 
   it("rejects an unknown backend", () => {
     expect(() => createBackendResolver(xConfig).plan({ backend: "smolvm" }, cleanEnv)).toThrow('Unknown backend "smolvm"');
+  });
+});
+
+describe("createInterruptController", () => {
+  it("aborts once on SIGINT and removes its listener on close", () => {
+    const before = process.listenerCount("SIGINT");
+    const interrupt = createInterruptController("stopping");
+    expect(interrupt.stopped()).toBe(false);
+    expect(process.listenerCount("SIGINT")).toBe(before + 1);
+    process.emit("SIGINT");
+    expect(interrupt.stopped()).toBe(true);
+    expect(interrupt.signal.aborted).toBe(true);
+    interrupt.close();
+    expect(process.listenerCount("SIGINT")).toBe(before);
   });
 });
 

@@ -1,4 +1,5 @@
 import { parseCliArgs, UsageError, type ArgSchema } from "../../lib/cli.ts";
+import { DEFAULT_MAX_MEDIA_BYTES, parseMediaSize } from "../../lib/media.ts";
 import type { TimeField } from "../../chatgpt-archive-core/src/index.ts";
 import { downloadsRoot } from "./state.ts";
 
@@ -17,6 +18,9 @@ Options:
                          or CHATGPT_ARCHIVE_DOWNLOADS / XDG_DATA_HOME)
   --include-archived     include the Archived section as well as active chats
   --no-media             do not download media referenced by conversations
+  --max-media-size SIZE  largest media file to save (default 16MB; 0 disables).
+                         SIZE is bytes or B/KB/MB/GB, e.g. 16MB or 500KB.
+                         Oversized media stays in the records but is not written.
   --limit N              write at most N new records in this run
   --backend NAME         helium (default) or bctl
   --session NAME         bctl session to launch or attach to (default: chatgpt-archive,
@@ -42,19 +46,28 @@ Timeframe:
   are fetched.
 
 Resume:
-  Each calendar day writes to DIR/chatgpt-YYYY-MM-DD/. records.jsonl is
-  append-only: a rerun on the same day decodes the saved lines, skips ids
-  already present, and appends only missing records. Use --limit for a
-  timeboxed run and rerun to continue. After an interrupt, saved records
-  are kept and the next run resumes from them. manifest.json is rewritten
-  at the end of each run and describes every record in that day's file.
+  Each account archives to DIR/chatgpt-<account-id>/: records.jsonl,
+  media/, state.json and manifest.json. The records file is append-only: a
+  rerun skips saved ids, appends missing ones and appends a new line for any
+  chat updated since it was saved. state.json checkpoints the conversation
+  lists, so a completed archive stops listing at the first page already
+  covered by saved records. Use --limit for a timeboxed run and rerun to
+  continue on any later day. manifest.json is rewritten at the end of every
+  run from what was saved, including a stopped run.
+
+  Press Ctrl-C once to stop after the current record or media file; saved
+  data is kept and re-running resumes. Press it again to force exit. The
+  interrupted run exits 130.
 
 Media:
-  Referenced images, files and other media are downloaded alongside records
-  into DIR/chatgpt-YYYY-MM-DD/media/ and counted in manifest.json. Downloads
-  are best-effort: a missing library file, an expired link or a non-2xx body
-  is reported as a failure without failing the archive. Use --no-media to
-  skip media entirely. No cookies, tokens or headers are written to disk.
+  Referenced images, files and other media are downloaded into the account's
+  media/ folder and counted in manifest.json. Files already on disk are
+  skipped; oversized files stay referenced in records.jsonl and are listed
+  under media.oversized so a later run with a larger limit can fetch them.
+  Downloads are best-effort: a missing library file, an expired link or a
+  non-2xx body is reported as a failure without failing the archive. Use
+  --no-media to skip media entirely. No cookies, tokens or headers are
+  written to disk.
 `;
 
 export interface DownloadOptions {
@@ -66,6 +79,7 @@ export interface DownloadOptions {
   readonly outRoot: string;
   readonly includeArchived: boolean;
   readonly noMedia: boolean;
+  readonly maxMediaBytes: number;
   readonly limit: number | null;
   readonly backend: string | undefined;
   readonly session: string | undefined;
@@ -78,7 +92,7 @@ export type Command =
   | { readonly kind: "download"; readonly options: DownloadOptions };
 
 const schema: ArgSchema = {
-  values: ["since", "until", "time-field", "out", "limit", "backend", "session", "cdp-url"],
+  values: ["since", "until", "time-field", "out", "max-media-size", "limit", "backend", "session", "cdp-url"],
   flags: ["include-archived", "no-media"],
   maxPositionals: 0,
 };
@@ -89,6 +103,15 @@ function parseTimestamp(value: string, name: string): number {
     throw new UsageError(`--${name} must be an ISO-8601 timestamp, got "${value}".\n\n${USAGE}`);
   }
   return ms;
+}
+
+function parseMaxMediaSize(value: string): number {
+  try {
+    return parseMediaSize(value);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new UsageError(`${detail}\n\n${USAGE}`);
+  }
 }
 
 function parseLimit(value: string): number {
@@ -124,6 +147,9 @@ export function parseArgs(argv: readonly string[]): Command {
       outRoot: parsed.values.get("out") ?? downloadsRoot(),
       includeArchived: parsed.flags.has("include-archived"),
       noMedia: parsed.flags.has("no-media"),
+      maxMediaBytes: parsed.values.has("max-media-size")
+        ? parseMaxMediaSize(parsed.values.get("max-media-size")!)
+        : DEFAULT_MAX_MEDIA_BYTES,
       limit: limitValue === undefined ? null : parseLimit(limitValue),
       backend: parsed.values.get("backend"),
       session: parsed.values.get("session"),

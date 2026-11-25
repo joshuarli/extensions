@@ -1,4 +1,5 @@
 import { parseCliArgs, UsageError, type ArgSchema } from "../../lib/cli.ts";
+import { DEFAULT_MAX_MEDIA_BYTES, parseMediaSize } from "../../lib/media.ts";
 import { downloadsRoot } from "./state.ts";
 
 export { UsageError };
@@ -91,28 +92,15 @@ export type Command =
   | { kind: "version" }
   | { kind: "download"; args: ParsedArgs };
 
-export const DEFAULT_MAX_MEDIA_BYTES = 16 * 1024 * 1024;
-
-const MEDIA_SIZE_UNITS: Readonly<Record<string, number>> = {
-  b: 1,
-  k: 1024,
-  kb: 1024,
-  m: 1024 * 1024,
-  mb: 1024 * 1024,
-  g: 1024 * 1024 * 1024,
-  gb: 1024 * 1024 * 1024,
-};
+export { DEFAULT_MAX_MEDIA_BYTES };
 
 export function parseMaxMediaSize(value: string): number {
-  const match = /^(\d+)(b|k|kb|m|mb|g|gb)?$/iu.exec(value);
-  if (!match) {
-    throw new UsageError(`--max-media-size must be a non-negative integer with an optional B/KB/MB/GB suffix, got "${value}".\n\n${USAGE}`);
+  try {
+    return parseMediaSize(value);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new UsageError(`${detail}\n\n${USAGE}`);
   }
-  const bytes = Number(match[1]) * (MEDIA_SIZE_UNITS[match[2]?.toLowerCase() ?? "b"] ?? 1);
-  if (!Number.isSafeInteger(bytes)) {
-    throw new UsageError(`--max-media-size is too large, got "${value}".\n\n${USAGE}`);
-  }
-  return bytes;
 }
 
 const schema: ArgSchema = {

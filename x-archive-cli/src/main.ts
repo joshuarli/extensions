@@ -1,4 +1,4 @@
-import { installInterrupt, UsageError } from "../../lib/cli.ts";
+import { createInterruptController, UsageError } from "../../lib/cli.ts";
 import { parseArgs, USAGE } from "./args.ts";
 import { resolveBackend } from "./backend.ts";
 import {
@@ -9,13 +9,9 @@ import {
 } from "./run.ts";
 
 export async function main(argv: readonly string[]): Promise<number> {
-  const controller = new AbortController();
-  let interrupts = 0;
-  installInterrupt("Stopping after the current page. Saved data is kept; re-running resumes. Ctrl-C again to force exit.", () => {
-    interrupts += 1;
-    if (interrupts > 1) process.exit(130);
-    controller.abort();
-  });
+  const interrupt = createInterruptController(
+    "Stopping after the current page. Saved data is kept; re-running resumes. Ctrl-C again to force exit.",
+  );
   let command: ReturnType<typeof parseArgs>;
   try {
     command = parseArgs(argv);
@@ -45,11 +41,11 @@ export async function main(argv: readonly string[]): Promise<number> {
       maxMediaBytes: options.maxMediaBytes,
       backend: resolved.backend,
       cdpUrl: resolved.cdpUrl,
-      signal: controller.signal,
+      signal: interrupt.signal,
     };
     let completed = 0;
     for (const target of targets) {
-      if (controller.signal.aborted) break;
+      if (interrupt.stopped()) break;
       completed++;
       process.stderr.write(`[${completed}/${targets.length}] ${target}\n`);
       if (target === "self") {
@@ -60,14 +56,16 @@ export async function main(argv: readonly string[]): Promise<number> {
         printSummary(target, summary);
       }
     }
-    return controller.signal.aborted ? 130 : 0;
+    return interrupt.stopped() ? 130 : 0;
   } catch (error) {
-    if (controller.signal.aborted) {
+    if (interrupt.stopped()) {
       process.stderr.write("Interrupted. Saved data is kept; re-running resumes.\n");
       return 130;
     }
     process.stderr.write("x download failed: " + (error instanceof Error ? error.message : String(error)) + "\n");
     return 1;
+  } finally {
+    interrupt.close();
   }
 }
 

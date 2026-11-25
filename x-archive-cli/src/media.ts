@@ -14,6 +14,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type MediaJob } from "../../x-archive-core/src/media.ts";
 import { type MediaExportResult, type MediaExportProgress } from "../../x-archive-core/src/export-types.ts";
+import { formatMediaSize, isErrorContentType } from "../../lib/media.ts";
 import { cookieHeaders, type XSession } from "./deps.ts";
 
 const CONCURRENCY = 4;
@@ -35,12 +36,7 @@ export function filterCompletedMedia(jobs: readonly MediaJob[], folder: string):
   return jobs.filter((job) => !existsSync(join(folder, "media", job.filename)));
 }
 
-export function formatSize(bytes: number): string {
-  if (bytes === 0) return "unlimited";
-  if (bytes % (1024 * 1024) === 0) return bytes / (1024 * 1024) + " MB";
-  if (bytes % 1024 === 0) return bytes / 1024 + " KB";
-  return bytes + " B";
-}
+export const formatSize = formatMediaSize;
 
 function writeAll(handle: number, buffer: Buffer): void {
   let written = 0;
@@ -83,13 +79,13 @@ async function fetchOne(
         signal: AbortSignal.any([signal, AbortSignal.timeout(120_000)]),
         redirect: "follow",
       });
-      const type = (response.headers.get("content-type") ?? "").split(";")[0]!.trim().toLowerCase();
+      const type = response.headers.get("content-type") ?? "";
       if (response.status !== 200) {
         void response.body?.cancel().catch(() => {});
         lastError = "HTTP " + response.status;
         continue;
       }
-      if (type.startsWith("text/") || type === "application/json" || type === "application/xml") {
+      if (isErrorContentType(type)) {
         void response.body?.cancel().catch(() => {});
         lastError = "error page served as " + (type || "unknown type");
         continue;

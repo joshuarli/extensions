@@ -4,15 +4,20 @@ import {
   linkSync,
   mkdirSync,
   readFileSync,
+  readdirSync,
+  renameSync,
   unlinkSync,
   writeFileSync,
 } from "node:fs";
+import { dirname } from "node:path";
 
 export interface ArchiveFs {
   mkdir(path: string): void;
   readText(path: string): string | null;
   appendText(path: string, text: string): void;
   writeText(path: string, text: string): void;
+  writeAtomicText(path: string, text: string): void;
+  listDirs(path: string): readonly string[];
   exists(path: string): boolean;
   writeBytes(path: string, bytes: Uint8Array): void;
   rename(from: string, to: string): void;
@@ -37,6 +42,31 @@ export function createNodeArchiveFs(): ArchiveFs {
     },
     writeText(path, text) {
       writeFileSync(path, text, { mode: 0o600 });
+    },
+    writeAtomicText(path, text) {
+      mkdirSync(dirname(path), { recursive: true });
+      const part = path + ".part";
+      try {
+        writeFileSync(part, text, { mode: 0o600 });
+        renameSync(part, path);
+      } catch (error) {
+        try {
+          unlinkSync(part);
+        } catch (cleanupError) {
+          if ((cleanupError as NodeJS.ErrnoException).code !== "ENOENT") throw cleanupError;
+        }
+        throw error;
+      }
+    },
+    listDirs(path) {
+      try {
+        return readdirSync(path, { withFileTypes: true })
+          .filter((entry) => entry.isDirectory())
+          .map((entry) => entry.name);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+        throw error;
+      }
     },
     exists(path) {
       return existsSync(path);

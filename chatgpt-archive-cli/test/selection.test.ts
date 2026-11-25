@@ -6,8 +6,8 @@ import { splitLines } from "../src/storage.ts";
 import { chat, createFakeArchive, createMemoryFs, createReporter } from "./fakes.ts";
 
 const NOW = Date.parse("2026-11-22T10:30:00Z");
-const RECORDS = join("/downloads", "chatgpt-2026-11-22", "records.jsonl");
-const MANIFEST = join("/downloads", "chatgpt-2026-11-22", "manifest.json");
+const RECORDS = join("/downloads", "chatgpt-account-1", "records.jsonl");
+const MANIFEST = join("/downloads", "chatgpt-account-1", "manifest.json");
 
 const active = [
   chat("a", "Alpha", 100, 300),
@@ -30,6 +30,7 @@ function options(overrides: Partial<DownloadOptions> = {}): DownloadOptions {
     outRoot: "/downloads",
     includeArchived: false,
     noMedia: false,
+    maxMediaBytes: 16 * 1024 * 1024,
     limit: null,
     backend: undefined,
     session: undefined,

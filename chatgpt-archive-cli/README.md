@@ -20,6 +20,7 @@ node chatgpt-archive-cli/src/cli.ts download [options] (or `pnpm tools chatgpt d
 | `--out DIR` | Downloads root (default `~/.local/share/chatgpt-archive/downloads`, or `CHATGPT_ARCHIVE_DOWNLOADS` / `XDG_DATA_HOME`). |
 | `--include-archived` | Include the Archived section alongside active chats. |
 | `--no-media` | Skip media downloads; only conversation JSON is archived. |
+| `--max-media-size SIZE` | Largest media file to save (default 16MB; `0` disables). SIZE is bytes or B/KB/MB/GB. Oversized files stay referenced in the records but are not written. |
 | `--limit N` | Write at most *N* new records in this run, for timeboxed spikes. |
 | `--backend helium\|bctl` | `helium` (default) attaches to a local Helium instance; `bctl` uses a dedicated session. |
 | `--session NAME` | bctl session name (default `chatgpt-archive`, or `CHATGPT_ARCHIVE_SESSION`). |
@@ -54,20 +55,34 @@ optional.
 
 ### Resume and layout
 
-Each calendar day writes to `DIR/chatgpt-YYYY-MM-DD/`:
+Each account archives to a stable `DIR/chatgpt-<account-id>/`:
 
 - `records.jsonl` — one encoded `ArchivedRecord` per line, append-only.
-- `media/` — downloaded media files, one per referenced file id.
-- `manifest.json` — rewritten at the end of each run, covering every record
-  in that day's file, including `sha256OfRecords` of the records file and a
-  `media` object with `downloaded`, `failed`, `skipped` and `errors`.
+  Readers keep the newest line per id, so a chat updated since it was saved
+  appends a new version rather than rewriting history.
+- `media/` — downloaded media files, one per referenced file id, shared by
+  every run.
+- `state.json` — per-scope scan checkpoints (`complete` and pages `scanned`),
+  written atomically at the end of each run.
+- `manifest.json` — rewritten at the end of each run from what was saved,
+  including `sha256OfRecords` of the records file and a `media` object with
+  `downloaded`, `failed`, `skipped`, `errors` and `oversized`.
 
-On a rerun, the CLI decodes existing lines, skips ids already present, and
-appends only missing records. A `--limit` run can therefore be repeated to
-continue where it stopped. After SIGINT, saved records are kept and the next
-run resumes from them. No file is ever truncated. Note that `manifest.json`
-is regenerated from the current run's chat lists, so its `archived` count is
-only meaningful when `--include-archived` was passed.
+On a rerun, the CLI skips saved ids, appends missing ones, and appends a new
+line for any chat whose update time or title changed. `state.json` records
+which conversation lists were scanned completely: on later runs the listing
+stops at the first page whose chats are all already saved and unchanged, so a
+quiet account costs one page per included scope instead of a full scan. A
+`--limit` run can be repeated on any later day to continue where it stopped;
+the folder never changes with the date. Records from older
+`chatgpt-YYYY-MM-DD/` folders under the same root are imported into the
+account folder on its first run. No file is ever truncated. `manifest.json`'s
+`archived` count is only meaningful when `--include-archived` was passed.
+
+Press Ctrl-C once to stop after the current record or media file: saved
+records, media and state are kept, `manifest.json` is rebuilt from what was
+saved, no further work starts, and the run exits 130. A second Ctrl-C forces
+an immediate exit. Rerunning resumes from the saved state.
 
 ### Media
 
@@ -77,19 +92,23 @@ values) and `library_file_id` references from `message.metadata.content_referenc
 then requests `GET /backend-api/files/{id}/download` through the signed-in
 browser page. Bytes are written to `media/<sanitized-name>-<hash>.bin` through a
 `.part` file that is renamed into place only after a complete response. Existing
-complete files are skipped and never overwritten; a rerun therefore fills in
-only what is missing. Up to four downloads run at once, and the `media` phase
-plus the final summary report downloaded, failed and skipped counts.
+complete files are skipped and never overwritten, and up to four downloads run
+at once.
+
+Files larger than `--max-media-size` are skipped before landing: the id is
+listed under `media.oversized` in `manifest.json` and the reference stays in
+`records.jsonl`, so raising the limit on a later run fetches it. Empty bodies
+and JSON error bodies are treated as failures rather than media.
 
 Downloads are **best-effort**: an individual failure never fails the archive.
 Failures are recorded in `manifest.json` as `{ "id": "…", "error": "…" }` and
 include library files that no longer resolve, expired or rotated download
-links, and non-2xx responses or JSON error bodies from the endpoint. The bytes
-are not interpreted, so a non-image response can still be stored as a `.bin`
-file if the endpoint returns it without an error status; a human should verify
-the files when a record had unusual attachments. Pass `--no-media` to skip the
-whole step. No cookies, access tokens or request headers are written to disk;
-filenames are derived from file ids and optional pointer file names only.
+links, and non-2xx responses from the endpoint. The bytes are not interpreted,
+so a non-image response can still be stored as a `.bin` file if the endpoint
+returns it without an error status; a human should verify the files when a
+record had unusual attachments. Pass `--no-media` to skip the whole step. No
+cookies, access tokens or request headers are written to disk; filenames are
+derived from file ids and optional pointer file names only.
 
 ## Design
 
@@ -103,7 +122,10 @@ filenames are derived from file ids and optional pointer file names only.
 - `src/media.ts` — media job collection from saved records, bounded-concurrency
   downloads, atomic `.part` rename and failure collection.
 - `src/storage.ts` — small filesystem seam plus Web Crypto SHA-256.
+- `src/state.ts` — stable account folder, checkpoint I/O and legacy record import.
 - `src/main.ts` — importable command entry point; `src/cli.ts` is the process wrapper.
+- Interrupt control and media size parsing are shared with the X CLI through
+  `lib/cli.ts` and `lib/media.ts`.
 
 ## Tests
 
@@ -111,8 +133,10 @@ filenames are derived from file ids and optional pointer file names only.
 pnpm exec vitest run chatgpt-archive-cli --maxWorkers=1
 ```
 
-The tests cover flag parsing, resume with an in-memory filesystem,
+The tests cover flag parsing, append-only resume with an in-memory filesystem,
 timeframe/archived selection with a fake archive, and media extraction,
 skip-existing, atomic writes, failure reporting, concurrency and `--no-media`
-with fake transport and fake filesystem. They do not contact the network or
-launch a browser.
+with fake transport and fake filesystem. `test/parity.test.ts` covers
+checkpointed listing, refresh of changed chats, cross-day resume and legacy
+import, cooperative interruption, and the media size cap. They do not contact
+the network or launch a browser.

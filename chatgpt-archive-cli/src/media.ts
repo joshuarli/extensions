@@ -7,6 +7,7 @@ import {
   type MediaJob,
   type MediaManifest,
 } from "../../chatgpt-archive-core/src/index.ts";
+import { mediaErrorBody } from "../../lib/media.ts";
 import type { ProgressReporter } from "../../lib/progress.ts";
 import type { ArchiveFs } from "./storage.ts";
 import { splitLines } from "./storage.ts";
@@ -45,10 +46,12 @@ export interface MediaDownloadDeps {
   readonly reporter: ProgressReporter;
   readonly outputDir: string;
   readonly jobs: readonly MediaJob[];
+  readonly maxMediaBytes: number;
+  readonly signal?: AbortSignal;
 }
 
 export async function downloadMediaJobs(deps: MediaDownloadDeps): Promise<MediaManifest> {
-  const { fs, archive, reporter, jobs } = deps;
+  const { fs, archive, reporter, jobs, maxMediaBytes, signal } = deps;
   const mediaDir = join(deps.outputDir, MEDIA_DIRECTORY);
   fs.mkdir(mediaDir);
   reporter.update({ phase: "media", done: 0, total: jobs.length });
@@ -59,9 +62,11 @@ export async function downloadMediaJobs(deps: MediaDownloadDeps): Promise<MediaM
   let skipped = 0;
   let failed = 0;
   const errors: MediaFailure[] = [];
+  const oversized: string[] = [];
 
   const worker = async (): Promise<void> => {
     for (;;) {
+      if (signal?.aborted) return;
       const index = cursor++;
       if (index >= jobs.length) return;
       const job = jobs[index]!;
@@ -72,10 +77,20 @@ export async function downloadMediaJobs(deps: MediaDownloadDeps): Promise<MediaM
       } else {
         try {
           const bytes = await archive.getMediaBytes(job.path);
-          fs.writeBytes(part, bytes);
-          fs.rename(part, target);
-          downloaded++;
+          if (signal?.aborted) return;
+          if (bytes.length === 0) throw new Error("empty media response");
+          const errorBody = mediaErrorBody(bytes);
+          if (errorBody !== null) throw new Error("media response is an error: " + errorBody);
+          if (maxMediaBytes > 0 && bytes.length > maxMediaBytes) {
+            oversized.push(job.id);
+            skipped++;
+          } else {
+            fs.writeBytes(part, bytes);
+            fs.rename(part, target);
+            downloaded++;
+          }
         } catch (error) {
+          if (signal?.aborted) return;
           if (fs.exists(target)) {
             skipped++;
           } else {
@@ -93,6 +108,8 @@ export async function downloadMediaJobs(deps: MediaDownloadDeps): Promise<MediaM
 
   const workers = Array.from({ length: Math.min(MAX_CONCURRENCY, jobs.length) }, () => worker());
   await Promise.all(workers);
-  errors.sort((left, right) => (left.id < right.id ? -1 : left.id > right.id ? 1 : 0));
-  return { downloaded, failed, skipped, errors };
+  const byId = (left: string, right: string): number => left < right ? -1 : left > right ? 1 : 0;
+  errors.sort((left, right) => byId(left.id, right.id));
+  oversized.sort(byId);
+  return { downloaded, failed, skipped, errors, oversized };
 }
