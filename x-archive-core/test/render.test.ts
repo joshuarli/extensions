@@ -45,6 +45,27 @@ describe("renderArchive", () => {
     }
   });
 
+  it("reports partial collection and missing media in the footer", async () => {
+    mkdirSync(scratchRoot, { recursive: true });
+    const folder = mkdtempSync(join(scratchRoot, "x-render-status-"));
+    try {
+      writeFileSync(join(folder, "posts.json"), JSON.stringify({
+        posts: [{ tweet_id: "1", full_text: "hello" }],
+        export_metadata: { collection: { posts: "partial", reason: "rate limited" } },
+      }));
+      writeFileSync(join(folder, "debug.json"), JSON.stringify({
+        media: { failed: [{ filename: "1_0.mp4", error: "HTTP 500" }], skipped: [{ filename: "1_1.mp4", bytes: 99 }] },
+      }));
+      const result = await renderArchive({ folder, noFetch: true });
+      const html = readFileSync(result.output, "utf8");
+      expect(html).toContain("Collection: posts partial (rate limited)");
+      expect(html).toContain("1 media file(s) failed to download");
+      expect(html).toContain("1 media file(s) skipped");
+    } finally {
+      rmSync(folder, { recursive: true, force: true });
+    }
+  });
+
   it("keeps the export order for bookmarks", async () => {
     mkdirSync(scratchRoot, { recursive: true });
     const folder = mkdtempSync(join(scratchRoot, "x-render-order-"));

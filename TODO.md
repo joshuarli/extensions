@@ -48,15 +48,6 @@ Next: 45
 - **Fix with:** none
 - **Effort:** M
 
-### EXT-16 · P2 · Show collection completeness and media failures in the exported page
-
-- **Area:** X archive · HTML export
-- **Where:** x-archive-core/src/storage.ts:105-109/143-145/199-203, debug.ts:81-111; render.ts:393/407-414/449-453
-- **Problem:** Collection coverage, reason codes and media failed/skipped lists are computed and stored but never read by the renderer, so a rate-limited partial archive looks identical to a complete one and missing media is invisible in the page.
-- **Recommendation:** Add a completeness line to the header or footer from export_metadata.collection and the media result, with an explicit note when coverage is partial or media is missing.
-- **Fix with:** none
-- **Effort:** S
-
 ### EXT-17 · P2 · Make --export-only offline and reproducible
 
 - **Area:** X archive · HTML export
