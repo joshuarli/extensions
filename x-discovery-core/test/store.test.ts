@@ -76,6 +76,14 @@ describe("DiscoveryStore", () => {
     expect(store.acquireJobLock(run.accountId, "another-run")).toBe(true);
   });
 
+  it("keeps a failing response and its reason", () => {
+    const run = newRun("1725684628491739136", "home-for-you", 5);
+    store.beginRun(run);
+    store.saveFailure(run.runId, 2, { data: {} }, "shape changed");
+    expect(store.failures(run.runId)).toEqual([{ page: 2, detail: "shape changed" }]);
+    expect(store.rawPage(run.runId, 2)).toEqual({ data: {} });
+  });
+
   it("caches derivations by input hash and version", () => {
     store.saveDerivation("abc", "topic-1", { score: 4 });
     expect(store.derivation("abc", "topic-1")).toEqual({ score: 4 });

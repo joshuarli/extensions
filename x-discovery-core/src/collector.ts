@@ -10,12 +10,20 @@ export interface PageCommit {
   accounting: HomeEntryAccounting;
 }
 
+export interface PageFailure {
+  page: number;
+  data: unknown;
+  detail: string;
+  accounting: HomeEntryAccounting;
+}
+
 export interface HomeTimelineDeps {
   request(variables: Record<string, unknown>, signal: AbortSignal): Promise<unknown>;
   savePosts(posts: DiscoveredPost[]): Promise<void>;
   readCursor(): Promise<string | null>;
   writeCursor(cursor: string | null): Promise<void>;
   commitPage?(commit: PageCommit): Promise<void>;
+  commitFailure?(failure: PageFailure): Promise<void>;
   signal: AbortSignal;
   report(message: string): void;
   maxPages: number;
@@ -60,6 +68,9 @@ export async function collectHomeTimeline(deps: HomeTimelineDeps): Promise<Colle
     const data = await deps.request(homeVariables(cursor), deps.signal);
     const parsed = parseHomeTimeline(data, new Date().toISOString());
     if (!parsed.valid) {
+      if (deps.commitFailure) {
+        await deps.commitFailure({ page: pages, data, detail: parsed.detail, accounting: parsed.accounting });
+      }
       return { pages, posts, cursor, completed: false, reason: "unexpected_shape" };
     }
     if (deps.commitPage) {

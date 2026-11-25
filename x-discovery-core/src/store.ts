@@ -54,6 +54,10 @@ export class DiscoveryStore {
       + "  run_id TEXT NOT NULL, page INTEGER NOT NULL, json TEXT NOT NULL,"
       + "  PRIMARY KEY (run_id, page)"
       + ");"
+      + "CREATE TABLE IF NOT EXISTS page_failures ("
+      + "  run_id TEXT NOT NULL, page INTEGER NOT NULL, detail TEXT NOT NULL, json TEXT NOT NULL,"
+      + "  PRIMARY KEY (run_id, page)"
+      + ");"
       + "CREATE TABLE IF NOT EXISTS derivations ("
       + "  input_hash TEXT NOT NULL, version TEXT NOT NULL, json TEXT NOT NULL, created_at TEXT NOT NULL,"
       + "  PRIMARY KEY (input_hash, version)"
@@ -120,6 +124,19 @@ export class DiscoveryStore {
       this.db.exec("ROLLBACK");
       throw error;
     }
+  }
+
+  saveFailure(runId: string, page: number, data: unknown, detail: string): void {
+    this.db.prepare("INSERT OR REPLACE INTO raw_pages (run_id, page, json) VALUES (?, ?, ?)")
+      .run(runId, page, JSON.stringify(data));
+    this.db.prepare("INSERT OR REPLACE INTO page_failures (run_id, page, detail, json) VALUES (?, ?, ?, ?)")
+      .run(runId, page, detail, JSON.stringify(data));
+  }
+
+  failures(runId: string): Array<{ page: number; detail: string }> {
+    const rows = this.db.prepare("SELECT page, detail FROM page_failures WHERE run_id = ? ORDER BY page")
+      .all(runId) as Array<Record<string, unknown>>;
+    return rows.map((row) => ({ page: Number(row["page"]), detail: String(row["detail"]) }));
   }
 
   readCheckpoint(runId: string): string | null {

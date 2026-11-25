@@ -86,6 +86,10 @@ export async function collectFeed(options: DiscoverOptions): Promise<CollectSumm
         readCursor: async () => store.readCheckpoint(runId),
         writeCursor: async () => {},
         commitPage: async (input) => store.commitPage({ ...input, runId, accountId: client.accountId, feed: options.feed }),
+        commitFailure: async (failure) => {
+          store.saveFailure(runId, failure.page, failure.data, failure.detail);
+          report("Page " + failure.page + " saved for inspection: " + failure.detail, options.onStatus);
+        },
         signal: options.signal,
         report: (message) => report(message, options.onStatus),
         maxPages: options.maxPages,
