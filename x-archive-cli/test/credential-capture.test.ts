@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { BOOKMARK_OPERATIONS, LIKES_OPERATIONS, type Credentials } from "../../x-archive-core/src/capture.ts";
 import {
   capturePages,
+  credentialCapturePlan,
   hasRequiredCaptures,
   missingCaptures,
   type RequiredCaptures,
@@ -50,5 +51,50 @@ describe("hasRequiredCaptures", () => {
     expect(hasRequiredCaptures(credentials({ Bookmarks: "id" }), required)).toBe(false);
     expect(hasRequiredCaptures(credentials({ Bookmarks: "id", Likes: "id" }, ""), required)).toBe(false);
     expect(missingCaptures(credentials({ Bookmarks: "id" }), required)).toEqual(["Likes"]);
+  });
+});
+
+describe("credentialCapturePlan", () => {
+  const required: RequiredCaptures = [["Bookmarks"], ["Likes"]];
+  const pages = ["https://x.com/i/history", "https://x.com/i/history/likes"];
+
+  it("skips capture when the worker already holds every operation", () => {
+    const worker = credentials({ Bookmarks: "b", Likes: "l" });
+    expect(credentialCapturePlan(required, undefined, null, worker)).toEqual({
+      pages, credentials: worker, needsCapture: false,
+    });
+  });
+
+  it("merges the cache with fresh worker captures instead of discarding either", () => {
+    const cached = credentials({ Bookmarks: "b" });
+    const worker = credentials({ Likes: "l" });
+    const plan = credentialCapturePlan(required, undefined, cached, worker);
+    expect(plan.credentials).toMatchObject({ queryIds: { Bookmarks: "b", Likes: "l" } });
+    expect(plan.needsCapture).toBe(false);
+  });
+
+  it("keeps the cache and still captures when a group is missing", () => {
+    const cached = credentials({ Bookmarks: "b" });
+    expect(credentialCapturePlan(required, undefined, cached, null)).toMatchObject({
+      pages, credentials: cached, needsCapture: true,
+    });
+    expect(credentialCapturePlan(required, undefined, null, null)).toMatchObject({
+      pages, credentials: null, needsCapture: true,
+    });
+  });
+
+  it("does not capture when nothing is required", () => {
+    expect(credentialCapturePlan([], undefined, null, null)).toEqual({
+      pages: [], credentials: null, needsCapture: false,
+    });
+  });
+
+  it("still captures when the merged credentials have no authorization", () => {
+    const worker = credentials({ Bookmarks: "b", Likes: "l" }, "");
+    expect(credentialCapturePlan(required, undefined, null, worker).needsCapture).toBe(true);
+  });
+
+  it("requires a handle before planning profile capture pages", () => {
+    expect(() => credentialCapturePlan([["UserByScreenName"]], undefined, null, null)).toThrow("valid @handle");
   });
 });
