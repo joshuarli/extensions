@@ -89,14 +89,14 @@ describe("collectHomeTimeline", () => {
 
   it("preserves a failing page for inspection instead of discarding it", async () => {
     const collected = deps([{ unexpected: "shape" }]);
-    let saved: { page: number; detail: string } | null = null;
+    const saved: { value: { page: number; detail: string } | null } = { value: null };
     collected.commitFailure = async (failure) => {
-      saved = { page: failure.page, detail: failure.detail };
+      saved.value = { page: failure.page, detail: failure.detail };
     };
     const result = await collectHomeTimeline(collected);
     expect(result.reason).toBe("unexpected_shape");
-    expect(saved).toMatchObject({ page: 1 });
-    expect(typeof saved === "object" && saved !== null ? saved.detail : "").toContain("TimelineAddEntries");
+    expect(saved.value).toMatchObject({ page: 1 });
+    expect(saved.value?.detail ?? "").toContain("TimelineAddEntries");
   });
 
   it("passes each page to a transactional commit hook", async () => {
