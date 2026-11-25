@@ -411,6 +411,7 @@ export async function downloadProfile(handle: string, options: RunOptions): Prom
   const rawContext = await store.allContextRecords();
   status.say("export", "Assembling posts.json…");
   const archive = assembleProfileArchive(raw, state, session.userId, targetUserId, rawContext);
+  (archive.export_metadata as Record<string, unknown>)["requested_profile"] = screenName;
   const folder = profileDir;
   mkdirSync(outDir, { recursive: true });
   writeJsonFile(join(outDir, "posts.json"), archive, 0o644);

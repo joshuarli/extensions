@@ -57,15 +57,6 @@ Next: 45
 - **Fix with:** isolate-effects
 - **Effort:** M
 
-### EXT-18 · P2 · Stop inferring profile identity from post authors
-
-- **Area:** X archive · HTML export
-- **Where:** x-archive-core/src/render.ts:368-381, 308-340; storage.ts:181-199
-- **Problem:** When the exported profile lacks a handle or name renderArchive adopts the most frequent post author; on a repost-heavy profile that is a different account and the renderer then fetches that person's banner, misattributing the archive.
-- **Recommendation:** Use the known target user id and handle carried in export_metadata or the requested profile recorded by the CLI, and fall back to a neutral label instead of a donor post.
-- **Fix with:** none
-- **Effort:** S
-
 ### EXT-19 · P2 · Preserve metric provenance in cumulative archives
 
 - **Area:** X archive · collection and storage

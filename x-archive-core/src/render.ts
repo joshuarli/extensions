@@ -355,6 +355,7 @@ export async function renderArchive(options: RenderArchiveOptions): Promise<Rend
       });
   if (!altPath) throw new Error(`no posts.json, likes.json or bookmarks.json in ${folder}`);
   const data = record(JSON.parse(readFileSync(altPath, "utf8"))),
+    meta = record(data["export_metadata"]),
     mode = options.textOnly ? "text-only" : "media",
     mediaDir = join(folder, "media"),
     output = options.output ?? join(folder, "archive.html");
@@ -365,19 +366,9 @@ export async function renderArchive(options: RenderArchiveOptions): Promise<Rend
     archiveKind = "posts";
     posts = array(data["posts"]);
     profile = record(data["profile"]);
-    if (!text(profile["screen_name"]) && !text(profile["name"])) {
-      const counts = new Map<string, number>();
-      for (const value of posts) {
-        const handle = text(record(record(value)["author"])["screen_name"]);
-        if (handle) counts.set(handle, (counts.get(handle) ?? 0) + 1);
-      }
-      const top = [...counts.entries()].sort((left, right) => right[1] - left[1])[0]?.[0];
-      const donor = top ? posts.map((value) => record(record(value)["author"])).find((author) => text(author["screen_name"]) === top) : undefined;
-      if (donor) {
-        for (const key of ["user_id", "screen_name", "name", "profile_image_url", "verified", "followers_count"]) {
-          if (!profile[key] && donor[key] !== undefined) profile[key] = donor[key];
-        }
-      }
+    if (!text(profile["screen_name"])) {
+      const requested = text(meta["requested_profile"]).replace(/^@/u, "");
+      if (requested) profile["screen_name"] = requested;
     }
   } else if ("likes" in data) {
     archiveKind = "likes";
@@ -390,8 +381,7 @@ export async function renderArchive(options: RenderArchiveOptions): Promise<Rend
   } else {
     throw new Error(`${altPath} carries no posts, likes or bookmarks array`);
   }
-  const meta = record(data["export_metadata"]),
-    contextPosts = archiveKind === "posts" ? array(data["context_posts"]) : [],
+  const contextPosts = archiveKind === "posts" ? array(data["context_posts"]) : [],
     contextIds = contextPosts.filter((post) => Boolean(record(post)["tweet_id"])).length,
     collection = record(meta["collection"]);
   let mediaReport: Json | null = null;

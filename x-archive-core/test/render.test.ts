@@ -45,6 +45,27 @@ describe("renderArchive", () => {
     }
   });
 
+  it("uses the requested profile handle instead of a donor author", async () => {
+    mkdirSync(scratchRoot, { recursive: true });
+    const folder = mkdtempSync(join(scratchRoot, "x-render-profile-"));
+    try {
+      writeFileSync(join(folder, "posts.json"), JSON.stringify({
+        posts: [
+          { tweet_id: "1", full_text: "one", author: { screen_name: "bob", name: "Bob" } },
+          { tweet_id: "2", full_text: "two", author: { screen_name: "bob", name: "Bob" } },
+        ],
+        profile: { user_id: "42" },
+        export_metadata: { requested_profile: "alice" },
+      }));
+      const result = await renderArchive({ folder, noFetch: true });
+      const html = readFileSync(result.output, "utf8");
+      expect(html).toContain('<div class="handle">@alice</div>');
+      expect(html).not.toContain('<div class="handle">@bob</div>');
+    } finally {
+      rmSync(folder, { recursive: true, force: true });
+    }
+  });
+
   it("reports partial collection and missing media in the footer", async () => {
     mkdirSync(scratchRoot, { recursive: true });
     const folder = mkdtempSync(join(scratchRoot, "x-render-status-"));
