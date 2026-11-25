@@ -1,6 +1,6 @@
 import type { DiscoveredPost } from "./post.ts";
 
-export const LINK_VERSION = "links-1";
+export const LINK_VERSION = "links-2";
 
 const DRIVE_HOSTS: readonly string[] = [
   "drive.google.com",
@@ -14,6 +14,13 @@ const DRIVE_HOSTS: readonly string[] = [
   "pixeldrain.com",
   "wetransfer.com",
   "filer.io",
+  "gofile.io",
+  "transfer.it",
+  "file.io",
+  "send.cm",
+  "workupload.com",
+  "katfile.com",
+  "rapidgator.net",
 ];
 
 export interface ResourceLink {
