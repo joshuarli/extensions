@@ -55,7 +55,7 @@ export async function observeOperation(options: {
 }): Promise<{ observations: Observation[]; recipePath: string }> {
   const pages = PAGES[options.operation];
   if (!pages) throw new Error("No observation recipe for " + options.operation + ".");
-  const browser = await chromium.connectOverCDP(options.cdpUrl, { timeout: 10_000 });
+  const browser = await chromium.connectOverCDP(options.cdpUrl, { timeout: 30_000 });
   const observations: Observation[] = [];
   try {
     const context = browser.contexts()[0];
