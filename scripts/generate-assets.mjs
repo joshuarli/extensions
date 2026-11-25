@@ -1,4 +1,4 @@
-import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -37,6 +37,14 @@ const lines = [
   `export const ONEFILE_LOADER_SOURCE = ${JSON.stringify(loader)};`,
   "",
 ];
-mkdirSync(dirname(output), { recursive: true });
-writeFileSync(output, lines.join("\n"));
-console.log(`Generated ${relative(repositoryRoot, output)} with ${files.length} extension files`);
+if (process.argv.includes("--check")) {
+  const current = existsSync(output) ? readFileSync(output, "utf8") : null;
+  if (current !== lines.join("\n")) {
+    throw new Error(`${relative(repositoryRoot, output)} is stale: run pnpm run assets`);
+  }
+  console.log("Embedded runtime assets are current");
+} else {
+  mkdirSync(dirname(output), { recursive: true });
+  writeFileSync(output, lines.join("\n"));
+  console.log(`Generated ${relative(repositoryRoot, output)} with ${files.length} extension files`);
+}

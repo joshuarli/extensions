@@ -1,4 +1,4 @@
-import { mkdirSync, renameSync, writeFileSync } from "node:fs";
+import { mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { EXTENSION_FILES } from "./generated/assets.ts";
@@ -12,6 +12,7 @@ export function suiteExtensionPath(env: NodeJS.ProcessEnv = process.env): string
 
 export function materializeExtension(env: NodeJS.ProcessEnv = process.env): string {
   const root = suiteExtensionPath(env);
+  rmSync(root, { recursive: true, force: true });
   mkdirSync(root, { recursive: true });
   for (const [name, encoded] of EXTENSION_FILES) {
     const path = join(root, name),

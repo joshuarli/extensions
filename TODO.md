@@ -138,15 +138,6 @@ Next: 45
 - **Fix with:** durable-state
 - **Effort:** M
 
-### EXT-33 · P2 · Embedded CLI runtime assets can silently drift from the extension
-
-- **Area:** Build / CLI release boundary
-- **Where:** lib/assets.ts:4,13-22; scripts/generate-assets.mjs:26-41; x-archive-cli/src/extension.ts:36; onefile-cli/src/save.ts:38-39; package.json:17-20; .github/workflows/ci.yml:37-40
-- **Problem:** lib/generated/assets.ts is a committed snapshot regenerated only by pnpm run dist; no test or CI step compares it to build output, so a stale snapshot hot-loads an old extension and embeds old capture scripts. materializeExtension also keeps files removed from a newer build.
-- **Recommendation:** Add a boundary check after dist that regenerates assets and fails on a diff, and clear stale files when materializing a cached extension.
-- **Fix with:** single-source-of-truth
-- **Effort:** M
-
 ### EXT-21 · P3 · Render parsed fields that the HTML currently ignores
 
 - **Area:** X archive · HTML export

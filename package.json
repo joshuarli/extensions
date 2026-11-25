@@ -9,6 +9,7 @@
   "scripts": {
     "build:extensions": "node scripts/build-extensions.mjs",
     "assets": "node scripts/generate-assets.mjs",
+    "assets:check": "node scripts/generate-assets.mjs --check",
     "icons": "node scripts/render-icons.mjs",
     "typecheck": "tsrs --noEmit",
     "lint": "oxlint --type-aware --threads=1",

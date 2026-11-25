@@ -64,6 +64,7 @@ jobs:
           mkdir -p .work/tmp
           export TMPDIR="$PWD/.work/tmp"
           make dist
+          pnpm run assets:check
           pnpm run test:browser extension-onefile/test/browser/extension-runtime.spec.ts extension-onefile/test/browser/capture.spec.ts extension-onefile/test/browser/installed-capture.spec.ts --output="$PWD/.work/tmp/playwright-results"
       - name: Upload Onefile browser failure output
         if: failure()
