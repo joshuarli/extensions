@@ -26,4 +26,12 @@ describe("bookmark merge", () => {
     expect(third.full_text).toBe("Original content");
     expect(third.folder_ids).toEqual(["folder-1", "folder-2"]);
   });
+
+  it("keeps first seen time and known metrics when counts are absent", () => {
+    const first = mergeBookmark(undefined, record({ rest_id: "111", legacy: { full_text: "x", favorite_count: 9 } }));
+    expect(first.first_seen_at).toBe("2026-10-30T00:00:00Z");
+    const merged = mergeBookmark(first, record({ rest_id: "111", legacy: { full_text: "x" } }));
+    expect(merged.first_seen_at).toBe(first.first_seen_at);
+    expect(merged.metrics).toMatchObject({ likes: 9 });
+  });
 });

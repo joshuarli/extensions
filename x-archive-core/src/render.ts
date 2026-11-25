@@ -478,6 +478,7 @@ export async function renderArchive(options: RenderArchiveOptions): Promise<Rend
       coverage ? `Collection: ${coverage}${collectionReason ? " (" + collectionReason + ")" : ""}` : "",
       failedMedia ? `${failedMedia} media file(s) failed to download` : "",
       skippedMedia ? `${skippedMedia} media file(s) skipped` : "",
+      "Metrics are snapshots observed at capture time.",
     ].filter(Boolean).map((note) => esc(note)).join(" · ");
   parts.push(
     `</main><footer class="footer">End of the archive · ${formatNumber(totalPosts)} posts (${formatNumber(available)} available, ${formatNumber(unavailable)} unavailable)${contextNote}<br>`

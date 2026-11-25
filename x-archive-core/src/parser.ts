@@ -22,6 +22,7 @@ export const BookmarkSchema = Schema.Struct({
   repost_of: Schema.optional(Schema.String),
   folder_ids: Schema.Array(Schema.String),
   observed_at: Schema.String,
+  first_seen_at: Schema.optional(Schema.String),
 });
 
 export type Bookmark = Schema.Schema.Type<typeof BookmarkSchema>;
@@ -53,13 +54,17 @@ function number(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
+function metric(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
 function array(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
 }
 
 function unavailable(id: string, sortIndex: string | null, reason: string, observedAt: string): Bookmark {
   return { tweet_id: id, sort_index: sortIndex, status: "unavailable",
-    unavailable_reason: reason, folder_ids: [], observed_at: observedAt };
+    unavailable_reason: reason, folder_ids: [], observed_at: observedAt, first_seen_at: observedAt };
 }
 
 type MediaItem = {
@@ -210,11 +215,11 @@ function normalizeTweetFields(
       followers_count: number(get(userLegacy, "followers_count")),
     },
     metrics: {
-      likes: number(get(legacy, "favorite_count")),
-      retweets: number(get(legacy, "retweet_count")),
-      replies: number(get(legacy, "reply_count")),
-      bookmarks: number(get(legacy, "bookmark_count")),
-      views: Number.parseInt(string(get(content, "views", "count")) ?? string(get(tweet, "views", "count")) ?? "0", 10) || 0,
+      likes: metric(get(legacy, "favorite_count")),
+      retweets: metric(get(legacy, "retweet_count")),
+      replies: metric(get(legacy, "reply_count")),
+      bookmarks: metric(get(legacy, "bookmark_count")),
+      views: Number.parseInt(string(get(content, "views", "count")) ?? string(get(tweet, "views", "count")) ?? "", 10) || null,
     },
     entities: {
       urls: array(get(entities, "urls")).map((value) => ({
@@ -241,6 +246,7 @@ function normalizeTweetFields(
     ...(repostedBy ? { reposted_by: repostedBy } : {}),
     folder_ids: [],
     observed_at: observedAt,
+    first_seen_at: observedAt,
   };
 }
 

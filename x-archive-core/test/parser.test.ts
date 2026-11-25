@@ -34,6 +34,7 @@ describe("bookmark timelines", () => {
     expect(post?.author).toMatchObject({ screen_name: "user" });
     expect(post?.entities).toMatchObject({ urls: [{ expanded_url: "https://example.com" }] });
     expect(post?.media).toMatchObject([{ url: "https://pbs.twimg.com/file.jpg?format=jpg&name=orig" }]);
+    expect(post?.metrics).toMatchObject({ likes: null, views: null });
   });
 
   it("normalizes quoted posts and keeps the reposting author", () => {

@@ -195,6 +195,7 @@ export function parseContextTweet(
     card: null,
     folder_ids: [],
     observed_at: observedAt,
+    first_seen_at: observedAt,
   };
   return decodeBookmark({ ...record, raw_tweet: tweet });
 }

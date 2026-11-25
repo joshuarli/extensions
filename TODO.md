@@ -48,15 +48,6 @@ Next: 45
 - **Fix with:** isolate-effects
 - **Effort:** M
 
-### EXT-19 · P2 · Preserve metric provenance in cumulative archives
-
-- **Area:** X archive · collection and storage
-- **Where:** x-archive-core/src/parser.ts:46-52/198/205; merge.ts:14-23
-- **Problem:** Missing numeric fields become zero and merges overwrite earlier metrics with newer zero snapshots; observed_at is replaced on every observation and no first_seen_at is kept, so the archive cannot distinguish absent from zero or recover its history.
-- **Recommendation:** Make metrics nullable per field, keep first_seen_at, do not overwrite a known value with an absent one, and label HTML counts as observed-at values.
-- **Fix with:** make-invalid-states-unrepresentable
-- **Effort:** M
-
 ### EXT-20 · P2 · Add an end-to-end export contract test
 
 - **Area:** X archive · tests
