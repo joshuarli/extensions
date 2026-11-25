@@ -48,15 +48,6 @@ Next: 45
 - **Fix with:** none
 - **Effort:** M
 
-### EXT-15 · P2 · Preserve bookmark and likes order in archive.html
-
-- **Area:** X archive · HTML export
-- **Where:** x-archive-core/src/storage.ts:96/133/179; render.ts:396-403
-- **Problem:** Exports are sorted by sort_index, the user's save order, but renderArchive re-sorts every post by created_at, so the page silently loses the ordering that matters most in a bookmarks or likes archive and disagrees with posts.json.
-- **Recommendation:** Render in the order the export supplies, applying the created_at sort only where it is the documented order.
-- **Fix with:** none
-- **Effort:** S
-
 ### EXT-16 · P2 · Show collection completeness and media failures in the exported page
 
 - **Area:** X archive · HTML export

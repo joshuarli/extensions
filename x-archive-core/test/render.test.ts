@@ -44,4 +44,23 @@ describe("renderArchive", () => {
       rmSync(folder, { recursive: true, force: true });
     }
   });
+
+  it("keeps the export order for bookmarks", async () => {
+    mkdirSync(scratchRoot, { recursive: true });
+    const folder = mkdtempSync(join(scratchRoot, "x-render-order-"));
+    try {
+      writeFileSync(join(folder, "bookmarks.json"), JSON.stringify({
+        bookmarks: [
+          { tweet_id: "old", created_at: "Mon Jan 01 00:00:00 +0000 2024", full_text: "older post" },
+          { tweet_id: "new", created_at: "Wed Oct 10 20:19:24 +0000 2018", full_text: "newer post" },
+        ],
+        export_metadata: { exported_at: "2026-01-01" },
+      }));
+      const result = await renderArchive({ folder, noFetch: true });
+      const html = readFileSync(result.output, "utf8");
+      expect(html.indexOf("older post")).toBeLessThan(html.indexOf("newer post"));
+    } finally {
+      rmSync(folder, { recursive: true, force: true });
+    }
+  });
 });

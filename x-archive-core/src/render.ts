@@ -393,14 +393,6 @@ export async function renderArchive(options: RenderArchiveOptions): Promise<Rend
   const meta = record(data["export_metadata"]),
     contextPosts = archiveKind === "posts" ? array(data["context_posts"]) : [],
     contextIds = contextPosts.filter((post) => Boolean(record(post)["tweet_id"])).length;
-  posts = [...posts].sort((left, right) => {
-    const leftDate = parseCreatedAt(record(left)["created_at"]),
-      rightDate = parseCreatedAt(record(right)["created_at"]);
-    if (!leftDate && !rightDate) return 0;
-    if (!leftDate) return 1;
-    if (!rightDate) return -1;
-    return rightDate.getTime() - leftDate.getTime();
-  });
   const assets = archiveKind === "posts"
     ? await fetchProfileAssets(Object.keys(profile).length ? profile : null, mediaDir, !options.noFetch)
     : { image: null, banner: null, profile_handle: "" };
