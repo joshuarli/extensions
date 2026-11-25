@@ -309,12 +309,3 @@ Next: 45
 - **Fix with:** none
 - **Effort:** M
 
-### EXT-44 · P4 · External YouTube messages expose stack traces
-
-- **Area:** Extension / security
-- **Where:** extension-youtube-transcript/src/background.ts:555-558; extension-youtube-transcript/src/manifest.fragment.ts:20-22
-- **Problem:** Any script on an externally_connectable YouTube origin can induce an error and receive err.stack with internal paths and line numbers.
-- **Recommendation:** Return only a sanitized message externally and log the stack locally.
-- **Fix with:** security
-- **Effort:** S
-

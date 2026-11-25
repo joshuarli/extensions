@@ -1099,9 +1099,9 @@ test("message dispatch answers unknown actions with an error", async () => {
 test("message dispatch rejects cross-tab external access", async () => {
   const response = (await new Promise<unknown>((resolve) => {
     handleExternalMessage({ action: "copyTranscript", tabId: 2 }, senderTab(1, "https://www.youtube.com/watch?v=abc123"), resolve);
-  })) as { error: string; errorDetail: string };
+  })) as { error: string; errorDetail?: string };
   assert.equal(response.error, "External requests can only access the sending tab.");
-  assert.ok(response.errorDetail.includes("TabNotAccessibleError"));
+  assert.equal(response.errorDetail, undefined);
 });
 
 test("message tab resolution keeps internal callers on their own tab", async () => {

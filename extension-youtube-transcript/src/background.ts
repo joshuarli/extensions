@@ -553,10 +553,9 @@ function handleMessage(
         );
       }
       const err = error as Error;
-      sendResponse(Schema.decodeUnknownSync(ExtensionResponseSchema)({
-        error: err.message || "Unknown error.",
-        errorDetail: err.stack || err.message,
-      }));
+      sendResponse(Schema.decodeUnknownSync(ExtensionResponseSchema)(source === "external"
+        ? { error: err.message || "Unknown error." }
+        : { error: err.message || "Unknown error.", errorDetail: err.stack || err.message }));
     }
   })();
   return true;
