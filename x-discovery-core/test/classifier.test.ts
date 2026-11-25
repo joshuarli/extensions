@@ -54,6 +54,14 @@ describe("extractResourceLinks", () => {
   it("ignores non-resource hosts", () => {
     expect(extractResourceLinks(post("4", "dave", "900", "https://example.com/thing"), movies)).toEqual([]);
   });
+
+  it("preserves fragments so distinct file keys stay distinct", () => {
+    const first = extractResourceLinks(post("5", "dave", "900", "", "https://mega.nz/file/A#KEY_A"), movies);
+    const second = extractResourceLinks(post("6", "dave", "900", "", "https://mega.nz/#!B!KEY_B"), movies);
+    const third = extractResourceLinks(post("7", "dave", "900", "", "https://mega.nz/#!C!KEY_C"), movies);
+    expect(first[0]?.url).toBe("https://mega.nz/file/A#KEY_A");
+    expect(second[0]?.dedupe_key).not.toBe(third[0]?.dedupe_key);
+  });
 });
 
 describe("deriveAccounts", () => {

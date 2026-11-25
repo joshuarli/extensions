@@ -41,11 +41,11 @@ export function extractResourceLinks(post: DiscoveredPost, project: ProjectConfi
     if (parsed.protocol !== "https:" && parsed.protocol !== "http:") continue;
     const host = parsed.hostname.replace(/^www\./u, "").toLowerCase();
     if (!isResourceHost(host, project)) continue;
-    parsed.hash = "";
-    const dedupeKey = parsed.origin + parsed.pathname + "?" + [...parsed.searchParams.entries()]
+    const query = [...parsed.searchParams.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([key, value]) => encodeURIComponent(key) + "=" + encodeURIComponent(value))
       .join("&");
+    const dedupeKey = parsed.origin + parsed.pathname + "?" + query + "#" + parsed.hash;
     if (seen.has(dedupeKey)) continue;
     seen.add(dedupeKey);
     result.push({ url: parsed.toString(), host, dedupe_key: dedupeKey, source_tweet_id: post.tweet_id, association, display_url: display });

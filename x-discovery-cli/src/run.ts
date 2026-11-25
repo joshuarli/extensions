@@ -8,15 +8,18 @@ import { downloadsRoot } from "../../x-archive-cli/src/state.ts";
 import {
   collectHomeTimeline,
   AccountFindingSchema,
+  ACCOUNT_VERSION,
   ResourceLinkSchema,
   TopicJudgmentSchema,
   appendFinds,
   deriveAccounts,
   extractResourceLinks,
   readArchiveCandidates,
+  sourceUrl,
   DiscoveryStore,
   newRun,
   type AccountFinding,
+  type DiscoveredPost,
   type Feed,
   type FindRecord,
   type ProjectConfig,
@@ -145,16 +148,17 @@ export async function deriveFindings(options: {
     const posts = store.allPosts();
     const topics = posts.map((post) => classifyTopic(post, options.project));
     const links = posts.flatMap((post) => extractResourceLinks(post, options.project));
-    const version = projectVersion(options.project);
-    const inputHash = createHash("sha256").update(JSON.stringify([
+    const version = projectVersion(options.project) + "/" + ACCOUNT_VERSION + "/derivation-2";
+    const inputHash = createHash("sha256").update(JSON.stringify(
       posts.map((post) => JSON.stringify([
         post.tweet_id,
+        post.author_id,
+        post.author_handle,
         post.full_text,
         post.urls,
         post.relationship?.kind ?? "original",
       ])),
-      version,
-    ])).digest("hex").slice(0, 16);
+    )).digest("hex").slice(0, 16);
     const raw = store.derivation(inputHash, version);
     let cached: AccountFinding[] | null = null;
     if (raw !== null) {
@@ -224,36 +228,43 @@ export function trackFinds(options: {
   ledgerPath?: string | undefined;
 }): { added: number; duplicates: number; accounts: string[] } {
   const ledgerPath = options.ledgerPath ?? resolve(process.cwd(), options.project.ledger_path);
-  const accountsRaw: unknown = JSON.parse(readFileSync(join(options.outDir, "accounts.json"), "utf8"));
+  const store = new DiscoveryStore(storePath(options.outDir));
+  let posts: DiscoveredPost[];
+  try {
+    posts = store.allPosts();
+  } finally {
+    store.close();
+  }
   const topicsRaw: unknown = JSON.parse(readFileSync(join(options.outDir, "topics.json"), "utf8"));
   const linksRaw: unknown = JSON.parse(readFileSync(join(options.outDir, "links.json"), "utf8"));
-  const accounts = Schema.decodeUnknownSync(Schema.Array(AccountFindingSchema))(accountsRaw);
   const topics = Schema.decodeUnknownSync(Schema.Array(TopicJudgmentSchema))(topicsRaw);
   const links = Schema.decodeUnknownSync(Schema.Array(ResourceLinkSchema))(linksRaw);
   const topicByTweet = new Map(topics.map((topic) => [topic.tweet_id, topic]));
+  const linksByTweet = new Map<string, string[]>();
+  for (const link of links) {
+    const existing = linksByTweet.get(link.source_tweet_id) ?? [];
+    existing.push(link.url);
+    linksByTweet.set(link.source_tweet_id, existing);
+  }
   const at = new Date().toISOString();
   const records: FindRecord[] = [];
   const handles = new Set<string>();
-  for (const account of accounts) {
-    if (account.relevant_posts === 0 && account.resource_links === 0) continue;
-    handles.add(account.handle);
-    for (const example of account.examples) {
-      const tweetId = example.source_url.split("/").pop() ?? "";
-      if (!/^\d+$/u.test(tweetId)) continue;
-      const topic = topicByTweet.get(tweetId);
-      if (!topic || topic.verdict !== "relevant") continue;
-      records.push({
-        tweet_id: tweetId,
-        author_id: account.author_id,
-        author_handle: account.handle,
-        source_url: example.source_url,
-        topic_score: topic.score,
-        links: links.filter((link) => link.source_tweet_id === tweetId).map((link) => link.url),
-        note: example.text + " — " + topic.reason,
-        discovered_at: at,
-        status: "seen",
-      });
-    }
+  for (const post of posts) {
+    const topic = topicByTweet.get(post.tweet_id);
+    const postLinks = linksByTweet.get(post.tweet_id) ?? [];
+    if (topic?.verdict !== "relevant" && postLinks.length === 0) continue;
+    handles.add(post.author_handle);
+    records.push({
+      tweet_id: post.tweet_id,
+      author_id: post.author_id,
+      author_handle: post.author_handle,
+      source_url: sourceUrl(post),
+      topic_score: topic?.score ?? 0,
+      links: postLinks,
+      note: post.full_text.slice(0, 300) + (topic ? " — " + topic.reason : " — resource link"),
+      discovered_at: at,
+      status: "seen",
+    });
   }
   const result = appendFinds(ledgerPath, records);
   return { ...result, accounts: [...handles] };

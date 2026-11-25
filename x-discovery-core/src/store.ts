@@ -12,6 +12,7 @@ const LEASE_MS = 10 * 60 * 1000;
 export function contentHash(post: DiscoveredPost): string {
   const normalized = JSON.stringify([
     post.author_id,
+    post.author_handle,
     post.full_text,
     post.urls.map((link) => link.url),
     post.relationship?.kind ?? "original",
