@@ -1,0 +1,117 @@
+{
+  "data": {
+    "home": {
+      "home_timeline_urt": {
+        "instructions": [
+          {
+            "type": "TimelineAddEntries",
+            "entries": [
+              {
+                "entryId": "cursor-top-1",
+                "content": {
+                  "entryType": "TimelineTimelineCursor",
+                  "cursorType": "Top",
+                  "value": "cursor-top"
+                }
+              },
+              {
+                "entryId": "tweet-100",
+                "content": {
+                  "entryType": "TimelineTimelineItem",
+                  "itemContent": {
+                    "tweet_results": {
+                      "result": {
+                        "__typename": "Tweet",
+                        "rest_id": "100",
+                        "core": {
+                          "user_results": {
+                            "result": {
+                              "__typename": "User",
+                              "rest_id": "900",
+                              "core": { "screen_name": "arthouse_dave", "name": "Dave" }
+                            }
+                          }
+                        },
+                        "legacy": {
+                          "full_text": "Criterion pick tonight — MUBI has it, mirror here: https://t.co/abc",
+                          "created_at": "Tue Nov 24 16:38:32 +0000 2026",
+                          "lang": "en",
+                          "entities": {
+                            "urls": [
+                              {
+                                "url": "https://t.co/abc",
+                                "expanded_url": "https://drive.google.com/file/d/xyz/view",
+                                "display_url": "drive.google.com/file/d/xyz"
+                              }
+                            ]
+                          },
+                          "favorite_count": 42,
+                          "retweet_count": 7
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "entryId": "promoted-tweet-200",
+                "content": {
+                  "entryType": "TimelineTimelineItem",
+                  "itemContent": {
+                    "tweet_results": {
+                      "result": {
+                        "__typename": "Tweet",
+                        "rest_id": "200",
+                        "core": {
+                          "user_results": {
+                            "result": {
+                              "__typename": "User",
+                              "rest_id": "901",
+                              "core": { "screen_name": "an_ad", "name": "Ad" }
+                            }
+                          }
+                        },
+                        "legacy": { "full_text": "Buy socks", "created_at": "", "lang": "en", "entities": {} }
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "entryId": "tweet-101",
+                "content": {
+                  "entryType": "TimelineTimelineItem",
+                  "itemContent": {
+                    "tweet_results": {
+                      "result": {
+                        "__typename": "Tweet",
+                        "rest_id": "101",
+                        "core": {
+                          "user_results": {
+                            "result": {
+                              "__typename": "UserUnavailable",
+                              "core": {}
+                            }
+                          }
+                        },
+                        "legacy": { "full_text": "unavailable", "created_at": "", "lang": "en", "entities": {} }
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "entryId": "cursor-bottom-1",
+                "content": {
+                  "entryType": "TimelineTimelineCursor",
+                  "cursorType": "Bottom",
+                  "value": "cursor-bottom"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

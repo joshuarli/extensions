@@ -66,8 +66,13 @@ export function delay(ms: number, signal: AbortSignal): Promise<void> {
   });
 }
 
-async function requestWithRetry(
-  deps: ArchiveDeps,
+export interface GraphqlRequestDeps {
+  credentials(userId: string): Promise<Credentials>;
+  session: XSessionProvider;
+}
+
+export async function requestWithRetry(
+  deps: GraphqlRequestDeps,
   userId: string,
   operation: Operation,
   variables: Record<string, unknown>,
