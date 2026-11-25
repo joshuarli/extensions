@@ -18,9 +18,27 @@ import { writeJsonFile, stateDir } from "./state.ts";
 export type SeedProfileStore = ProfileStore & { allRecords(): Promise<unknown[]> };
 
 export interface SeedReport {
-  bookmarks: { records: number; folders: number; state: ScanState | null; already: boolean };
-  likes: { records: number; state: LikesScanState | null; already: boolean };
-  profiles: Array<{ targetUserId: string; screenName: string | null; records: number; state: ProfileScanState | null; already: boolean }>;
+  bookmarks: { records: number; folders: number; state: ScanState | null; already: boolean; added?: number; updated?: number };
+  likes: { records: number; state: LikesScanState | null; already: boolean; added?: number; updated?: number };
+  profiles: Array<{ targetUserId: string; screenName: string | null; records: number; state: ProfileScanState | null; already: boolean; added?: number; updated?: number }>;
+}
+
+function recordIds(records: readonly unknown[]): Set<string> {
+  return new Set(records.map((record) => {
+    const id = (record as { tweet_id?: unknown } | null)?.["tweet_id"];
+    return typeof id === "string" ? id : "";
+  }));
+}
+
+export function seedMergeCounts(existing: readonly unknown[], incoming: readonly unknown[]): { added: number; updated: number } {
+  const seen = recordIds(existing);
+  let added = 0, updated = 0;
+  for (const record of incoming) {
+    const id = (record as { tweet_id?: unknown })["tweet_id"];
+    if (typeof id === "string" && seen.has(id)) updated++;
+    else { added++; if (typeof id === "string") seen.add(id); }
+  }
+  return { added, updated };
 }
 
 interface CdpDump {
@@ -234,14 +252,20 @@ export async function seedFromHelium(
   };
 
   const fsBookmarks = await bookmarksStore.allRecords();
-  if (dump.bookmarks && dump.bookmarks.records.length > fsBookmarks.length) {
+  if (dump.bookmarks) {
+    const { added, updated } = seedMergeCounts(fsBookmarks, dump.bookmarks.records);
     for (const record of dump.bookmarks.records) await bookmarksStore.savePage([record as never]);
     await bookmarksStore.saveFolders(dump.bookmarks.folders as Array<{ id: string; name: string }>);
-    const state = dump.bookmarks.state
-      ? Schema.decodeUnknownSync(ScanStateSchema)(dump.bookmarks.state)
-      : null;
-    if (state) await bookmarksStore.saveState(state);
-    report.bookmarks = { records: dump.bookmarks.records.length, folders: dump.bookmarks.folders.length, state, already: false };
+    const localState = await bookmarksStore.loadState();
+    if (!localState && dump.bookmarks.state) await bookmarksStore.saveState(Schema.decodeUnknownSync(ScanStateSchema)(dump.bookmarks.state));
+    report.bookmarks = {
+      records: (await bookmarksStore.allRecords()).length,
+      folders: dump.bookmarks.folders.length,
+      state: await bookmarksStore.loadState(),
+      already: added === 0,
+      added,
+      updated,
+    };
   } else {
     report.bookmarks.already = true;
     report.bookmarks.records = fsBookmarks.length;
@@ -250,13 +274,18 @@ export async function seedFromHelium(
   }
 
   const fsLikes = await likesStore.allRecords();
-  if (dump.likes && dump.likes.records.length > fsLikes.length) {
+  if (dump.likes) {
+    const { added, updated } = seedMergeCounts(fsLikes, dump.likes.records);
     for (const record of dump.likes.records) await likesStore.savePage([record as never]);
-    const state = dump.likes.state
-      ? Schema.decodeUnknownSync(LikesScanStateSchema)(dump.likes.state)
-      : null;
-    if (state) await likesStore.saveState(state);
-    report.likes = { records: dump.likes.records.length, state, already: false };
+    const localState = await likesStore.loadState();
+    if (!localState && dump.likes.state) await likesStore.saveState(Schema.decodeUnknownSync(LikesScanStateSchema)(dump.likes.state));
+    report.likes = {
+      records: (await likesStore.allRecords()).length,
+      state: await likesStore.loadState(),
+      already: added === 0,
+      added,
+      updated,
+    };
   } else {
     report.likes.already = true;
     report.likes.records = fsLikes.length;
@@ -272,15 +301,21 @@ export async function seedFromHelium(
       ? Schema.decodeUnknownSync(ProfileScanStateSchema)(profile.state)
       : null;
     const screenName = profileState?.profile?.screen_name ?? null;
-    if (profile.posts.length > existing.length) {
-      for (const record of profile.posts) await store.savePage([record as never], profile.targetUserId);
-      if (profileState) await store.saveState(profile.targetUserId, profileState);
-      writeJsonFile(join(stateDir(session.userId), "profile-targets.json"),
-        { current: { targetUserId: profile.targetUserId, screenName: screenName ?? undefined, operation: profileState?.operation ?? "UserOriginalsTimeline", capturedAt: new Date().toISOString() } });
-      report.profiles.push({ targetUserId: profile.targetUserId, screenName, records: profile.posts.length, state: profileState, already: false });
-    } else {
-      report.profiles.push({ targetUserId: profile.targetUserId, screenName, records: existing.length, state: await store.loadState(profile.targetUserId), already: true });
-    }
+    const { added, updated } = seedMergeCounts(existing, profile.posts);
+    for (const record of profile.posts) await store.savePage([record as never], profile.targetUserId);
+    const localState = await store.loadState(profile.targetUserId);
+    if (!localState && profileState) await store.saveState(profile.targetUserId, profileState);
+    writeJsonFile(join(stateDir(session.userId), "profile-targets.json"),
+      { current: { targetUserId: profile.targetUserId, screenName: screenName ?? undefined, operation: profileState?.operation ?? "UserOriginalsTimeline", capturedAt: new Date().toISOString() } });
+    report.profiles.push({
+      targetUserId: profile.targetUserId,
+      screenName,
+      records: (await store.allRecords()).length,
+      state: await store.loadState(profile.targetUserId),
+      already: added === 0,
+      added,
+      updated,
+    });
   }
 
   return report;

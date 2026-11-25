@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { chromium } from "playwright";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { suiteExtensionPath } from "../../lib/assets.ts";
-import { seedFromHelium } from "../src/seed.ts";
+import { seedFromHelium, seedMergeCounts } from "../src/seed.ts";
 
 const userId = "123";
 const savedState = process.env["X_ARCHIVE_STATE"];
@@ -38,6 +38,16 @@ function missingStoreFactory(): IDBFactory {
     },
   } as unknown as IDBFactory;
 }
+
+describe("legacy seeding counts", () => {
+  it("counts new and existing tweet ids regardless of archive size", () => {
+    expect(seedMergeCounts(
+      [{ tweet_id: "1" }, { tweet_id: "2" }],
+      [{ tweet_id: "2" }, { tweet_id: "3" }],
+    )).toEqual({ added: 1, updated: 1 });
+    expect(seedMergeCounts([{ tweet_id: "1" }, { tweet_id: "2" }], [])).toEqual({ added: 0, updated: 0 });
+  });
+});
 
 describe("legacy extension seeding", () => {
   it("completes when an IndexedDB database lacks the expected object stores", async () => {

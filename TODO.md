@@ -75,15 +75,6 @@ Next: 45
 - **Fix with:** durable-state
 - **Effort:** M
 
-### EXT-24 · P3 · Seed legacy archives by content rather than record count
-
-- **Area:** X archive · migration
-- **Where:** x-archive-cli/src/seed.ts:237/253/275
-- **Problem:** Legacy IndexedDB archives are merged only when they have more records than the CLI store, so a smaller but richer legacy archive is silently ignored and a larger but stale one wins.
-- **Recommendation:** Merge by tweet id with the existing mergeBookmark semantics and report added and updated counts instead of comparing totals.
-- **Fix with:** none
-- **Effort:** M
-
 ### EXT-37 · P3 · X capture operation sets are duplicated between core and CLI
 
 - **Area:** X archive / credential capture

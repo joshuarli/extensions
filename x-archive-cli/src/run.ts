@@ -358,7 +358,8 @@ export async function downloadProfile(handle: string, options: RunOptions): Prom
     try {
       const seed = await seedFromHelium(session, options.cdpUrl, { onlyProfileTarget: targetUserId, profileStore: store });
       const profile = seed.profiles[0];
-      if (profile) status.say("session", "Seeded from Helium: " + profile.records + " saved posts" + (profile.already ? " (already up to date)" : " (merged)") + ".");
+      if (profile) status.say("session", "Seeded from Helium: " + profile.records + " saved posts"
+        + (profile.already ? " (already up to date)" : ` (${profile.added ?? 0} added, ${profile.updated ?? 0} updated)`) + ".");
     } catch (error) {
       status.say("session", "Helium seeding unavailable: " + (error instanceof Error ? error.message : String(error)) + ". Continuing with the local store.");
     }
@@ -457,9 +458,9 @@ export async function downloadSelf(options: RunOptions): Promise<RunSummary[]> {
     try {
       const seed = await seedFromHelium(session, options.cdpUrl);
       status.say("session", "Seeded from Helium: bookmarks " + seed.bookmarks.records + " posts"
-        + (seed.bookmarks.already ? " (already up to date)" : " (merged)")
+        + (seed.bookmarks.already ? " (already up to date)" : ` (${seed.bookmarks.added ?? 0} added, ${seed.bookmarks.updated ?? 0} updated)`)
         + ", likes " + seed.likes.records + " posts"
-        + (seed.likes.already ? " (already up to date)" : " (merged)")
+        + (seed.likes.already ? " (already up to date)" : ` (${seed.likes.added ?? 0} added, ${seed.likes.updated ?? 0} updated)`)
         + (seed.profiles.length ? ", " + seed.profiles.length + " profile archive(s)" : "") + ".");
     } catch (error) {
       status.say("session", "Helium seeding unavailable: " + (error instanceof Error ? error.message : String(error)) + ". Continuing with the local store.");
