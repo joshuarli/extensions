@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { join } from "node:path";
 import { parseArgs, UsageError } from "../src/args.ts";
+import { buildSite } from "../src/build.ts";
 import type { ArchiveFs } from "../src/fs.ts";
 import { getTarget } from "../src/get.ts";
+import { inspectArchive } from "../src/info.ts";
 import { assertRunnable, parkJob, readJob } from "../src/job.ts";
 import { scanTarget } from "../src/scan.ts";
 import { appendPosts, collectionDir, listCollections, markMembership, readPosts, readState, recordsPath, writeState } from "../src/store.ts";
@@ -268,6 +270,61 @@ describe("resolved media", () => {
     expect(summary).toMatchObject({ downloaded: 1, skipped: 0, failed: 0, remaining: 0 });
     expect(readPosts(fs, dir)[0]?.media).toEqual([{ url: "https://cdn/abc.jpg", kind: "image", width: 10, height: 10 }]);
     expect(readState(fs, dir, "profile", "alice").membership["abc"]?.complete).toBe(true);
+  });
+});
+
+describe("buildSite", () => {
+  it("renders each collection, the index and the README with relative media paths", () => {
+    const fs = new MemoryFs();
+    const dir = collectionDir("/archive", "alice");
+    const savedDir = collectionDir("/archive", "alice-saved");
+    fs.mkdir(dir);
+    appendPosts(fs, dir, [{
+      shortcode: "abc", username: "alice", postType: "image", caption: "a caption",
+      media: [{ url: "https://cdn/a.jpg", kind: "image", width: 1, height: 1 }],
+    }]);
+    writeState(fs, dir, emptyCollection("profile", "alice"));
+    fs.mkdir(savedDir);
+    writeState(fs, savedDir, emptyCollection("saved", "alice-saved"));
+    const finished: string[] = [];
+    const summary = buildSite(fs, "/archive", {
+      update: () => {},
+      finish: (note) => { finished.push(note ?? ""); },
+    });
+
+    expect(summary).toEqual({ collections: 2, posts: 1, indexPath: "/archive/index.html" });
+    expect(finished).toEqual(["built 2 collections, 1 posts"]);
+    const index = fs.readText("/archive/index.html");
+    expect(index).toContain('<a href="alice.html">alice</a>');
+    expect(index).toContain('<a href="alice-saved.html">alice-saved</a>');
+    expect(fs.readText("/archive/README.md")).toContain("Each `@name` folder is one collection");
+    expect(fs.readText("/archive/site.css")).toContain("img,video{max-width:100%");
+    const page = fs.readText(join(dir, "alice.html"));
+    expect(page).toContain('<article id="abc">');
+    expect(page).toContain('<img src="images/abc.jpg" alt="abc" loading="lazy">');
+    expect(JSON.parse(fs.readText(join(dir, "data", "alice.json")) ?? "null")).toEqual([{
+      shortcode: "abc", username: "alice", postType: "image", caption: "a caption", media: ["abc.jpg"],
+    }]);
+    expect(fs.readText(join(savedDir, "alice-saved.html"))).toContain("<h1>alice-saved</h1>");
+  });
+});
+
+describe("inspectArchive", () => {
+  it("counts posts and labels saved collections separately from profiles", () => {
+    const fs = new MemoryFs();
+    const dir = collectionDir("/archive", "alice");
+    const savedDir = collectionDir("/archive", "alice-saved");
+    fs.mkdir(dir);
+    appendPosts(fs, dir, [{
+      shortcode: "abc", username: "alice", postType: "image", caption: null, media: [],
+    }]);
+    writeState(fs, dir, emptyCollection("profile", "alice"));
+    fs.mkdir(savedDir);
+    writeState(fs, savedDir, emptyCollection("saved", "alice-saved"));
+
+    expect(inspectArchive(fs, "/archive")).toEqual({
+      collections: 2, posts: 1, names: ["@alice: 1", "Saved from @alice: 0"],
+    });
   });
 });
 
