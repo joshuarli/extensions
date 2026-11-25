@@ -5,7 +5,7 @@ import type { ArchiveFs } from "../src/fs.ts";
 import { getTarget } from "../src/get.ts";
 import { assertRunnable, parkJob, readJob } from "../src/job.ts";
 import { scanTarget } from "../src/scan.ts";
-import { accountDir, appendPosts, collectionDir, markMembership, readPosts, readState, recordsPath, writeState } from "../src/store.ts";
+import { appendPosts, collectionDir, listCollections, markMembership, readPosts, readState, recordsPath, writeState } from "../src/store.ts";
 import { emptyCollection } from "../../instagram-archive-core/src/index.ts";
 import type { InstagramClient } from "../../instagram-client-core/src/index.ts";
 import { InstagramRequestFailure, MediaTooLarge } from "../../instagram-client-core/src/index.ts";
@@ -16,9 +16,10 @@ class MemoryFs implements ArchiveFs {
   readonly bytes = new Map<string, Uint8Array>();
   private readonly dirs = new Set<string>();
   mkdir(path: string): void {
-    let current = "";
+    let current = path.startsWith("/") ? "/" : "";
     for (const part of path.split("/")) {
-      current = current === "" ? part : current + "/" + part;
+      if (part === "") continue;
+      current = current === "" || current === "/" ? current + part : current + "/" + part;
       this.dirs.add(current);
     }
   }
@@ -154,22 +155,34 @@ describe("readPosts", () => {
   });
 });
 
+describe("listCollections", () => {
+  it("finds flattened collections by their state file and ignores other root entries", () => {
+    const fs = new MemoryFs();
+    const dir = collectionDir("/archive", "alice");
+    fs.mkdir(dir);
+    writeState(fs, dir, emptyCollection("profile", "alice"));
+    fs.mkdir(join("/archive", "@incomplete"));
+    fs.writeText(join("/archive", "index.html"), "");
+    expect(listCollections(fs, "/archive")).toEqual(["alice"]);
+  });
+});
+
 describe("scanTarget", () => {
   it("records posts, checkpoints the cursor, and survives a resume", async () => {
     const fs = new MemoryFs();
     const client = fakeClient([[POST], [POST, { code: "def", video_versions: [{ url: "https://cdn/v.mp4", width: 1, height: 1 }] }]]);
     const first = await scanTarget(
-      { target: "@alice", saved: false, outRoot: "/archive", accountId: "acct-1", limit: null },
+      { target: "@alice", saved: false, outRoot: "/archive", limit: null },
       { client, fs, reporter: reporter(), now: () => 0, signal: new AbortController().signal, pause: async () => {} },
       () => {},
     );
     expect(first.written).toBe(2);
-    const dir = collectionDir(accountDir("/archive", "acct-1"), "alice");
+    const dir = collectionDir("/archive", "alice");
     expect(readPosts(fs, dir).map((post) => post.shortcode)).toEqual(["abc", "def"]);
     expect(readState(fs, dir, "profile", "alice").complete).toBe(true);
 
     const second = await scanTarget(
-      { target: "@alice", saved: false, outRoot: "/archive", accountId: "acct-1", limit: null },
+      { target: "@alice", saved: false, outRoot: "/archive", limit: null },
       { client: fakeClient([[POST]]), fs, reporter: reporter(), now: () => 0, signal: new AbortController().signal, pause: async () => {} },
       () => {},
     );
@@ -185,12 +198,12 @@ describe("scanTarget", () => {
     };
     const parked: string[] = [];
     await expect(scanTarget(
-      { target: "@alice", saved: false, outRoot: "/archive", accountId: "acct-1", limit: null },
+      { target: "@alice", saved: false, outRoot: "/archive", limit: null },
       { client, fs, reporter: reporter(), now: () => 0, signal: new AbortController().signal, pause: async () => {} },
       (failure, key) => { parked.push(failure.kind + ":" + key); },
     )).rejects.toMatchObject({ kind: "rate_limit" });
     expect(parked).toEqual(["rate_limit:alice"]);
-    const dir = collectionDir(accountDir("/archive", "acct-1"), "alice");
+    const dir = collectionDir("/archive", "alice");
     expect(readPosts(fs, dir)).toHaveLength(0);
   });
 });
@@ -206,7 +219,7 @@ describe("pacing", () => {
       return profilePage(...args);
     };
     await scanTarget(
-      { target: "@alice", saved: false, outRoot: "/archive", accountId: "acct-1", limit: null },
+      { target: "@alice", saved: false, outRoot: "/archive", limit: null },
       { client, fs, reporter: reporter(), now: () => 0, signal: new AbortController().signal, pause: async () => { events.push("pause"); } },
       () => {},
     );
@@ -215,7 +228,7 @@ describe("pacing", () => {
 
   it("pauses between posts during get, not before the first", async () => {
     const fs = new MemoryFs();
-    const dir = collectionDir(accountDir("/archive", "acct-1"), "alice");
+    const dir = collectionDir("/archive", "alice");
     const image = (shortcode: string) => ({ shortcode, username: "alice", postType: "image" as const, caption: null, media: [{ url: "https://cdn/" + shortcode + ".jpg", kind: "image" as const, width: 1, height: 1 }] });
     fs.mkdir(dir);
     appendPosts(fs, dir, [image("abc"), image("def")]);
@@ -226,7 +239,7 @@ describe("pacing", () => {
       return new Uint8Array([1]);
     };
     const summary = await getTarget(
-      { outRoot: "/archive", accountId: "acct-1", key: "alice", kind: "profile", mediaDir: "images", limit: null, maxMediaBytes: 0 },
+      { outRoot: "/archive", key: "alice", kind: "profile", mediaDir: "images", limit: null, maxMediaBytes: 0 },
       { client, fs, reporter: reporter(), signal: new AbortController().signal, pause: async () => { events.push("pause"); } },
       () => {},
     );
@@ -238,7 +251,7 @@ describe("pacing", () => {
 describe("resolved media", () => {
   it("persists media found on the post page and marks the post complete", async () => {
     const fs = new MemoryFs();
-    const dir = collectionDir(accountDir("/archive", "acct-1"), "alice");
+    const dir = collectionDir("/archive", "alice");
     const post = { shortcode: "abc", username: "alice", postType: "image" as const, caption: null, media: [] };
     fs.mkdir(dir);
     appendPosts(fs, dir, [post]);
@@ -248,7 +261,7 @@ describe("resolved media", () => {
       { url: "https://cdn/abc.jpg", kind: "image", width: 10, height: 10 },
     ];
     const summary = await getTarget(
-      { outRoot: "/archive", accountId: "acct-1", key: "alice", kind: "profile", mediaDir: "images", limit: null, maxMediaBytes: 0 },
+      { outRoot: "/archive", key: "alice", kind: "profile", mediaDir: "images", limit: null, maxMediaBytes: 0 },
       { client, fs, reporter: reporter(), signal: new AbortController().signal, pause: async () => {} },
       () => {},
     );
@@ -261,7 +274,7 @@ describe("resolved media", () => {
 describe("media size limit", () => {
   it("counts oversized media as skipped without writing it", async () => {
     const fs = new MemoryFs();
-    const dir = collectionDir(accountDir("/archive", "acct-1"), "alice");
+    const dir = collectionDir("/archive", "alice");
     fs.mkdir(dir);
     appendPosts(fs, dir, [{
       shortcode: "abc", username: "alice", postType: "image", caption: null,
@@ -272,7 +285,7 @@ describe("media size limit", () => {
       throw new MediaTooLarge(2048);
     };
     const summary = await getTarget(
-      { outRoot: "/archive", accountId: "acct-1", key: "alice", kind: "profile", mediaDir: "images", limit: null, maxMediaBytes: 1024 },
+      { outRoot: "/archive", key: "alice", kind: "profile", mediaDir: "images", limit: null, maxMediaBytes: 1024 },
       { client, fs, reporter: reporter(), signal: new AbortController().signal, pause: async () => {} },
       () => {},
     );

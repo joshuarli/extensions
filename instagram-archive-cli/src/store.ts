@@ -9,20 +9,24 @@ import { decodeCollection, encodeCollection, PostSchema } from "../../instagram-
 import { Schema } from "effect";
 import type { ArchiveFs } from "./fs.ts";
 
-export function accountDir(outRoot: string, accountId: string): string {
-  const safe = accountId.replace(/[^A-Za-z0-9_-]+/gu, "_").slice(0, 80);
-  return outRoot + "/ig-" + safe;
+export const SAVED_SUFFIX = "-saved";
+
+export function collectionDir(outRoot: string, key: string): string {
+  return outRoot + "/@" + key;
+}
+
+export function listCollections(fs: ArchiveFs, outRoot: string): readonly string[] {
+  return fs.listDirs(outRoot)
+    .filter((name) => name.startsWith("@"))
+    .filter((name) => fs.exists(statePath(outRoot + "/" + name)))
+    .map((name) => name.slice(1));
 }
 
 export function collectionKey(target: string, saved: boolean): { key: string; kind: CollectionKind; username: string | null } {
   const username = target.startsWith("@") ? target.slice(1) : target;
-  if (saved) return { key: (username === "" ? "account" : username) + "-saved", kind: "saved", username: username === "" ? null : username };
+  if (saved) return { key: (username === "" ? "account" : username) + SAVED_SUFFIX, kind: "saved", username: username === "" ? null : username };
   if (username === "") throw new Error("A profile target is required; use @username.");
   return { key: username, kind: "profile", username };
-}
-
-export function collectionDir(accountRoot: string, key: string): string {
-  return accountRoot + "/collections/" + key;
 }
 
 export function statePath(dir: string): string {

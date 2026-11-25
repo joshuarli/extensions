@@ -7,7 +7,6 @@ import type { InstagramClient } from "../../instagram-client-core/src/index.ts";
 import { InstagramRequestFailure } from "../../instagram-client-core/src/index.ts";
 import type { ProgressReporter } from "../../lib/progress.ts";
 import {
-  accountDir,
   appendPosts,
   collectionDir,
   collectionKey,
@@ -22,7 +21,6 @@ export interface ScanInput {
   readonly target: string;
   readonly saved: boolean;
   readonly outRoot: string;
-  readonly accountId: string;
   readonly limit: number | null;
 }
 
@@ -56,7 +54,7 @@ async function runScan(
 ): Promise<ScanSummary> {
   const { client, fs, reporter, signal, pause } = deps;
   const { key, kind, username } = target;
-  const dir = collectionDir(accountDir(input.outRoot, input.accountId), key);
+  const dir = collectionDir(input.outRoot, key);
   fs.mkdir(dir);
   let state = readState(fs, dir, kind, key);
   const saved = readPosts(fs, dir);

@@ -9,20 +9,19 @@ import {
 import { parseArgs, USAGE, type CommandOptions } from "./args.ts";
 import { buildSite } from "./build.ts";
 import { createArchiveFs } from "./fs.ts";
-import { getTarget, listCollectionKeys } from "./get.ts";
+import { getTarget } from "./get.ts";
 import { assertRunnable, clearJob, parkJob } from "./job.ts";
 import { inspectArchive } from "./info.ts";
 import { listFollowing } from "./following.ts";
 import { scanTarget } from "./scan.ts";
-import { collectionKey } from "./store.ts";
+import { collectionKey, listCollections } from "./store.ts";
 
 const INTERRUPT_MESSAGE = "Stopping after the current post or media file. Saved data is kept; re-running resumes. Ctrl-C again to force exit.";
 
-function targetsFor(options: CommandOptions, accountId: string | undefined, fs: ReturnType<typeof createArchiveFs>): readonly string[] {
+function targetsFor(options: CommandOptions, fs: ReturnType<typeof createArchiveFs>): readonly string[] {
   if (options.targets.length > 0) return options.targets;
-  if (accountId === undefined) return [];
   if (options.saved) return ["account"];
-  return listCollectionKeys(fs, options.outRoot, accountId);
+  return listCollections(fs, options.outRoot);
 }
 
 async function run(options: CommandOptions, signal: AbortSignal): Promise<number> {
@@ -37,7 +36,7 @@ async function run(options: CommandOptions, signal: AbortSignal): Promise<number
   }
   if (options.command === "info") {
     const info = inspectArchive(fs, options.outRoot);
-    process.stdout.write(`${info.accounts} account(s), ${info.collections} collection(s), ${info.posts} post(s)\n`);
+    process.stdout.write(`${info.collections} collection(s), ${info.posts} post(s)\n`);
     for (const name of info.names) process.stdout.write("  " + name + "\n");
     return 0;
   }
@@ -50,7 +49,6 @@ async function run(options: CommandOptions, signal: AbortSignal): Promise<number
     onStatus: (message) => process.stderr.write(message + "\n"),
   });
   try {
-    const accountId = client.accountId;
     if (options.command === "following") {
       const names = await listFollowing(client, reporter, signal);
       process.stdout.write(names.join("\n") + (names.length > 0 ? "\n" : ""));
@@ -63,7 +61,7 @@ async function run(options: CommandOptions, signal: AbortSignal): Promise<number
       throw new UsageError("get-post is not available in this port. Use scan @username instead.\n\n" + USAGE);
     }
 
-    const targets = targetsFor(options, accountId, fs);
+    const targets = targetsFor(options, fs);
     if (targets.length === 0) throw new UsageError("No targets. Pass @username or --saved.\n\n" + USAGE);
     const now = () => Date.now();
     const pause = (pauseSignal: AbortSignal): Promise<void> => abortableSleep(options.pauseMs, pauseSignal);
@@ -88,7 +86,6 @@ async function run(options: CommandOptions, signal: AbortSignal): Promise<number
           target,
           saved: options.saved,
           outRoot: options.outRoot,
-          accountId,
           limit: options.limit,
         }, { client, fs, reporter, now, signal, pause }, onPark);
         written += summary.written;
@@ -97,7 +94,6 @@ async function run(options: CommandOptions, signal: AbortSignal): Promise<number
         const key = collectionKey(target, options.saved).key;
         const summary = await getTarget({
           outRoot: options.outRoot,
-          accountId,
           key,
           kind: options.saved ? "saved" : "profile",
           mediaDir: options.mediaDir,
@@ -110,6 +106,7 @@ async function run(options: CommandOptions, signal: AbortSignal): Promise<number
     }
     clearJob(fs, options.outRoot);
     process.stdout.write(`${options.command}: ${written} post(s) recorded, ${downloaded} media file(s) downloaded, ${skipped} skipped.\n`);
+    process.stdout.write("Archive: " + options.outRoot + "\n");
     return signal.aborted ? 130 : 0;
   } finally {
     await client.close();

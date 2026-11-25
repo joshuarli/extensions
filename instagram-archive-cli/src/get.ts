@@ -16,7 +16,6 @@ import type { ProgressReporter } from "../../lib/progress.ts";
 import type { ArchiveFs } from "./fs.ts";
 import { muxVideoAudio } from "./video.ts";
 import {
-  accountDir,
   collectionDir,
   markPostComplete,
   readPosts,
@@ -27,7 +26,6 @@ import {
 
 export interface GetInput {
   readonly outRoot: string;
-  readonly accountId: string;
   readonly key: string;
   readonly kind: "profile" | "saved";
   readonly mediaDir: string;
@@ -60,7 +58,7 @@ async function runGet(
   onPark: (failure: InstagramRequestFailure, key: string, last: string | null) => void,
 ): Promise<GetSummary> {
   const { client, fs, reporter, signal, pause } = deps;
-  const dir = collectionDir(accountDir(input.outRoot, input.accountId), input.key);
+  const dir = collectionDir(input.outRoot, input.key);
   const output = join(dir, input.mediaDir);
   fs.mkdir(output);
   let posts = readPosts(fs, dir);
@@ -212,13 +210,4 @@ async function runGet(
   }).length;
   reporter.finish("media " + input.key + ": " + downloaded + " downloaded, " + skipped + " skipped, " + failed + " failed");
   return { downloaded, skipped, failed, remaining };
-}
-
-export function listCollectionKeys(fs: ArchiveFs, outRoot: string, accountId: string): readonly string[] {
-  const root = join(accountDir(outRoot, accountId), "collections");
-  return fs.listDirs(root);
-}
-
-export function readCollectionPosts(fs: ArchiveFs, outRoot: string, accountId: string, key: string): Post[] {
-  return readPosts(fs, collectionDir(accountDir(outRoot, accountId), key));
 }

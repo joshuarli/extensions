@@ -40,14 +40,21 @@ media file at a time.
 
 ## Storage and resume
 
-Each account archives to `<out>/ig-<account-id>/`. A collection holds
-`records.jsonl` (posts in DOM order; resolved media URLs are recorded when a
-post is fetched), `state.json` (cursor and completion checkpoint), and
-`images/`. A finished media file is never overwritten. Completion requires
-every media path to exist and be nonempty.
+Each collection lives directly in `<out>/@<name>/`: `@username` for a profile
+and `@username-saved` for that profile's Saved tab. It holds `records.jsonl`
+(posts in DOM order; resolved media URLs are recorded when a post is fetched),
+`state.json` (cursor and completion checkpoint), and `images/`. The `@` prefix
+keeps collection folders distinct from the root's generated files. A finished
+media file is never overwritten. Completion requires every media path to exist
+and be nonempty.
 
 `build` writes a collection page and data JSON beside the records so the
-relative `images/` paths resolve, plus an index at the archive root.
+relative `images/` paths resolve, plus an index and a `README.md` at the
+archive root. The default root is `~/.local/share/instagram-archive`.
+
+Archives created before the layout was flattened still use
+`<out>/ig-<account-id>/collections/<name>/`. Move each `<name>` folder to
+`<out>/@<name>/` once, then re-run `build`.
 
 ## Parking
 
