@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { closeSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync, writeSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 
@@ -35,9 +35,24 @@ export function readJsonFile(path: string): unknown {
 
 export function writeJsonFile(path: string, value: unknown, mode: number = 0o600): void {
   mkdirSync(dirname(path), { recursive: true });
-  const temporary = path + ".tmp";
-  writeFileSync(temporary, JSON.stringify(value, null, 2) + "\n", { mode });
-  renameSync(temporary, path);
+  const temporary = `${path}.tmp.${process.pid}`;
+  const descriptor = openSync(temporary, "w", mode);
+  try {
+    writeSync(descriptor, JSON.stringify(value, null, 2) + "\n");
+    fsyncSync(descriptor);
+  } finally {
+    closeSync(descriptor);
+  }
+  try {
+    renameSync(temporary, path);
+  } catch (error) {
+    try {
+      unlinkSync(temporary);
+    } catch (cleanupError) {
+      console.warn("Could not remove staging file " + temporary, cleanupError);
+    }
+    throw error;
+  }
 }
 
 export function readRawFile(path: string): Buffer | null {

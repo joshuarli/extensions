@@ -237,7 +237,7 @@ describe.each([["bookmarks", FsBookmarksStore], ["likes", FsLikesStore]] as cons
     const bytes = readFileSync(path);
     // A directory at the staging path causes a real filesystem write failure.
     const { mkdirSync } = await import("node:fs");
-    mkdirSync(path + ".tmp");
+    mkdirSync(`${path}.tmp.${process.pid}`);
     await expect(store.savePage([incoming])).rejects.toMatchObject({ code: "EISDIR" });
     expect(readFileSync(path)).toEqual(bytes);
   });
