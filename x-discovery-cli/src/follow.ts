@@ -35,6 +35,7 @@ export async function followHandles(options: FollowOptions): Promise<FollowSumma
     backend: options.backend,
     session: options.session,
     required: [["UserByScreenName"]],
+    screenName: options.handles[0]?.replace(/^@/u, ""),
     signal: options.signal,
     onStatus: options.onStatus,
   });

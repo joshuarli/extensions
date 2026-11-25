@@ -166,23 +166,30 @@ function profileTargetFromVariables(requestUrl: URL): string | undefined {
   }
 }
 
-export function mergeCapture(credentials: Credentials, capture: Capture): Credentials {
+export function mergeCredentials(base: Credentials, next: Credentials): Credentials {
   return {
-    ...credentials,
+    ...(base.authorization ?? next.authorization
+      ? { authorization: next.authorization ?? base.authorization } : {}),
+    ...(base.clientUuid ?? next.clientUuid ? { clientUuid: next.clientUuid ?? base.clientUuid } : {}),
+    ...(base.transactionId ?? next.transactionId ? { transactionId: next.transactionId ?? base.transactionId } : {}),
+    ...(base.methods || next.methods ? { methods: { ...base.methods, ...next.methods } } : {}),
+    queryIds: { ...base.queryIds, ...next.queryIds },
+    features: { ...base.features, ...next.features },
+    ...(base.fieldToggles || next.fieldToggles
+      ? { fieldToggles: { ...base.fieldToggles, ...next.fieldToggles } } : {}),
+  };
+}
+
+export function mergeCapture(credentials: Credentials, capture: Capture): Credentials {
+  return mergeCredentials(credentials, {
     ...(capture.authorization ? { authorization: capture.authorization } : {}),
     ...(capture.clientUuid ? { clientUuid: capture.clientUuid } : {}),
     ...(capture.transactionId ? { transactionId: capture.transactionId } : {}),
-    methods: { ...credentials.methods, ...(capture.method ? { [capture.operation]: capture.method } : {}) },
-    queryIds: { ...credentials.queryIds, [capture.operation]: capture.queryId },
-    features: {
-      ...credentials.features,
-      ...(capture.features ? { [capture.operation]: capture.features } : {}),
-    },
-    fieldToggles: {
-      ...credentials.fieldToggles,
-      ...(capture.fieldToggles ? { [capture.operation]: capture.fieldToggles } : {}),
-    },
-  };
+    ...(capture.method ? { methods: { [capture.operation]: capture.method } } : {}),
+    queryIds: { [capture.operation]: capture.queryId },
+    features: capture.features ? { [capture.operation]: capture.features } : {},
+    ...(capture.fieldToggles ? { fieldToggles: { [capture.operation]: capture.fieldToggles } } : {}),
+  });
 }
 
 const RESERVED_X_PATHS = new Set([

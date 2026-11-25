@@ -7,6 +7,7 @@ import {
   captureRequest,
   credentialKey,
   mergeCapture,
+  mergeCredentials,
   parseProfileScreenName,
   type Credentials,
   type Operation,
@@ -78,6 +79,27 @@ export function hasRequiredCaptures(credentials: Credentials, required: Required
     && missingCaptures(credentials, required).length === 0;
 }
 
+export interface CredentialCapturePlan {
+  pages: string[];
+  credentials: Credentials | null;
+  needsCapture: boolean;
+}
+
+export function credentialCapturePlan(
+  required: RequiredCaptures,
+  screenName: string | undefined,
+  cached: Credentials | null,
+  worker: Credentials | null,
+): CredentialCapturePlan {
+  const pages = capturePages(required, screenName);
+  const credentials = worker && cached ? mergeCredentials(cached, worker) : worker ?? cached;
+  return {
+    pages,
+    credentials,
+    needsCapture: pages.length > 0 && (credentials === null || !hasRequiredCaptures(credentials, required)),
+  };
+}
+
 export async function captureOperationsFromBrowser(
   cdpUrl: string,
   pages: readonly (readonly [Operation, string])[],
@@ -137,17 +159,6 @@ export function capturePages(required: RequiredCaptures, screenName: string | un
   return pages;
 }
 
-function mergeCredentials(base: Credentials, next: Credentials): Credentials {
-  return {
-    authorization: next.authorization ?? base.authorization,
-    clientUuid: next.clientUuid ?? base.clientUuid,
-    transactionId: next.transactionId ?? base.transactionId,
-    queryIds: { ...base.queryIds, ...next.queryIds },
-    features: { ...base.features, ...next.features },
-    fieldToggles: { ...base.fieldToggles, ...next.fieldToggles },
-  };
-}
-
 async function workerCredentials(
   context: BrowserContext,
   extensionId: string,
@@ -202,11 +213,11 @@ export async function readCapturedCredentials(
     if (!context) throw new Error("The browser at " + cdpUrl + " has no context to read extension storage from.");
     capture.onStatus?.("Loading the X Archive extension into Helium…");
     const extensionId = await ensureSuiteExtensionOnBrowser(browser);
-    let credentials: Credentials | null = await workerCredentials(context, extensionId, session.userId);
-    if (credentials && cached) credentials = mergeCredentials(cached, credentials);
-    if (!credentials) credentials = cached;
-    const pages = capturePages(required, capture.screenName);
-    if ((!credentials || !hasRequiredCaptures(credentials, required)) && pages.length > 0) {
+    const worker = await workerCredentials(context, extensionId, session.userId);
+    const plan = credentialCapturePlan(required, capture.screenName, cached, worker);
+    let credentials: Credentials | null = plan.credentials;
+    const pages = plan.pages;
+    if (plan.needsCapture) {
       capture.onStatus?.("Capturing X GraphQL credentials from " + pages.length + " page(s)…");
       for (const url of pages) {
         if (capture.signal?.aborted) throw new Error("Interrupted while capturing X credentials.");

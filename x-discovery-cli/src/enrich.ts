@@ -57,6 +57,7 @@ export async function enrichCandidates(options: EnrichOptions): Promise<{
     backend: options.backend,
     session: options.session,
     required: [["UserByScreenName"], [...PROFILE_OPERATIONS]],
+    screenName: options.handles[0]?.replace(/^@/u, ""),
     signal: options.signal,
     onStatus: options.onStatus,
   });
