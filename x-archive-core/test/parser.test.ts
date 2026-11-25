@@ -36,6 +36,44 @@ describe("bookmark timelines", () => {
     expect(post?.media).toMatchObject([{ url: "https://pbs.twimg.com/file.jpg?format=jpg&name=orig" }]);
   });
 
+  it("normalizes quoted posts and keeps the reposting author", () => {
+    const author = (name: string) => ({ core: { screen_name: name.toLowerCase(), name }, rest_id: "7" });
+    const result = {
+      rest_id: "123",
+      core: { user_results: { result: author("Bob") } },
+      legacy: {
+        created_at: "Mon Jan 01 00:00:00 +0000 2024",
+        full_text: "outer text",
+        retweeted_status_result: { result: {
+          rest_id: "8",
+          core: { user_results: { result: author("Alice") } },
+          legacy: { created_at: "Mon Jan 01 00:00:00 +0000 2024", full_text: "original text" },
+          quoted_status_result: { result: {
+            rest_id: "9",
+            core: { user_results: { result: author("Carol") } },
+            legacy: {
+              created_at: "Wed Oct 10 20:19:24 +0000 2018",
+              full_text: "quoted text",
+              favorite_count: 7,
+              entities: { urls: [{ expanded_url: "https://example.com" }] },
+            },
+          } },
+        } },
+      },
+    };
+    const post = parseTimeline(page([entry(result)]), now).bookmarks[0];
+    expect(post?.repost_of).toBe("8");
+    expect(post?.reposted_by).toMatchObject({ name: "Bob" });
+    expect(post?.author).toMatchObject({ name: "Alice" });
+    expect(post?.quoted_tweet).toMatchObject({
+      tweet_id: "9",
+      full_text: "quoted text",
+      created_at: "Wed Oct 10 20:19:24 +0000 2018",
+      author: { name: "Carol" },
+      metrics: { likes: 7 },
+    });
+  });
+
   it("preserves tombstones and visibility wrappers", () => {
     for (const missing of [null, { __typename: "TweetTombstone" },
       { __typename: "TweetWithVisibilityResults", tweet: null }]) {

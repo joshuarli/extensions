@@ -39,15 +39,6 @@ Next: 45
 - **Effort:** M
 - **Design:** docs/rfc/EXT-26-discovery-ledger-privacy.md
 
-### EXT-14 · P2 · Normalize quoted posts, cards and repost authors with full fidelity
-
-- **Area:** X archive · parsing and HTML export
-- **Where:** x-archive-core/src/parser.ts:142-171, 173-179, 221-226; render.ts:209-247
-- **Problem:** Quoted tweets are stored without created_at, metrics or entities, so every quote card renders unknown date and zero metrics with no links; card and poll bindings are parsed but never rendered; repost attribution uses the original author's name, so the reposter is discarded and the banner is wrong.
-- **Recommendation:** Run quoted posts through the same normalizer as top-level posts, render the parsed card and poll data, and keep the reposting author distinct from the original author in the record.
-- **Fix with:** none
-- **Effort:** M
-
 ### EXT-17 · P2 · Make --export-only offline and reproducible
 
 - **Area:** X archive · HTML export

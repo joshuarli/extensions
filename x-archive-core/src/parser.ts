@@ -18,6 +18,7 @@ export const BookmarkSchema = Schema.Struct({
   media: Schema.optional(Schema.Unknown),
   quoted_tweet: Schema.optional(Schema.Unknown),
   card: Schema.optional(Schema.Unknown),
+  reposted_by: Schema.optional(Schema.Unknown),
   repost_of: Schema.optional(Schema.String),
   folder_ids: Schema.Array(Schema.String),
   observed_at: Schema.String,
@@ -163,23 +164,23 @@ function normalizeTweetFields(
   const quoted = get(content, "quoted_status_result", "result");
   let quotedTweet: unknown = null;
   if (quoted !== undefined && quoted !== null) {
-    const actual = unwrapTweet(quoted);
-    if (!actual || isTombstone(actual)) {
+    const actual = unwrapTweet(quoted),
+      normalized = actual && !isTombstone(actual) ? normalizeTweetResult(actual, observedAt) : null;
+    if (!normalized) {
       quotedTweet = { status: "unavailable" };
     } else {
-      const quotedCore = get(actual, "core", "user_results", "result");
-      quotedTweet = {
-        tweet_id: string(get(actual, "rest_id")) ?? string(get(actual, "legacy", "id_str")),
-        full_text: string(get(actual, "note_tweet", "note_tweet_results", "result", "text")) ??
-          string(get(actual, "legacy", "full_text")),
-        author: {
-          screen_name: string(get(quotedCore, "core", "screen_name")) ?? string(get(quotedCore, "legacy", "screen_name")),
-          name: string(get(quotedCore, "core", "name")) ?? string(get(quotedCore, "legacy", "name")),
-        },
-        media: mediaItems(get(actual, "legacy", "extended_entities", "media") ?? get(actual, "legacy", "entities", "media")),
-      };
+      const { raw_tweet: _quotedRaw, ...fields } = normalized;
+      quotedTweet = fields;
     }
   }
+
+  const repostAuthorCore = get(tweet, "core", "user_results", "result"),
+    repostAuthorLegacy = get(repostAuthorCore, "legacy"),
+    repostedBy = repostSource ? {
+      user_id: string(get(repostAuthorCore, "rest_id")) ?? string(get(repostAuthorLegacy, "id_str")),
+      screen_name: string(get(repostAuthorCore, "core", "screen_name")) ?? string(get(repostAuthorLegacy, "screen_name")),
+      name: string(get(repostAuthorCore, "core", "name")) ?? string(get(repostAuthorLegacy, "name")),
+    } : null;
 
   const bindings: Record<string, string | null> = {};
   for (const binding of array(get(content, "card", "legacy", "binding_values"))) {
@@ -234,8 +235,10 @@ function normalizeTweetFields(
       url: bindings["card_url"] ?? bindings["url"] ?? null,
       title: bindings["title"] ?? null,
       description: bindings["description"] ?? null,
+      bindings: Object.fromEntries(Object.entries(bindings).filter(([, value]) => value !== null)),
     } : null,
     ...(repostOf ? { repost_of: repostOf } : {}),
+    ...(repostedBy ? { reposted_by: repostedBy } : {}),
     folder_ids: [],
     observed_at: observedAt,
   };

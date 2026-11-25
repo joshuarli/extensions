@@ -133,12 +133,20 @@ function linkify(value: unknown, urls: unknown, mentions: unknown, hashtags: unk
   let out = esc(value);
   void mentions;
   void hashtags;
-  const rawUrls = [...new Set(array(urls).filter((url): url is string => typeof url === "string"))]
-    .sort((left, right) => right.length - left.length);
-  for (const raw of rawUrls) {
-    if (!raw) continue;
-    const display = raw.replace(/^https:\/\//u, "").replace(/^http:\/\//u, "").replace(/\/$/u, "");
-    out = out.replaceAll(esc(raw), `<a href="${esc(raw)}" rel="noopener">${esc(display.slice(0, 60))}</a>`);
+  const specs = array(urls).map((entry): { raw: string; href: string; display: string } => {
+    if (typeof entry === "string") return { raw: entry, href: entry, display: entry };
+    const url = record(entry);
+    return {
+      raw: text(url["url"]) || text(url["raw"]),
+      href: text(url["expanded_url"]) || text(url["url"]) || text(url["href"]),
+      display: text(url["display_url"]) || text(url["expanded_url"]) || text(url["url"]),
+    };
+  }).filter((spec) => spec.raw.length > 0);
+  const rawUrls = [...new Map(specs.map((spec) => [spec.raw, spec])).values()]
+    .sort((left, right) => right.raw.length - left.raw.length);
+  for (const { raw, href, display } of rawUrls) {
+    const label = (display || href).replace(/^https:\/\//u, "").replace(/^http:\/\//u, "").replace(/\/$/u, "");
+    out = out.replaceAll(esc(raw), `<a href="${esc(href)}" rel="noopener">${esc(label.slice(0, 60))}</a>`);
   }
   out = out.replaceAll(/(@\w{1,20})/gu, '<span class="mention">$1</span>');
   out = out.replaceAll(/(#\w{1,80})/gu, '<span class="hashtag">$1</span>');
@@ -213,9 +221,7 @@ function renderQuoted(quotedValue: unknown, tweetId: string, mode: string, asset
     return '<div class="quoted"><div class="unavailable">This quote post is unavailable.</div></div>';
   }
   const author = record(quoted["author"]),
-    urls = array(record(quoted["entities"])["urls"])
-      .map((url) => record(url))
-      .map((url) => url["expanded_url"] ?? url["url"]),
+    urls = array(record(quoted["entities"])["urls"]),
     metrics = record(quoted["metrics"]);
   return `<div class="quoted"><div class="post" style="padding:0;border:0">${avatarHtml(author, 28, assets)}<div class="post-body">`
     + `<div class="p-head"><span class="p-name">${esc(text(author["name"]) || text(author["screen_name"]) || "?")}</span>`
@@ -225,6 +231,28 @@ function renderQuoted(quotedValue: unknown, tweetId: string, mode: string, asset
     + renderMedia(mediaItems(quoted, tweetId, true, mode))
     + `<div class="metrics" style="max-width:280px">${metric(ICON_REPLY, metrics["replies"])}${metric(ICON_RETWEET, metrics["retweets"])}${metric(ICON_LIKE, metrics["likes"])}</div>`
     + "</div></div></div>";
+}
+
+function renderCard(cardValue: unknown): string {
+  const card = record(cardValue);
+  if (Object.keys(card).length === 0) return "";
+  const title = text(card["title"]),
+    description = text(card["description"]),
+    url = text(card["url"]),
+    bindings = record(card["bindings"]),
+    choices = Object.entries(bindings)
+      .filter(([key, value]) => /^poll\d+_choice\d+$/u.test(key) && typeof value === "string" && value.length > 0)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([, value]) => `<li>${esc(value)}</li>`)
+      .join("");
+  if (!title && !description && !url && !choices) return "";
+  const inner = (title ? `<div class="p-name">${esc(title)}</div>` : "")
+    + (description ? `<div class="p-text">${esc(description)}</div>` : "")
+    + (choices ? `<ul class="card-choices">${choices}</ul>` : "");
+  const block = `<div class="quoted" style="margin-top:8px;padding:10px;border:1px solid var(--border);border-radius:12px">${inner}</div>`;
+  return url && /^https?:\/\//u.test(url)
+    ? `<a href="${esc(url)}" rel="noopener" style="display:block;text-decoration:none;color:inherit">${block}</a>`
+    : block;
 }
 
 function renderPost(postValue: unknown, mode: string, assets: ProfileAssets | null, convCounts: Map<string, number>): string {
@@ -243,16 +271,19 @@ function renderPost(postValue: unknown, mode: string, assets: ProfileAssets | nu
     dataAttrs = ` data-tweet="${esc(tweetId)}" data-conversation="${esc(conversationId)}" data-sort-index="${esc(sortIndex)}" data-parent="${esc(parentAttr)}"`;
   const headBits: string[] = [];
   if (post["repost_of"]) {
-    headBits.push(`<div class="rp">${ICON_REPOST_HEADER}<span><b>${esc(name)}</b> reposted</span></div>`);
+    const reposter = record(post["reposted_by"]),
+      reposterName = text(reposter["name"]) || text(reposter["screen_name"]) || name;
+    headBits.push(`<div class="rp">${ICON_REPOST_HEADER}<span><b>${esc(reposterName)}</b> reposted</span></div>`);
   }
   if (parentId) {
     headBits.push(`<div class="reply-note">Replying to <a href="${X_LINK}${esc(parentAttr)}" rel="noopener">post ${esc(parentAttr)}</a></div>`);
   }
   const entities = record(post["entities"]),
-    urlValues = array(entities["urls"]).map((url) => record(url)).map((url) => url["expanded_url"] ?? url["url"]),
+    urlValues = array(entities["urls"]),
     isContext = mode === "context",
     quoted = record(post["quoted_tweet"]),
     quotedHtml = renderQuoted(quoted, tweetId, isContext ? "text-only" : mode, assets),
+    cardHtml = renderCard(post["card"]),
     metrics = record(post["metrics"]);
   const metricsHtml = `<div class="metrics">${metric(ICON_REPLY, metrics["replies"])}${metric(ICON_RETWEET, metrics["retweets"])}${metric(ICON_LIKE, metrics["likes"])}${metric(ICON_BOOKMARK, metrics["bookmarks"])}`
     + `<span class="metric views">${ICON_VIEWS}<span>${formatNumber(Number(metrics["views"] ?? 0))}</span></span></div>`;
@@ -261,7 +292,7 @@ function renderPost(postValue: unknown, mode: string, assets: ProfileAssets | nu
     body = `<div class="unavailable">${esc(text(post["unavailable_reason"]) || "This post is unavailable.")}</div>`;
   } else {
     body = `<div class="p-text">${linkify(post["full_text"], urlValues, entities["mentions"], entities["hashtags"])}</div>`
-      + renderMedia(mediaItems(post, tweetId, false, mode)) + quotedHtml + metricsHtml;
+      + renderMedia(mediaItems(post, tweetId, false, mode)) + quotedHtml + cardHtml + metricsHtml;
   }
   if (showThread && !isContext) {
     body += `<button class="thread-btn" data-thread="${esc(conversationId)}">${ICON_THREAD}Thread</button>`;

@@ -45,6 +45,43 @@ describe("renderArchive", () => {
     }
   });
 
+  it("renders quoted posts, cards and repost attribution", async () => {
+    mkdirSync(scratchRoot, { recursive: true });
+    const folder = mkdtempSync(join(scratchRoot, "x-render-quote-"));
+    try {
+      writeFileSync(join(folder, "posts.json"), JSON.stringify({
+        posts: [{
+          tweet_id: "1",
+          created_at: "Mon Jan 01 00:00:00 +0000 2024",
+          full_text: "main",
+          author: { name: "Alice", screen_name: "alice" },
+          repost_of: "2",
+          reposted_by: { name: "Bob", screen_name: "bob" },
+          quoted_tweet: {
+            tweet_id: "3",
+            created_at: "Wed Oct 10 20:19:24 +0000 2018",
+            full_text: "quoted text https://t.co/x",
+            author: { name: "Carol", screen_name: "carol" },
+            entities: { urls: [{ url: "https://t.co/x", expanded_url: "https://example.com" }] },
+            metrics: { likes: 7 },
+          },
+          card: { title: "A card", description: "details", url: "https://example.org", bindings: { poll1_choice1: "Yes", poll1_choice2: "No" } },
+        }],
+        export_metadata: { exported_at: "2026-01-01" },
+      }));
+      const result = await renderArchive({ folder, noFetch: true });
+      const html = readFileSync(result.output, "utf8");
+      expect(html).toContain("<b>Bob</b> reposted");
+      expect(html).toContain("Oct 10, 2018 · 8:19 PM");
+      expect(html).not.toContain("unknown date");
+      expect(html).toContain("A card");
+      expect(html).toContain("<li>Yes</li>");
+      expect(html).toContain("https://example.com");
+    } finally {
+      rmSync(folder, { recursive: true, force: true });
+    }
+  });
+
   it("uses the requested profile handle instead of a donor author", async () => {
     mkdirSync(scratchRoot, { recursive: true });
     const folder = mkdtempSync(join(scratchRoot, "x-render-profile-"));
