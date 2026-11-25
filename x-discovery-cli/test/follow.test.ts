@@ -78,6 +78,64 @@ describe("follow state", () => {
     expect(fake.follow).not.toHaveBeenCalled();
   });
 
+  it("trusts a tracked ledger when X reports no relationship", async () => {
+    const fake = client(undefined);
+    const result = await followHandles({
+      handles: ["dave"],
+      project: loadProject("movies"),
+      ledgerPath,
+      client: fake,
+      signal: new AbortController().signal,
+    });
+    expect(result.alreadyFollowing).toEqual(["dave"]);
+    expect(fake.follow).not.toHaveBeenCalled();
+  });
+
+  it("rechecks the profile after an unconfirmed follow", async () => {
+    const fake = client(false);
+    fake.request = vi.fn()
+      .mockResolvedValueOnce(lookup(false))
+      .mockResolvedValueOnce(lookup(true)) as XClient["request"];
+    const result = await followHandles({
+      handles: ["dave"],
+      project: loadProject("movies"),
+      ledgerPath,
+      client: fake,
+      signal: new AbortController().signal,
+    });
+    expect(result.followed).toEqual(["dave"]);
+    expect(readLedger(ledgerPath)[0]).toMatchObject({ status: "followed" });
+  });
+
+  it("fails when X reports not following after the request", async () => {
+    const fake = client(false);
+    fake.follow = vi.fn(async () => ({ userId: "900", followed: true, verified: false, status: 200 }));
+    const result = await followHandles({
+      handles: ["dave"],
+      project: loadProject("movies"),
+      ledgerPath,
+      client: fake,
+      signal: new AbortController().signal,
+    });
+    expect(result.failures[0]).toContain("reported not following");
+    expect(readLedger(ledgerPath)[0]).toMatchObject({ status: "seen" });
+  });
+
+  it("skips every handle in a dry run", async () => {
+    const fake = client(false);
+    const result = await followHandles({
+      handles: ["dave"],
+      project: loadProject("movies"),
+      ledgerPath,
+      client: fake,
+      dryRun: true,
+      signal: new AbortController().signal,
+    });
+    expect(result.skipped).toEqual(["dave"]);
+    expect(fake.follow).not.toHaveBeenCalled();
+    expect(readLedger(ledgerPath)[0]).toMatchObject({ status: "followed" });
+  });
+
   it("reads confirmation from the follow response", () => {
     expect(followingFromMutation({ data: { user: { following: true } } })).toBe(true);
     expect(followingFromMutation({ data: { user: { following: false } } })).toBe(false);

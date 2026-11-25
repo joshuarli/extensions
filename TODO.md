@@ -255,15 +255,6 @@ Next: 45
 - **Fix with:** durable-state
 - **Effort:** M
 
-### EXT-43 · P3 · X discovery follow decision paths have no tests
-
-- **Area:** X discovery / tests
-- **Where:** x-discovery-cli/src/follow.ts:43,45,57-77; x-discovery-cli/test/follow.test.ts:32-41,53-85
-- **Problem:** FollowSummary declares five outcomes but fixtures only produce followed and alreadyFollowing; null live state, unverified follow, dry run and per-handle failure paths are unasserted in a state-mutating social action.
-- **Recommendation:** Add four injected-client cases for those branches and assert both the summary bucket and ledger state.
-- **Fix with:** test-audit
-- **Effort:** S
-
 ### EXT-9 · P4 · Qualify live X and YouTube service boundaries
 
 - **Area:** Service integration
