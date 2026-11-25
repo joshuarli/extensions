@@ -16,9 +16,28 @@ export function followingFromUserLookup(data: unknown): boolean | null {
   return typeof following === "boolean" ? following : null;
 }
 
+export function followingFromMutation(data: unknown): boolean | null {
+  const read = (value: unknown, ...keys: string[]): unknown => {
+    let result = value;
+    for (const key of keys) {
+      result = result !== null && typeof result === "object" && !Array.isArray(result)
+        ? (result as Record<string, unknown>)[key] : undefined;
+    }
+    return result;
+  };
+  const candidates = [
+    read(data, "data", "user", "following"),
+    read(data, "data", "user", "relationship_perspectives", "following"),
+    read(data, "data", "following"),
+    read(data, "following"),
+  ];
+  return candidates.find((value): value is boolean => typeof value === "boolean") ?? null;
+}
+
 export interface FollowResult {
   userId: string;
   followed: boolean;
+  verified: boolean | null;
   status: number;
 }
 
@@ -74,5 +93,9 @@ export async function followAccount(
   }
   if (response.status === 429) throw new Error("X rate limited the follow request. Try again later.");
   if (!response.ok) throw new Error("X follow request failed (HTTP " + response.status + ").");
-  return { userId, followed: true, status: response.status };
+  let body: unknown = null;
+  try {
+    body = await response.json();
+  } catch { /* Some X responses have no JSON body; the caller re-checks the profile. */ }
+  return { userId, followed: true, verified: followingFromMutation(body), status: response.status };
 }

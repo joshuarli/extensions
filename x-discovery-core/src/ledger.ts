@@ -91,6 +91,23 @@ export function appendFinds(path: string, records: readonly FindRecord[]): { add
   });
 }
 
+export function setFollowState(path: string, authorIds: readonly string[], status: FindStatus): number {
+  return withLock(path, () => {
+    const records = readLedger(path);
+    const targets = new Set(authorIds);
+    let changed = 0;
+    const updated = records.map((record) => {
+      if (!targets.has(record.author_id) || record.status === status) return record;
+      changed++;
+      if (status === "followed") return { ...record, status, followed_at: new Date().toISOString() };
+      const { followed_at: _followed, ...rest } = record;
+      return { ...rest, status };
+    });
+    if (changed > 0) atomicWrite(path, updated);
+    return changed;
+  });
+}
+
 export function markFollowed(path: string, authorIds: readonly string[], at: string = new Date().toISOString()): number {
   return withLock(path, () => {
     const records = readLedger(path);

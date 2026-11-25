@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { connectX } from "../../x-client-core/src/client.ts";
-import { PROFILE_OPERATIONS } from "../../x-archive-core/src/capture.ts";
+import { PROFILE_OPERATIONS, type Operation } from "../../x-archive-core/src/capture.ts";
 import { extractLookupUserId, delay } from "../../x-archive-core/src/collector.ts";
 import { parseProfileTimeline, type Bookmark } from "../../x-archive-core/src/parser.ts";
 import { DiscoveryStore, newRun, type DiscoveredPost } from "../../x-discovery-core/src/index.ts";
@@ -61,6 +61,11 @@ export async function enrichCandidates(options: EnrichOptions): Promise<{
     signal: options.signal,
     onStatus: options.onStatus,
   });
+  const preferred: Operation[] = ["UserTweets", "UserOriginalsTimeline", "UserTweetsAndReplies", "UserRepliesTimeline"];
+  const profileOperation = preferred.find((operation) => client.operations.includes(operation));
+  if (!profileOperation) {
+    throw new Error("No captured profile timeline operation can serve enrichment. Open a profile on X and retry.");
+  }
   const store = new DiscoveryStore(join(options.outDir, "discovery.db"));
   const failures: string[] = [];
   let posts = 0;
@@ -80,7 +85,7 @@ export async function enrichCandidates(options: EnrichOptions): Promise<{
         try {
         while (page < options.maxPages) {
           if (options.signal.aborted) break;
-          const data = await client.request("UserTweets", {
+          const data = await client.request(profileOperation, {
             userId: authorId,
             count: 20,
             includePromotedContent: false,
@@ -88,7 +93,7 @@ export async function enrichCandidates(options: EnrichOptions): Promise<{
           }, options.signal);
           const observedAt = new Date().toISOString();
           const parsed = parseProfileTimeline(data, observedAt, authorId);
-          if (!parsed.valid) break;
+          if (!parsed.valid) throw new Error(parsed.detail ?? "X returned an unreadable profile timeline");
           const sampled = parsed.posts.map((bookmark) => toPost(bookmark, authorId, handle, observedAt));
           store.commitPage({
             runId: run.runId,

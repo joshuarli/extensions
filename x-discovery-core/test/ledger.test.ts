@@ -37,6 +37,15 @@ describe("find ledger", () => {
     expect(readLedger(path)[0]?.followed_at).toBeTruthy();
   });
 
+  it("clears a stale followed status when X reports an unfollow", async () => {
+    appendFinds(path, [record("1")]);
+    markFollowed(path, ["900"]);
+    const { setFollowState } = await import("../src/ledger.ts");
+    expect(setFollowState(path, ["900"], "seen")).toBe(1);
+    expect(readLedger(path)[0]).toMatchObject({ status: "seen" });
+    expect(readLedger(path)[0]?.followed_at).toBeUndefined();
+  });
+
   it("reports a torn record with its line number instead of a raw syntax error", () => {
     writeFileSync(path, '{"tweet_id":\n');
     expect(() => readLedger(path)).toThrow("Corrupt find record at line 1");

@@ -1,8 +1,8 @@
 import { resolve } from "node:path";
-import { connectX } from "../../x-client-core/src/client.ts";
+import { connectX, type XClient } from "../../x-client-core/src/client.ts";
 import { followingFromUserLookup } from "../../x-client-core/src/follow.ts";
 import { extractLookupUserId } from "../../x-archive-core/src/collector.ts";
-import { markFollowed, readLedger } from "../../x-discovery-core/src/ledger.ts";
+import { markFollowed, readLedger, setFollowState } from "../../x-discovery-core/src/ledger.ts";
 import type { ProjectConfig } from "../../x-discovery-core/src/project.ts";
 
 export interface FollowOptions {
@@ -13,6 +13,7 @@ export interface FollowOptions {
   cdpUrl?: string | undefined;
   backend?: string | undefined;
   session?: string | undefined;
+  client?: XClient | undefined;
   signal: AbortSignal;
   onStatus?: ((message: string) => void) | undefined;
 }
@@ -30,7 +31,7 @@ export async function followHandles(options: FollowOptions): Promise<FollowSumma
   const ledgerPath = options.ledgerPath ?? resolve(process.cwd(), options.project.ledger_path);
   const tracked = new Set(readLedger(ledgerPath).filter((record) => record.status === "followed")
     .map((record) => record.author_id));
-  const client = await connectX({
+  const client = options.client ?? await connectX({
     cdpUrl: options.cdpUrl,
     backend: options.backend,
     session: options.session,
@@ -47,8 +48,13 @@ export async function followHandles(options: FollowOptions): Promise<FollowSumma
       const lookup = await client.request("UserByScreenName", { screen_name: name }, options.signal);
       const userId = extractLookupUserId(lookup);
       if (!userId) throw new Error("profile id not found");
-      if (followingFromUserLookup(lookup) === true || tracked.has(userId)) {
+      const live = followingFromUserLookup(lookup);
+      if (live === true) {
         if (!options.dryRun) markFollowed(ledgerPath, [userId]);
+        result.alreadyFollowing.push(name);
+        continue;
+      }
+      if (live === null && tracked.has(userId)) {
         result.alreadyFollowing.push(name);
         continue;
       }
@@ -56,10 +62,14 @@ export async function followHandles(options: FollowOptions): Promise<FollowSumma
         result.skipped.push(name);
         continue;
       }
+      if (live === false && tracked.has(userId)) setFollowState(ledgerPath, [userId], "seen");
       options.onStatus?.("Following @" + name + "…");
-      await client.follow(userId, options.signal);
-      const verified = await client.request("UserByScreenName", { screen_name: name }, options.signal);
-      if (followingFromUserLookup(verified) !== true) throw new Error("follow was not reflected in the profile state");
+      const followed = await client.follow(userId, options.signal);
+      if (followed.verified === false) throw new Error("X accepted the request but reported not following");
+      if (followed.verified === null) {
+        const verified = await client.request("UserByScreenName", { screen_name: name }, options.signal);
+        if (followingFromUserLookup(verified) === false) throw new Error("follow was not reflected in the profile state");
+      }
       markFollowed(ledgerPath, [userId]);
       result.followed.push(name);
     } catch (error) {
