@@ -228,15 +228,6 @@ Next: 45
 - **Fix with:** none
 - **Effort:** S
 
-### EXT-36 · P3 · Scenario benchmark comparator lives in disposable scratch
-
-- **Area:** Performance / reproducibility
-- **Where:** scripts/bench-comparator.json:4; scripts/bench.mjs:143; extension-onefile/PERFORMANCE.md:87-88
-- **Problem:** The pinned single-file-core comparator is expected under .work/tmp/upstream-base, which a clean checkout does not have and repository rules treat as disposable, so the comparison workload cannot be reproduced.
-- **Recommendation:** Add a provisioning command that fetches and verifies the pinned comparator outside .work, or document exact steps beside the pin.
-- **Fix with:** none
-- **Effort:** M
-
 ### EXT-37 · P3 · X capture operation sets are duplicated between core and CLI
 
 - **Area:** X archive / credential capture

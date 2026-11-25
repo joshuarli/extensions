@@ -85,10 +85,21 @@ the observed spread. It exits 1 on `regression`, 0 on `within` or
 `inconclusive`. Without paired results a completion is not a performance verdict.
 
 The upstream comparator is pinned in `scripts/bench-comparator.json`
-(`single-file-core@1.7.1`), provisioned under `.work/tmp/upstream-base` as before.
-It is not a project dependency; the scenario preflight checks its version and
-excludes the comparison when absent. Set `BENCH_COMPARATOR_FILE` to validate an
-alternate pin. Full remains manual only.
+(`single-file-core@1.7.1`) at `.work/tmp/upstream-base/node_modules/single-file-core`.
+It is not a project dependency. Provision it after a clean checkout with:
+
+```sh
+mkdir -p .work/tmp/upstream-base/node_modules/single-file-core
+cd .work/tmp/upstream-base
+npm pack single-file-core@1.7.1
+tar -xzf single-file-core-1.7.1.tgz -C node_modules/single-file-core --strip-components=1
+node -p "require('./node_modules/single-file-core/package.json').version"
+```
+
+The last command must print `1.7.1`. `.work/` is disposable, so repeat the
+steps when the comparator disappears. The scenario preflight checks the version
+and excludes the comparison when it is absent. Set `BENCH_COMPARATOR_FILE` to
+validate an alternate pin. Full remains manual only.
 
 ## Validation 2026-11-21
 
