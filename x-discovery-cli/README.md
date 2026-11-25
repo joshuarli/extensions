@@ -8,8 +8,12 @@ pnpm x discover bootstrap
 pnpm x discover enrich --handles=reverendtollerr,cleanjpg --max-pages=1
 pnpm x discover derive --check-links
 pnpm x discover report
+pnpm x discover track
+pnpm x discover follow --handles=a,b --dry-run
 pnpm x discover observe
 ```
+
+Every command takes `--project=NAME` (default `movies`). A project owns its topic terms, resource hosts, ledger, cache version, and output directory, so a second discovery category can be added as another JSON file under `x-discovery-core/projects`. `track` appends notable finds to `docs/x-discover/<project>/finds.jsonl`; `follow` marks that ledger after X confirms a follow.
 
 `collect` starts a new observation run at the head of the selected feed. It commits each page transactionally to `discovery.db`: canonical post versions keyed by tweet id and content hash, per-run appearances with entry position and attribution, the continuation checkpoint, entry accounting, and the raw response for later re-parsing. A second run for the same account is refused until the first ends. All runs are bound to the account read from the browser; a changed account stops the run before anything is saved.
 

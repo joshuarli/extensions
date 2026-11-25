@@ -5,6 +5,7 @@ import { bootstrapCandidates, buildReport, collectFeed, deriveFindings, trackFin
 import { loadProject } from "../../x-discovery-core/src/project.ts";
 import { observeOperation } from "./observe.ts";
 import { enrichCandidates } from "./enrich.ts";
+import { followHandles } from "./follow.ts";
 
 export async function main(argv: readonly string[]): Promise<number> {
   const interrupt = createInterruptController(
@@ -60,6 +61,23 @@ export async function main(argv: readonly string[]): Promise<number> {
       const candidates = bootstrapCandidates(args.outDir);
       process.stdout.write("candidates=" + candidates.length + " " + args.outDir + "/candidates.json\n");
       return 0;
+    }
+    if (command.kind === "follow") {
+      const result = await followHandles({
+        handles: args.handles,
+        project,
+        ledgerPath: args.ledger,
+        dryRun: args.dryRun,
+        cdpUrl: args.cdpUrl,
+        backend: args.backend,
+        session: args.session,
+        signal: interrupt.signal,
+        onStatus: status,
+      });
+      process.stdout.write("followed=" + result.followed.join(",") + " already=" + result.alreadyFollowing.join(",")
+        + " dry=" + result.skipped.join(",") + " failures=" + result.failures.length + "\n");
+      for (const failure of result.failures) process.stderr.write(failure + "\n");
+      return interrupt.stopped() ? 130 : 0;
     }
     if (command.kind === "enrich") {
       const result = await enrichCandidates({

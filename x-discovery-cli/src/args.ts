@@ -13,6 +13,7 @@ Usage:
   x discover bootstrap                                     Seed candidates from bookmarks and likes
   x discover track                                         Record notable finds in the project ledger
   x discover enrich --handles=a,b [--max-pages N]          Sample candidate profiles
+  x discover follow --handles=a,b [--dry-run]              Follow useful project accounts
   pnpm x:discover <command> [options]                      Same commands without the x wrapper
 
 collect starts a new observation run at the head of the feed and commits each page
@@ -29,6 +30,7 @@ Options:
   --max-pages N   page budget per run (default 20)
   --out DIR       output directory (default ~/.local/share/x/discovery, or X_DISCOVERY_OUT)
   --check-links   probe up to three resource links per derivation
+  --dry-run       report follow decisions without following
   --help, -h      show this help
   --version, -v   print the version
 
@@ -38,7 +40,7 @@ code is 130. Saved pages and checkpoints are kept; a later run starts at the hea
 
 const SCHEMA: ArgSchema = {
   values: ["feed", "cdp-url", "backend", "session", "max-pages", "out", "handles", "project", "ledger"],
-  flags: ["check-links"],
+  flags: ["check-links", "dry-run"],
   maxPositionals: 0,
 };
 
@@ -50,6 +52,7 @@ export interface DiscoverArgs {
   backend: string | undefined;
   session: string | undefined;
   checkLinks: boolean;
+  dryRun: boolean;
   project: string;
   ledger: string | undefined;
 }
@@ -57,7 +60,7 @@ export interface DiscoverArgs {
 export type Command =
   | { kind: "help" }
   | { kind: "version" }
-  | { kind: "collect" | "derive" | "report" | "bootstrap" | "track" | "observe" | "enrich"; args: DiscoverArgs & { handles: string[] } };
+  | { kind: "collect" | "derive" | "report" | "bootstrap" | "track" | "observe" | "enrich" | "follow"; args: DiscoverArgs & { handles: string[] } };
 
 function defaultOutDir(project: string): string {
   if (process.env["X_DISCOVERY_OUT"]) return process.env["X_DISCOVERY_OUT"];
@@ -69,7 +72,7 @@ export function parseArgs(argv: readonly string[]): Command {
   const [command, ...rest] = argv;
   if (!command || command === "--help" || command === "-h") return { kind: "help" };
   if (command === "--version" || command === "-v") return { kind: "version" };
-  if (!["collect", "derive", "report", "bootstrap", "track", "observe", "enrich"].includes(command)) {
+  if (!["collect", "derive", "report", "bootstrap", "track", "observe", "enrich", "follow"].includes(command)) {
     throw new UsageError("Unknown x discover command \"" + command + "\".\n\n" + USAGE);
   }
   const parsed = parseCliArgs(rest, SCHEMA);
@@ -83,7 +86,7 @@ export function parseArgs(argv: readonly string[]): Command {
     throw new UsageError("--max-pages must be a positive integer.");
   }
   return {
-    kind: command as "collect" | "derive" | "report" | "bootstrap" | "track" | "observe" | "enrich",
+    kind: command as "collect" | "derive" | "report" | "bootstrap" | "track" | "observe" | "enrich" | "follow",
     args: {
       handles: (parsed.values.get("handles") ?? "").split(",").map((handle) => handle.trim()).filter(Boolean),
       project: parsed.values.get("project") ?? "movies",
@@ -95,6 +98,7 @@ export function parseArgs(argv: readonly string[]): Command {
       backend: parsed.values.get("backend"),
       session: parsed.values.get("session"),
       checkLinks: parsed.flags.has("check-links"),
+      dryRun: parsed.flags.has("dry-run"),
     },
   };
 }
