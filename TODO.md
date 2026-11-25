@@ -1,5 +1,5 @@
 Prefix: EXT
-Next: 25
+Next: 45
 
 ### EXT-1 · P1 · Run the X archive CLI inside a bctl appliance instead of everyday Helium
 
@@ -28,14 +28,25 @@ Next: 25
 - **Fix with:** single-source-of-truth
 - **Effort:** M
 
-### EXT-4 · P2 · Port the Instagram archiver here as instagram-archive-core and instagram-archive-cli — done
+### EXT-25 · P1 · Publish a versioned, restorable extension release
 
-- **Area:** Instagram archive
-- **Where:** new instagram-archive-core/ and instagram-archive-cli/ (shape: x-archive-core, x-archive-cli); reference implementation ~/repos/shadowdriver/ig (Python, the parity oracle) and ~/repos/shadowdriver/ig-ts (frozen TS prototype, raw material); session pattern: x-archive-cli/src/deps.ts and x-archive-core/src/session.ts
-- **Problem:** Owner decision 2026-11-22: IG leaves Shadowdriver and becomes a terminal archiver in this repository, reading the logged-in session over CDP from Helium or a bctl appliance (--backend=bctl) the way x-archive-cli does, without stealth scripts. Shadowdriver keeps only Grab, and its IG, ig-ts and Node SDK trees are deleted once this port reaches parity (SHD-51). The hard part is media fidelity: HQ video and separate audio tracks currently come from CDP response-body capture and an ffmpeg mux.
-- **Recommendation:** Gate 1, a one-to-two-day spike: a collector on the x-archive session pattern, checked against Python ig on a fixed set of 20 to 30 posts (a profile needing more than one page, a saved collection, image and mixed carousels, reels with audio, one HQ video). Compare post identity, membership, carousel order, dimensions, audio presence and duration. Any silent loss fails the spike. Gate 2: port saved and profile membership, resumable downloads, completion checks, the ffmpeg mux and the static gallery, reusing x-archive-core merge, storage and render patterns. Carry Shadowdriver SHD-49: any rate limit, login redirect, checkpoint or unrecognized response parks the whole job with its reason across restarts until a deliberate resume. Use synthetic fixtures only: this repository is public and the IG tree holds personal archive files. Add a suite feature only if passive credential capture is needed, following extension-x-archive.
-- **Fix with:** reference-parity
-- **Effort:** L
+- **Area:** Release / operations
+- **Where:** .github/workflows/ci.yml:18-71; extension-suite/src/identity.ts:3; README.md:17-23
+- **Problem:** The shipped version is a literal in source, no workflow packages or retains dist/extension-suite, and README.md tells users to obtain a folder from a person; a bad release cannot be identified or restored without rebuilding an old commit.
+- **Recommendation:** Stamp the release tag into the generated identity module, build and retain each published folder with its tag and commit, and document the restore path.
+- **Fix with:** none
+- **Effort:** M
+- **Design:** docs/rfc/EXT-25-release-artifact.md
+
+### EXT-26 · P1 · Remove real X discovery finds from the public repository
+
+- **Area:** X discovery / privacy
+- **Where:** docs/x-discover/movies/finds.jsonl:1-17; docs/x-discover/README.md:15,32; TODO.md:36
+- **Problem:** The committed ledger exposes 17 real third-party handles, author IDs, tweet IDs, post text, resource links and follow timestamps; the README calls it the durable record and normal track and follow runs append more.
+- **Recommendation:** Replace it with synthetic fixtures, ignore real ledgers, move the durable record to local state, and get the owner's decision on a history purge.
+- **Fix with:** none
+- **Effort:** M
+- **Design:** docs/rfc/EXT-26-discovery-ledger-privacy.md
 
 ### EXT-14 · P2 · Normalize quoted posts, cards and repost authors with full fidelity
 
@@ -100,6 +111,69 @@ Next: 25
 - **Fix with:** none
 - **Effort:** M
 
+### EXT-27 · P2 · CI never tests the production extension bundle users install
+
+- **Area:** Build / CI
+- **Where:** .github/workflows/ci.yml:66; extension-onefile/test/browser/extension-runtime.spec.ts:6; extension-chatgpt/test/browser/extension-runtime.spec.ts:7; README.md:20; package.json:19
+- **Problem:** Installed-browser tests load build/extension-suite while users load dist/extension-suite; the only dist runs are unverified workflows, so minification, generated assets and NODE_ENV branches can ship broken.
+- **Recommendation:** Build dist in the installed-browser job and point both specs at it.
+- **Fix with:** none
+- **Effort:** S
+
+### EXT-28 · P2 · Right-click browser behavior has no runner
+
+- **Area:** Tests / invariants
+- **Where:** AGENTS.md:58; extension-allow-right-click/test/user-select-restoration.browser.test.ts; vitest.config.ts:6; extension-onefile/playwright.config.ts:4; extension-chatgpt/playwright.config.ts:4; package.json:21-22
+- **Problem:** The documented user-select restoration spec is excluded from Vitest and sits outside both Playwright testDirs, so no command or CI job runs it.
+- **Recommendation:** Include the spec in a Playwright testDir and run it in the installed-browser job.
+- **Fix with:** none
+- **Effort:** S
+
+### EXT-29 · P2 · Browser CI failures leave no diagnostic artifacts
+
+- **Area:** CI / operability
+- **Where:** .github/workflows/ci.yml:63-71; extension-onefile/playwright.config.ts:6-8; extension-chatgpt/playwright.config.ts:5-7
+- **Problem:** Playwright retries are zero, the reporter is line, and output goes to .work/tmp on an ephemeral runner with no upload step, so a failed run leaves no screenshots or traces to inspect.
+- **Recommendation:** Upload the Playwright output directories from failing installed-browser steps.
+- **Fix with:** none
+- **Effort:** S
+
+### EXT-30 · P2 · Credentialed media fetches accept URLs from archived data
+
+- **Area:** X / Instagram archive / security
+- **Where:** x-archive-cli/src/media.ts:77-81; lib/x-session.ts:61-66; x-archive-core/src/media.ts:69-95; instagram-client-core/src/client.ts:424-430
+- **Problem:** Media URLs come from archived posts and manifests and are fetched with the full cookie header and no host allowlist; an attacker-controlled URL would exfiltrate the session. Reachability from a live X or Instagram response is unproven.
+- **Recommendation:** Allowlist media hosts before attaching cookies, record rejected URLs as failures, and prove a reachable input source with a fixture first.
+- **Fix with:** security
+- **Effort:** S
+
+### EXT-31 · P2 · X self export exits successfully when requested outputs fail
+
+- **Area:** X archive / error model
+- **Where:** x-archive-cli/src/run.ts:206-217,353-362,446-455,479-482; x-archive-cli/src/main.ts:87-94
+- **Problem:** Render, social and seeding failures are only appended to an in-memory status log after debug.json is written, and main returns zero, so a partial archive looks complete.
+- **Recommendation:** Carry requested-output failures in RunSummary, include them in debug.json, and return a degraded status or non-zero exit.
+- **Fix with:** error-model
+- **Effort:** S
+
+### EXT-32 · P2 · Concurrent X archive writers lose records
+
+- **Area:** X archive / durable state
+- **Where:** x-archive-cli/src/fs-store.ts:55-67,110-122; x-archive-cli/src/state.ts:36-55; docs/development.md:34
+- **Problem:** Each save reloads the whole JSON, merges and renames a PID-suffixed temp file with no lock or version check, so two overlapping runs overwrite each other's pages.
+- **Recommendation:** Serialize writers with an exclusive lock or make record storage append-only with idempotent merge on load.
+- **Fix with:** durable-state
+- **Effort:** M
+
+### EXT-33 · P2 · Embedded CLI runtime assets can silently drift from the extension
+
+- **Area:** Build / CLI release boundary
+- **Where:** lib/assets.ts:4,13-22; scripts/generate-assets.mjs:26-41; x-archive-cli/src/extension.ts:36; onefile-cli/src/save.ts:38-39; package.json:17-20; .github/workflows/ci.yml:37-40
+- **Problem:** lib/generated/assets.ts is a committed snapshot regenerated only by pnpm run dist; no test or CI step compares it to build output, so a stale snapshot hot-loads an old extension and embeds old capture scripts. materializeExtension also keeps files removed from a newer build.
+- **Recommendation:** Add a boundary check after dist that regenerates assets and fails on a diff, and clear stale files when materializing a cached extension.
+- **Fix with:** single-source-of-truth
+- **Effort:** M
+
 ### EXT-21 · P3 · Render parsed fields that the HTML currently ignores
 
 - **Area:** X archive · HTML export
@@ -136,6 +210,96 @@ Next: 25
 - **Fix with:** none
 - **Effort:** M
 
+### EXT-34 · P3 · Dead x-bookmarks workflow claims coverage for a removed extension
+
+- **Area:** CI
+- **Where:** .github/workflows/x-bookmarks.yml:7,14,42
+- **Problem:** The workflow filters on extension-x-bookmarks/** which does not exist and runs vitest on a path with no tests, so it can never trigger and would fail if dispatched manually.
+- **Recommendation:** Delete the workflow.
+- **Fix with:** none
+- **Effort:** S
+
+### EXT-35 · P3 · Onefile scoped CI duplicates the full check with narrower inputs
+
+- **Area:** CI
+- **Where:** .github/workflows/onefile.yml:6-18,40-43; vite.config.ts:87; .github/workflows/ci.yml:3-7
+- **Problem:** The workflow misses onefile-core and lib inputs that build the Onefile bundle, and its unverified dist run adds nothing over ci.yml.
+- **Recommendation:** Remove the redundant workflow or widen its paths to every bundle input and test its output.
+- **Fix with:** none
+- **Effort:** S
+
+### EXT-36 · P3 · Scenario benchmark comparator lives in disposable scratch
+
+- **Area:** Performance / reproducibility
+- **Where:** scripts/bench-comparator.json:4; scripts/bench.mjs:143; extension-onefile/PERFORMANCE.md:87-88
+- **Problem:** The pinned single-file-core comparator is expected under .work/tmp/upstream-base, which a clean checkout does not have and repository rules treat as disposable, so the comparison workload cannot be reproduced.
+- **Recommendation:** Add a provisioning command that fetches and verifies the pinned comparator outside .work, or document exact steps beside the pin.
+- **Fix with:** none
+- **Effort:** M
+
+### EXT-37 · P3 · X capture operation sets are duplicated between core and CLI
+
+- **Area:** X archive / credential capture
+- **Where:** x-archive-core/src/capture.ts:5-8; x-archive-cli/src/deps.ts:66-68
+- **Problem:** Bookmark and likes operation tuples are private to capture.ts and re-listed verbatim in deps.ts; a rename missed in the router leaves the operation uncapturable with a misleading remedy.
+- **Recommendation:** Export the tuples or membership helpers from capture.ts, derive the CLI sets from them, and test that every operation group maps to a capture page.
+- **Fix with:** single-source-of-truth
+- **Effort:** S
+
+### EXT-38 · P3 · Instagram records.jsonl entries are cast to Post after partial validation
+
+- **Area:** Instagram archive / persistence boundary
+- **Where:** instagram-archive-cli/src/store.ts:62-69; instagram-archive-core/src/media.ts:15-35; instagram-archive-core/src/render.ts:27-55
+- **Problem:** readPosts checks only shortcode and media, then casts each line to Post; malformed captions, types or media refs flow into filename derivation, rendering and downloads instead of a line-numbered failure.
+- **Recommendation:** Add a PostSchema beside MembershipRecordSchema and decode every line in readPosts.
+- **Fix with:** typing-audit
+- **Effort:** S
+
+### EXT-39 · P3 · Onefile CLI cannot force-exit on a second interrupt
+
+- **Area:** CLI / lifecycle
+- **Where:** lib/cli.ts:148-154,169-190; onefile-cli/src/main.ts:6-30; onefile-cli/src/save.ts:37-61
+- **Problem:** The callback interrupt form only calls back on SIGINT and abort is idempotent, so a hung browser close or capture ignores a second Ctrl-C; the listener also survives main.
+- **Recommendation:** Use createInterruptController in the onefile CLI, including close() and double-SIGINT force exit.
+- **Fix with:** lifecycle-concurrency
+- **Effort:** S
+
+### EXT-40 · P3 · Onefile offscreen blob URL is revoked on a timer
+
+- **Area:** Extension / resource lifecycle
+- **Where:** extension-onefile/src/offscreen.ts:26-28; extension-onefile/src/offscreen-download.ts:46-63; extension-onefile/src/background.ts:66-77
+- **Problem:** The URL is revoked 60 seconds after creation regardless of the download outcome, so a delayed download can reference a revoked URL; port1 is never closed.
+- **Recommendation:** Revoke on download completion or failure and close the port in the same path.
+- **Fix with:** lifecycle-concurrency
+- **Effort:** S
+
+### EXT-41 · P3 · ChatGPT archive completeness is sticky and early stop checks one page
+
+- **Area:** ChatGPT archive / durable state
+- **Where:** chatgpt-archive-cli/src/download.ts:102-105,200-208; chatgpt-archive-core/src/index.ts:84
+- **Problem:** complete is never reset and listScope stops when the first page is fully covered, so a chat updated later outside that page can stay unarchived; whether live ordering produces this is unproven.
+- **Recommendation:** Require a full enumeration before marking or keeping complete, and clear complete on partial or stopped runs; prove the ordering case with a fixture.
+- **Fix with:** durable-state
+- **Effort:** M
+
+### EXT-42 · P3 · X credential capture queue is unbounded and swallows failures
+
+- **Area:** Extension / error model
+- **Where:** extension-x-archive/src/background.ts:14-28
+- **Problem:** Every GraphQL request appends a promise with no coalescing or cap, and catch discards storage and API errors, so capture can fail silently while pending work grows.
+- **Recommendation:** Coalesce and cap the queue and persist a last-error status that credential reads can surface.
+- **Fix with:** error-model
+- **Effort:** S
+
+### EXT-43 · P3 · X discovery follow decision paths have no tests
+
+- **Area:** X discovery / tests
+- **Where:** x-discovery-cli/src/follow.ts:43,45,57-77; x-discovery-cli/test/follow.test.ts:32-41,53-85
+- **Problem:** FollowSummary declares five outcomes but fixtures only produce followed and alreadyFollowing; null live state, unverified follow, dry run and per-handle failure paths are unasserted in a state-mutating social action.
+- **Recommendation:** Add four injected-client cases for those branches and assert both the summary bucket and ledger state.
+- **Fix with:** test-audit
+- **Effort:** S
+
 ### EXT-9 · P4 · Qualify live X and YouTube service boundaries
 
 - **Area:** Service integration
@@ -144,4 +308,13 @@ Next: 25
 - **Recommendation:** Define and run an owner-authorized live qualification using suitable accounts and retain no credentials or personal data in fixtures.
 - **Fix with:** none
 - **Effort:** M
+
+### EXT-44 · P4 · External YouTube messages expose stack traces
+
+- **Area:** Extension / security
+- **Where:** extension-youtube-transcript/src/background.ts:555-558; extension-youtube-transcript/src/manifest.fragment.ts:20-22
+- **Problem:** Any script on an externally_connectable YouTube origin can induce an error and receive err.stack with internal paths and line numbers.
+- **Recommendation:** Return only a sanitized message externally and log the stack locally.
+- **Fix with:** security
+- **Effort:** S
 

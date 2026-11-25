@@ -2,7 +2,7 @@
 
 This repository builds one Chromium Manifest V3 extension from five feature packages with shared TypeScript and Vite tooling.
 
-The roadmap, [docs/roadmap.md](docs/roadmap.md), holds all current and future work; its Status is the resume point.
+The ticket queue, [TODO.md](TODO.md), holds current and deferred work; `todo list --json` is the resume point.
 
 ## Commands
 
@@ -12,7 +12,7 @@ The roadmap, [docs/roadmap.md](docs/roadmap.md), holds all current and future wo
 - Install dependencies: `pnpm install`
 - Check types and unit tests: `pnpm run check`
 - Build development or production bundles: `pnpm run build` or `pnpm run dist`; `pnpm run dist` also regenerates the embedded runtime assets in `lib/generated/assets.ts`
-- Run a CLI: `pnpm tools <x|onefile|youtube|chatgpt> [args...]`
+- Run a CLI: `pnpm tools <x|onefile|youtube|chatgpt|ig> [args...]`; X discovery is `pnpm x:discover [args...]`
 - Run browser tests: `pnpm run test:browser`
 
 ## Invariants
@@ -27,6 +27,7 @@ The roadmap, [docs/roadmap.md](docs/roadmap.md), holds all current and future wo
 
 ## Topics
 
+- Campaign roadmap: [docs/roadmap.md](docs/roadmap.md)
 - Shared setup, builds, and tests: [docs/development.md](docs/development.md)
 - Suite composition, manifest, and worker: [extension-suite](extension-suite)
 - Shared extension-page helpers: [lib](lib)

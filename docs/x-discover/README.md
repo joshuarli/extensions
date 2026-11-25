@@ -29,7 +29,7 @@ pnpm x discover collect --project=movies --max-pages=10
 pnpm x discover derive --project=movies --check-links
 pnpm x discover report --project=movies
 pnpm x discover track --project=movies
-pnpm x discover follow --project=movies --handles=ElEmNOPIi,NeilBahadur --dry-run
+pnpm x discover follow --project=movies --handles=example_one,example_two --dry-run
 pnpm x discover bootstrap --project=movies
 pnpm x discover enrich --project=movies --handles=someone,another --max-pages=1
 pnpm x discover observe --operation=HomeTimeline
