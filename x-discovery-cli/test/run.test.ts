@@ -1,7 +1,7 @@
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { DiscoveryStore, newRun, type DiscoveredPost } from "../../x-discovery-core/src/index.ts";
+import { DiscoveryStore, loadProject, newRun, type DiscoveredPost } from "../../x-discovery-core/src/index.ts";
 import { buildReport, deriveFindings } from "../src/run.ts";
 
 let directory: string;
@@ -48,17 +48,17 @@ afterEach(() => {
 
 describe("deriveFindings", () => {
   it("writes topics, links and an explainable ranked account file", async () => {
-    const summary = await deriveFindings({ outDir: directory });
+    const summary = await deriveFindings({ outDir: directory, project: loadProject("movies") });
     expect(summary).toMatchObject({ posts: 1, topics: 1, links: 1, accounts: 1, cached: false });
     const accounts = JSON.parse(readFileSync(join(directory, "accounts.json"), "utf8")) as Array<Record<string, unknown>>;
     expect(accounts[0]).toMatchObject({ handle: "dave", relevant_posts: 1, resource_links: 1 });
     expect(JSON.stringify(accounts)).toContain("https://x.com/dave/status/1");
-    const second = await deriveFindings({ outDir: directory });
+    const second = await deriveFindings({ outDir: directory, project: loadProject("movies") });
     expect(second.cached).toBe(true);
   });
 
   it("builds a report from saved findings", async () => {
-    await deriveFindings({ outDir: directory });
+    await deriveFindings({ outDir: directory, project: loadProject("movies") });
     expect(buildReport(directory)).toContain("@dave");
   });
 });

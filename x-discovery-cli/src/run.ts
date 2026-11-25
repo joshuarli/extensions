@@ -1,13 +1,16 @@
 import { createHash } from "node:crypto";
 import { Schema } from "effect";
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { connectX, operationForFeed } from "../../x-client-core/src/client.ts";
 import { writeJsonFile } from "../../x-archive-cli/src/state.ts";
 import { downloadsRoot } from "../../x-archive-cli/src/state.ts";
 import {
   collectHomeTimeline,
   AccountFindingSchema,
+  ResourceLinkSchema,
+  TopicJudgmentSchema,
+  appendFinds,
   deriveAccounts,
   extractResourceLinks,
   readArchiveCandidates,
@@ -15,9 +18,12 @@ import {
   newRun,
   type AccountFinding,
   type Feed,
+  type FindRecord,
+  type ProjectConfig,
+  projectVersion,
 } from "../../x-discovery-core/src/index.ts";
-import { checkLinks, LINK_VERSION } from "../../x-discovery-core/src/links.ts";
-import { TOPIC_VERSION, classifyTopic } from "../../x-discovery-core/src/topic.ts";
+import { checkLinks } from "../../x-discovery-core/src/links.ts";
+import { classifyTopic } from "../../x-discovery-core/src/topic.ts";
 
 export interface DiscoverOptions {
   outDir: string;
@@ -130,20 +136,21 @@ export interface DeriveSummary {
 
 export async function deriveFindings(options: {
   outDir: string;
+  project: ProjectConfig;
   checkLinks?: boolean;
   linkBudget?: number;
 }): Promise<DeriveSummary> {
   const store = new DiscoveryStore(storePath(options.outDir));
   try {
     const posts = store.allPosts();
-    const topics = posts.map(classifyTopic);
-    const links = posts.flatMap(extractResourceLinks);
+    const topics = posts.map((post) => classifyTopic(post, options.project));
+    const links = posts.flatMap((post) => extractResourceLinks(post, options.project));
+    const version = projectVersion(options.project);
     const inputHash = createHash("sha256").update(JSON.stringify([
       posts.map((post) => post.tweet_id + ":" + (post.relationship?.kind ?? "original")),
-      TOPIC_VERSION,
-      LINK_VERSION,
+      version,
     ])).digest("hex").slice(0, 16);
-    const raw = store.derivation(inputHash, "accounts-1");
+    const raw = store.derivation(inputHash, version);
     let cached: AccountFinding[] | null = null;
     if (raw !== null) {
       try {
@@ -153,7 +160,7 @@ export async function deriveFindings(options: {
       }
     }
     const accounts = cached ?? deriveAccounts(posts, topics, links);
-    if (!cached) store.saveDerivation(inputHash, "accounts-1", accounts);
+    if (!cached) store.saveDerivation(inputHash, version, accounts);
     writeJsonFile(join(options.outDir, "topics.json"), topics, 0o644);
     writeJsonFile(join(options.outDir, "links.json"), links, 0o644);
     writeJsonFile(join(options.outDir, "accounts.json"), accounts, 0o644);
@@ -203,4 +210,45 @@ export function bootstrapCandidates(outDir: string): ReturnType<typeof readArchi
   const candidates = readArchiveCandidates(downloadsRoot());
   writeJsonFile(join(outDir, "candidates.json"), candidates, 0o644);
   return candidates;
+}
+
+export function trackFinds(options: {
+  outDir: string;
+  project: ProjectConfig;
+  ledgerPath?: string | undefined;
+}): { added: number; duplicates: number; accounts: string[] } {
+  const ledgerPath = options.ledgerPath ?? resolve(process.cwd(), options.project.ledger_path);
+  const accountsRaw: unknown = JSON.parse(readFileSync(join(options.outDir, "accounts.json"), "utf8"));
+  const topicsRaw: unknown = JSON.parse(readFileSync(join(options.outDir, "topics.json"), "utf8"));
+  const linksRaw: unknown = JSON.parse(readFileSync(join(options.outDir, "links.json"), "utf8"));
+  const accounts = Schema.decodeUnknownSync(Schema.Array(AccountFindingSchema))(accountsRaw);
+  const topics = Schema.decodeUnknownSync(Schema.Array(TopicJudgmentSchema))(topicsRaw);
+  const links = Schema.decodeUnknownSync(Schema.Array(ResourceLinkSchema))(linksRaw);
+  const topicByTweet = new Map(topics.map((topic) => [topic.tweet_id, topic]));
+  const at = new Date().toISOString();
+  const records: FindRecord[] = [];
+  const handles = new Set<string>();
+  for (const account of accounts) {
+    if (account.relevant_posts === 0 && account.resource_links === 0) continue;
+    handles.add(account.handle);
+    for (const example of account.examples) {
+      const tweetId = example.source_url.split("/").pop() ?? "";
+      if (!/^\d+$/u.test(tweetId)) continue;
+      const topic = topicByTweet.get(tweetId);
+      if (!topic || topic.verdict !== "relevant") continue;
+      records.push({
+        tweet_id: tweetId,
+        author_id: account.author_id,
+        author_handle: account.handle,
+        source_url: example.source_url,
+        topic_score: topic.score,
+        links: links.filter((link) => link.source_tweet_id === tweetId).map((link) => link.url),
+        note: example.text + " — " + topic.reason,
+        discovered_at: at,
+        status: "seen",
+      });
+    }
+  }
+  const result = appendFinds(ledgerPath, records);
+  return { ...result, accounts: [...handles] };
 }

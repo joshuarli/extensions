@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import { deriveAccounts } from "../src/accounts.ts";
 import { extractResourceLinks } from "../src/links.ts";
 import type { DiscoveredPost } from "../src/post.ts";
-import { classifyTopic, RELEVANCE_THRESHOLD } from "../src/topic.ts";
+import { classifyTopic } from "../src/topic.ts";
+import { loadProject } from "../src/project.ts";
+
+const movies = loadProject("movies");
 
 function post(id: string, handle: string, authorId: string, text: string, drive?: string, repost = false): DiscoveredPost {
   return {
@@ -23,22 +26,22 @@ function post(id: string, handle: string, authorId: string, text: string, drive?
 
 describe("classifyTopic", () => {
   it("marks strong cinema signals as relevant with an explanation", () => {
-    const judgment = classifyTopic(post("1", "dave", "900", "Criterion and MUBI picks tonight"));
-    expect(judgment.score).toBeGreaterThanOrEqual(RELEVANCE_THRESHOLD);
+    const judgment = classifyTopic(post("1", "dave", "900", "Criterion and MUBI picks tonight"), movies);
+    expect(judgment.score).toBeGreaterThanOrEqual(movies.relevance_threshold);
     expect(judgment.verdict).toBe("relevant");
     expect(judgment.matched_terms).toContain("criterion");
     expect(judgment.reason).toContain("criterion");
   });
 
   it("reports insufficient textual evidence instead of guessing", () => {
-    const judgment = classifyTopic(post("2", "dave", "900", "📼"));
+    const judgment = classifyTopic(post("2", "dave", "900", "📼"), movies);
     expect(judgment.verdict).toBe("insufficient_evidence");
   });
 });
 
 describe("extractResourceLinks", () => {
   it("keeps query parameters in the dedupe key and records association", () => {
-    const links = extractResourceLinks(post("3", "dave", "900", "mirror", "https://drive.google.com/file/d/abc/view?usp=sharing"));
+    const links = extractResourceLinks(post("3", "dave", "900", "mirror", "https://drive.google.com/file/d/abc/view?usp=sharing"), movies);
     expect(links).toHaveLength(1);
     expect(links[0]).toMatchObject({
       host: "drive.google.com",
@@ -49,7 +52,7 @@ describe("extractResourceLinks", () => {
   });
 
   it("ignores non-resource hosts", () => {
-    expect(extractResourceLinks(post("4", "dave", "900", "https://example.com/thing"))).toEqual([]);
+    expect(extractResourceLinks(post("4", "dave", "900", "https://example.com/thing"), movies)).toEqual([]);
   });
 });
 
@@ -60,8 +63,8 @@ describe("deriveAccounts", () => {
       post("2", "dave", "900", "auteur cinema", "https://mega.nz/file/two", true),
       post("3", "other", "901", "movie"),
     ];
-    const topics = posts.map(classifyTopic);
-    const links = posts.flatMap(extractResourceLinks);
+    const topics = posts.map((entry) => classifyTopic(entry, movies));
+    const links = posts.flatMap((entry) => extractResourceLinks(entry, movies));
     const accounts = deriveAccounts(posts, topics, links);
     expect(accounts[0]).toMatchObject({
       handle: "dave",

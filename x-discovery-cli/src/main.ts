@@ -1,7 +1,8 @@
 import { createInterruptController, UsageError } from "../../lib/cli.ts";
 import { readBrowserSession } from "../../lib/x-session.ts";
 import { parseArgs, USAGE } from "./args.ts";
-import { bootstrapCandidates, buildReport, collectFeed, deriveFindings } from "./run.ts";
+import { bootstrapCandidates, buildReport, collectFeed, deriveFindings, trackFinds } from "./run.ts";
+import { loadProject } from "../../x-discovery-core/src/project.ts";
 import { observeOperation } from "./observe.ts";
 import { enrichCandidates } from "./enrich.ts";
 
@@ -20,6 +21,7 @@ export async function main(argv: readonly string[]): Promise<number> {
       return 0;
     }
     const { args } = command;
+    const project = loadProject(args.project);
     const status = (message: string): void => { process.stderr.write(message + "\n"); };
     if (command.kind === "collect") {
       const summary = await collectFeed({
@@ -38,7 +40,7 @@ export async function main(argv: readonly string[]): Promise<number> {
       return interrupt.stopped() ? 130 : 0;
     }
     if (command.kind === "derive") {
-      const summary = await deriveFindings({ outDir: args.outDir, checkLinks: args.checkLinks });
+      const summary = await deriveFindings({ outDir: args.outDir, project, checkLinks: args.checkLinks });
       process.stdout.write("posts=" + summary.posts + " topics=" + summary.topics
         + " links=" + summary.links + " accounts=" + summary.accounts
         + " cached=" + summary.cached + (summary.linkChecks === null ? "" : " linkChecks=" + summary.linkChecks) + "\n");
@@ -46,6 +48,12 @@ export async function main(argv: readonly string[]): Promise<number> {
     }
     if (command.kind === "report") {
       process.stdout.write(buildReport(args.outDir));
+      return 0;
+    }
+    if (command.kind === "track") {
+      const result = trackFinds({ outDir: args.outDir, project, ledgerPath: args.ledger });
+      process.stdout.write("added=" + result.added + " duplicates=" + result.duplicates
+        + " accounts=" + result.accounts.length + "\n");
       return 0;
     }
     if (command.kind === "bootstrap") {

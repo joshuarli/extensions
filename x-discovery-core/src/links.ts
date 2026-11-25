@@ -1,36 +1,18 @@
+import { Schema } from "effect";
+import type { ProjectConfig } from "./project.ts";
+import { projectVersion } from "./project.ts";
 import type { DiscoveredPost } from "./post.ts";
 
-export const LINK_VERSION = "links-2";
+export const ResourceLinkSchema = Schema.Struct({
+  url: Schema.String,
+  host: Schema.String,
+  dedupe_key: Schema.String,
+  source_tweet_id: Schema.String,
+  association: Schema.Literals(["entity", "text"]),
+  display_url: Schema.String,
+});
 
-const DRIVE_HOSTS: readonly string[] = [
-  "drive.google.com",
-  "docs.google.com",
-  "mega.nz",
-  "mediafire.com",
-  "1drv.ms",
-  "onedrive.live.com",
-  "dropbox.com",
-  "archive.org",
-  "pixeldrain.com",
-  "wetransfer.com",
-  "filer.io",
-  "gofile.io",
-  "transfer.it",
-  "file.io",
-  "send.cm",
-  "workupload.com",
-  "katfile.com",
-  "rapidgator.net",
-];
-
-export interface ResourceLink {
-  url: string;
-  host: string;
-  dedupe_key: string;
-  source_tweet_id: string;
-  association: "entity" | "text";
-  display_url: string;
-}
+export type ResourceLink = Schema.Schema.Type<typeof ResourceLinkSchema>;
 
 export interface LinkCheck {
   dedupe_key: string;
@@ -39,11 +21,11 @@ export interface LinkCheck {
   checked_at: string;
 }
 
-function isDriveHost(host: string): boolean {
-  return DRIVE_HOSTS.some((candidate) => host === candidate || host.endsWith("." + candidate));
+function isResourceHost(host: string, project: ProjectConfig): boolean {
+  return project.resource_hosts.some((candidate) => host === candidate || host.endsWith("." + candidate));
 }
 
-export function extractResourceLinks(post: DiscoveredPost): ResourceLink[] {
+export function extractResourceLinks(post: DiscoveredPost, project: ProjectConfig): ResourceLink[] {
   const fromEntity = post.urls.map((link) => ({ candidate: link.url, association: "entity" as const, display: link.display_url }));
   const fromText = (post.full_text.match(/https?:\/\/[^\s<>"']+/gu) ?? [])
     .map((candidate) => ({ candidate, association: "text" as const, display: candidate }));
@@ -58,7 +40,7 @@ export function extractResourceLinks(post: DiscoveredPost): ResourceLink[] {
     }
     if (parsed.protocol !== "https:" && parsed.protocol !== "http:") continue;
     const host = parsed.hostname.replace(/^www\./u, "").toLowerCase();
-    if (!isDriveHost(host)) continue;
+    if (!isResourceHost(host, project)) continue;
     parsed.hash = "";
     const dedupeKey = parsed.origin + parsed.pathname + "?" + [...parsed.searchParams.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
@@ -69,6 +51,10 @@ export function extractResourceLinks(post: DiscoveredPost): ResourceLink[] {
     result.push({ url: parsed.toString(), host, dedupe_key: dedupeKey, source_tweet_id: post.tweet_id, association, display_url: display });
   }
   return result;
+}
+
+export function linkVersion(project: ProjectConfig): string {
+  return projectVersion(project);
 }
 
 export async function checkLinks(

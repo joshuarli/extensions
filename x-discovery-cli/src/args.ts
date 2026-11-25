@@ -11,6 +11,7 @@ Usage:
   x discover derive [--check-links]                        Rebuild judgments from saved posts
   x discover report                                        Print the ranked account report
   x discover bootstrap                                     Seed candidates from bookmarks and likes
+  x discover track                                         Record notable finds in the project ledger
   x discover enrich --handles=a,b [--max-pages N]          Sample candidate profiles
   pnpm x:discover <command> [options]                      Same commands without the x wrapper
 
@@ -20,6 +21,7 @@ the raw response. A second run for the same account is refused until the first e
 derive and report read saved posts, so heuristics can improve without refetching.
 
 Options:
+  --project NAME  discovery project, default movies (x-discovery-core/projects/<name>.json)
   --feed NAME     home-for-you (default) or home-following
   --cdp-url URL   CDP endpoint (default http://127.0.0.1:9222, or X_DISCOVERY_CDP_URL)
   --backend NAME  helium or bctl
@@ -35,7 +37,7 @@ code is 130. Saved pages and checkpoints are kept; a later run starts at the hea
 `;
 
 const SCHEMA: ArgSchema = {
-  values: ["feed", "cdp-url", "backend", "session", "max-pages", "out", "handles"],
+  values: ["feed", "cdp-url", "backend", "session", "max-pages", "out", "handles", "project", "ledger"],
   flags: ["check-links"],
   maxPositionals: 0,
 };
@@ -48,24 +50,26 @@ export interface DiscoverArgs {
   backend: string | undefined;
   session: string | undefined;
   checkLinks: boolean;
+  project: string;
+  ledger: string | undefined;
 }
 
 export type Command =
   | { kind: "help" }
   | { kind: "version" }
-  | { kind: "collect" | "derive" | "report" | "bootstrap" | "observe" | "enrich"; args: DiscoverArgs & { handles: string[] } };
+  | { kind: "collect" | "derive" | "report" | "bootstrap" | "track" | "observe" | "enrich"; args: DiscoverArgs & { handles: string[] } };
 
-function defaultOutDir(): string {
+function defaultOutDir(project: string): string {
   if (process.env["X_DISCOVERY_OUT"]) return process.env["X_DISCOVERY_OUT"];
   const base = process.env["XDG_DATA_HOME"] ?? join(homedir(), ".local", "share");
-  return join(base, "x", "discovery");
+  return join(base, "x", "discovery", project);
 }
 
 export function parseArgs(argv: readonly string[]): Command {
   const [command, ...rest] = argv;
   if (!command || command === "--help" || command === "-h") return { kind: "help" };
   if (command === "--version" || command === "-v") return { kind: "version" };
-  if (!["collect", "derive", "report", "bootstrap", "observe", "enrich"].includes(command)) {
+  if (!["collect", "derive", "report", "bootstrap", "track", "observe", "enrich"].includes(command)) {
     throw new UsageError("Unknown x discover command \"" + command + "\".\n\n" + USAGE);
   }
   const parsed = parseCliArgs(rest, SCHEMA);
@@ -79,11 +83,13 @@ export function parseArgs(argv: readonly string[]): Command {
     throw new UsageError("--max-pages must be a positive integer.");
   }
   return {
-    kind: command as "collect" | "derive" | "report" | "bootstrap" | "observe" | "enrich",
+    kind: command as "collect" | "derive" | "report" | "bootstrap" | "track" | "observe" | "enrich",
     args: {
       handles: (parsed.values.get("handles") ?? "").split(",").map((handle) => handle.trim()).filter(Boolean),
+      project: parsed.values.get("project") ?? "movies",
+      ledger: parsed.values.get("ledger"),
       cdpUrl: parsed.values.get("cdp-url") ?? process.env["X_DISCOVERY_CDP_URL"] ?? "http://127.0.0.1:9222",
-      outDir: parsed.values.get("out") ?? defaultOutDir(),
+      outDir: parsed.values.get("out") ?? defaultOutDir(parsed.values.get("project") ?? "movies"),
       maxPages,
       feed,
       backend: parsed.values.get("backend"),

@@ -9,7 +9,7 @@ describe("parseArgs", () => {
     expect(command.args.cdpUrl).toBe("http://127.0.0.1:9222");
     expect(command.args.feed).toBe("home-for-you");
     expect(command.args.maxPages).toBe(20);
-    expect(command.args.outDir.endsWith("/x/discovery")).toBe(true);
+    expect(command.args.outDir.endsWith("/x/discovery/movies")).toBe(true);
   });
 
   it("accepts explicit options and the link check flag", () => {
