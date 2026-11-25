@@ -39,15 +39,6 @@ Next: 45
 - **Effort:** M
 - **Design:** docs/rfc/EXT-26-discovery-ledger-privacy.md
 
-### EXT-20 · P2 · Add an end-to-end export contract test
-
-- **Area:** X archive · tests
-- **Where:** x-archive-core/test/render.test.ts:10-46; x-archive-cli/test/cli-process.test.ts:173-200
-- **Problem:** The only render test checks a date, a mention span and script absence, and the CLI process test checks two JSON fields and that the HTML contains post text; quote fidelity, media links, order, cards, folders, unavailable items and deterministic offline re-export are unasserted.
-- **Recommendation:** Add fixture-driven assertions over generated JSON, media/ and archive.html: every referenced src exists or has an explicit unavailable marker, quotes and cards round-trip, order matches the export, profile identity is correct, and two offline renders are byte-identical.
-- **Fix with:** none
-- **Effort:** M
-
 ### EXT-29 · P2 · Browser CI failures leave no diagnostic artifacts
 
 - **Area:** CI / operability
