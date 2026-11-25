@@ -13,19 +13,24 @@ pnpm ig <command> [options] [@username ...]
 
 | Command | Meaning |
 | --- | --- |
-| `scan` | Record profile or saved membership. |
+| `scan` | Record profile or saved membership. `--saved [@username]` targets a profile's Saved tab, scrolling through every page. |
 | `get` | Download missing media for recorded posts. |
 | `update` | Scan known collections, then download missing media. |
 | `build` | Render the static site. |
 | `info` | Summarize the archive. |
 | `following` | Print the logged-in account's following list. |
 
-Options: `--saved`, `--out DIR`, `--media-dir DIR`, `--pause-ms N`, `--limit N`,
-`--resume`, `--refresh`, `--dry-run`, `--backend`, `--session`, `--cdp-url`,
-`--help`, `--version`. Run `pnpm tools ig --help` for the full text.
+Options: `--saved`, `--out DIR`, `--media-dir DIR`, `--pause-ms N`,
+`--max-media-size SIZE`, `--limit N`, `--resume`, `--refresh`, `--dry-run`,
+`--backend`, `--session`, `--cdp-url`, `--help`, `--version`. Run
+`pnpm tools ig --help` for the full text.
 
 The default backend attaches to Helium on `127.0.0.1:9222`. Sign in to Instagram
 once in that browser. No cookies, tokens, or headers are written to disk.
+
+To archive a profile's Saved tab, pass the profile with `--saved`:
+`pnpm tools ig update --saved @teaandvessel`. Without a target, `--saved` uses
+the signed-in account's own saved posts.
 
 ## Pacing
 
@@ -36,9 +41,10 @@ media file at a time.
 ## Storage and resume
 
 Each account archives to `<out>/ig-<account-id>/`. A collection holds
-`records.jsonl` (append-only posts in DOM order), `state.json` (cursor and
-completion checkpoint), and `images/`. A finished media file is never
-overwritten. Completion requires every media path to exist and be nonempty.
+`records.jsonl` (posts in DOM order; resolved media URLs are recorded when a
+post is fetched), `state.json` (cursor and completion checkpoint), and
+`images/`. A finished media file is never overwritten. Completion requires
+every media path to exist and be nonempty.
 
 `build` writes a collection page and data JSON beside the records so the
 relative `images/` paths resolve, plus an index at the archive root.
@@ -53,11 +59,22 @@ file, keeps what was saved, and exits 130.
 
 ## Media
 
-Images and standard video URLs are fetched with the browser's session cookies.
+Media URLs come from the post's embedded Relay web-info state, not from page
+thumbnails, so avatars and recommended posts are never archived. Images and
+standard video URLs are fetched with the browser's session cookies.
 For video posts the CLI first tries the authenticated DASH manifest and muxes
 the selected video and audio tracks with ffmpeg. When that endpoint is
 unavailable, it uses the standard URL. A mux failure records the file as failed
 without parking the archive.
+
+## Media size limit
+
+By default the CLI saves only media up to 512 MB. `--max-media-size` accepts
+bytes or a B/K/M/G suffix (`512MB`, `500KB`, `0` for unlimited). When the server
+reports `Content-Length`, an oversized file is skipped before any body bytes
+are read; otherwise the stream is discarded as soon as it passes the cap.
+Skipped files are reported in the summary, are not written to disk, and stay
+unfinished so raising the limit on a later run can fetch them.
 
 ## Parity
 

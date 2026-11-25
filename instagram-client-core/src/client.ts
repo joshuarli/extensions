@@ -9,14 +9,21 @@ import {
 import { captureProfileQuery, queryBody, type ProfileSession } from "./capture.ts";
 import { InstagramRequestFailure, parksJob } from "./failures.ts";
 import { parseDashTracks, shortcodeToMediaId } from "./hq.ts";
+import { parsePostMedia, PostMediaUnavailable, type PageMedia } from "./post-media.ts";
+
+export type { PageMedia } from "./post-media.ts";
+export { PostMediaUnavailable } from "./post-media.ts";
 import { GRAPHQL_PATH, INSTAGRAM_OPERATIONS, followingPath, mediaInfoPath, profileInfoPath, SAVED_PATH } from "./operations.ts";
 import { sessionFromCookies, sessionHeaders, type CookieInput, type InstagramSession } from "./session.ts";
 
-export interface PageMedia {
-  readonly url: string;
-  readonly kind: "image" | "video";
-  readonly width: number;
-  readonly height: number;
+export class MediaTooLarge extends Error {
+  readonly bytes: number;
+
+  constructor(bytes: number) {
+    super("Media exceeds the size limit (" + bytes + " bytes).");
+    this.bytes = bytes;
+    this.name = "MediaTooLarge";
+  }
 }
 
 export interface InstagramClientDeps {
@@ -26,9 +33,9 @@ export interface InstagramClientDeps {
   onRequest(listener: (request: ObservedRequest) => void): () => void;
   fetch(url: string, init: { method?: string; headers?: Record<string, string>; body?: string }): Promise<FetchOutcome>;
   runQuery(docId: string, variables: Record<string, unknown>, friendly: string): Promise<FetchOutcome | undefined>;
-  savedShortcodes(): Promise<readonly string[]>;
+  savedShortcodes(username: string | null, signal: AbortSignal): Promise<readonly string[]>;
   postPage(shortcode: string): Promise<readonly PageMedia[]>;
-  fetchBytes(url: string): Promise<Uint8Array>;
+  fetchBytes(url: string, maxBytes?: number, signal?: AbortSignal): Promise<Uint8Array>;
   capture(url: string, onBytes: (bytes: Uint8Array) => void): () => void;
   sleep(ms: number, signal: AbortSignal): Promise<void>;
 }
@@ -59,11 +66,11 @@ export interface InstagramClient {
   profilePage(profile: ProfileSession, cursor: string | null, signal?: AbortSignal): Promise<ProfilePostsPage>;
   profileInfo(username: string, signal?: AbortSignal): Promise<string>;
   mediaInfo(mediaId: string, signal?: AbortSignal): Promise<unknown>;
-  savedShortcodes(signal?: AbortSignal): Promise<readonly string[]>;
+  savedShortcodes(signal?: AbortSignal, username?: string | null): Promise<readonly string[]>;
   postPage(shortcode: string, signal?: AbortSignal): Promise<readonly PageMedia[]>;
   followingPage(userId: string, cursor: string | null, signal?: AbortSignal): Promise<{ readonly users: readonly unknown[]; readonly cursor: string | null }>;
   hqTracks(shortcode: string, signal?: AbortSignal): Promise<{ readonly videoUrl: string; readonly audioUrl: string } | null>;
-  mediaBytes(url: string, signal?: AbortSignal): Promise<Uint8Array>;
+  mediaBytes(url: string, signal?: AbortSignal, maxBytes?: number): Promise<Uint8Array>;
   capture(url: string, onBytes: (bytes: Uint8Array) => void): () => void;
   close(): Promise<void>;
 }
@@ -181,42 +188,41 @@ export async function connectInstagram(options: ConnectInstagramOptions = {}): P
       if (fetcher === undefined) throw new InstagramRequestFailure("transport", "No Instagram fetch is available.", "session");
       return fetcher.fetch(url, init);
     }),
-    savedShortcodes: options.dependencies?.savedShortcodes ?? (async () => {
-      await deps.navigate("https://www.instagram.com" + SAVED_PATH);
+    savedShortcodes: options.dependencies?.savedShortcodes ?? (async (username, requestSignal) => {
+      const path = username === null || username === undefined ? SAVED_PATH : "/" + encodeURIComponent(username) + SAVED_PATH;
+      await deps.navigate("https://www.instagram.com" + path);
       await requirePage().page.waitForSelector('a[href*="/p/"],a[href*="/reel/"]', { timeout: 10_000 }).catch(() => {});
       const text = await deps.pageText();
       if (/log in|sign in/iu.test(text) && !/saved/iu.test(text)) {
         throw new InstagramRequestFailure("auth", "Instagram saved collection requires a signed-in browser.", "saved");
       }
-      const codes = await requirePage().page.evaluate(() =>
-        Array.from(document.querySelectorAll('a[href*="/p/"],a[href*="/reel/"]'))
-          .map((anchor) => {
-            const match = /\/(?:p|reel)\/([A-Za-z0-9_-]+)/u.exec(anchor.getAttribute("href") ?? "");
-            return match?.[1] ?? null;
-          })
-          .filter((code): code is string => code !== null));
-      return [...new Set(codes)];
+      const seen = new Set<string>();
+      let stale = 0;
+      for (let attempt = 0; attempt < 150; attempt++) {
+        if (requestSignal.aborted) throw new InstagramRequestFailure("stopped", "Stopped by user.", "saved");
+        const codes = await requirePage().page.evaluate(() =>
+          Array.from(document.querySelectorAll('a[href*="/p/"],a[href*="/reel/"]'))
+            .map((anchor) => {
+              const match = /\/(?:p|reel)\/([A-Za-z0-9_-]+)/u.exec(anchor.getAttribute("href") ?? "");
+              return match?.[1] ?? null;
+            })
+            .filter((code): code is string => code !== null));
+        const before = seen.size;
+        for (const code of codes) seen.add(code);
+        stale = seen.size === before ? stale + 1 : 0;
+        if (stale >= 8) break;
+        await requirePage().page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+        await deps.sleep(500, requestSignal);
+      }
+      return [...seen];
     }),
     postPage: options.dependencies?.postPage ?? (async (shortcode) => {
       await deps.navigate("https://www.instagram.com/p/" + encodeURIComponent(shortcode) + "/");
-      const found = await requirePage().page.evaluate(() => {
-        const nodes = Array.from(document.querySelectorAll('img[src*="cdninstagram"], video[src*="cdninstagram"], source[src*="cdninstagram"]'));
-        const media = nodes.map((node) => ({
-          url: node.getAttribute("src") ?? "",
-          kind: node.tagName === "VIDEO" || node.tagName === "SOURCE" ? "video" as const : "image" as const,
-          width: node instanceof HTMLImageElement ? node.naturalWidth : 0,
-          height: node instanceof HTMLImageElement ? node.naturalHeight : 0,
-        }));
-        const og = document.querySelector('meta[property="og:image"]')?.getAttribute("content") ?? null;
-        if (og !== null) media.push({ url: og, kind: "image", width: 0, height: 0 });
-        return media.filter((entry) => entry.url.startsWith("https://"));
-      });
-      const seen = new Set<string>();
-      return found.filter((entry) => {
-        if (seen.has(entry.url)) return false;
-        seen.add(entry.url);
-        return true;
-      });
+      const scripts = await requirePage().page.evaluate(() =>
+        Array.from(document.querySelectorAll("script[data-sjs]")).map((script) => script.textContent ?? ""));
+      const media = parsePostMedia(scripts, shortcode);
+      if (media.length === 0) throw new PostMediaUnavailable(shortcode);
+      return media;
     }),
     runQuery: options.dependencies?.runQuery ?? (async (docId, variables, friendly) => {
       const result = await requirePage().page.evaluate(
@@ -228,10 +234,44 @@ export async function connectInstagram(options: ConnectInstagramOptions = {}): P
       );
       return result === undefined || result === null ? undefined : result as FetchOutcome;
     }),
-    fetchBytes: options.dependencies?.fetchBytes ?? (async (url) => {
-      const response = await fetch(url, { headers: sessionHeaders(session, "https://www.instagram.com/") });
-      if (!response.ok) throw new Error("HTTP " + response.status);
-      return new Uint8Array(await response.arrayBuffer());
+    fetchBytes: options.dependencies?.fetchBytes ?? (async (url, maxBytes = 0, requestSignal = signal) => {
+      const response = await fetch(url, {
+        headers: sessionHeaders(session, "https://www.instagram.com/"),
+        signal: requestSignal,
+      });
+      if (!response.ok) {
+        void response.body?.cancel().catch(() => {});
+        throw new Error("HTTP " + response.status);
+      }
+      const declared = Number(response.headers.get("content-length"));
+      if (maxBytes > 0 && Number.isFinite(declared) && declared > maxBytes) {
+        void response.body?.cancel().catch(() => {});
+        throw new MediaTooLarge(declared);
+      }
+      const reader = response.body?.getReader();
+      if (reader === undefined) throw new Error("empty response body");
+      const chunks: Uint8Array[] = [];
+      let total = 0;
+      try {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (value === undefined) continue;
+          if (requestSignal.aborted) throw new InstagramRequestFailure("stopped", "Stopped by user.", "media.download");
+          if (maxBytes > 0 && total + value.byteLength > maxBytes) throw new MediaTooLarge(total + value.byteLength);
+          chunks.push(value);
+          total += value.byteLength;
+        }
+      } finally {
+        void reader.cancel().catch(() => {});
+      }
+      const bytes = new Uint8Array(total);
+      let offset = 0;
+      for (const chunk of chunks) {
+        bytes.set(chunk, offset);
+        offset += chunk.byteLength;
+      }
+      return bytes;
     }),
     capture: options.dependencies?.capture ?? ((url, onBytes) => requirePage().capture(url, onBytes)),
     sleep: options.dependencies?.sleep ?? abortableSleep,
@@ -387,9 +427,9 @@ export async function connectInstagram(options: ConnectInstagramOptions = {}): P
     async mediaInfo(mediaId, requestSignal = signal) {
       return mediaInfo(mediaId, requestSignal);
     },
-    async savedShortcodes(requestSignal = signal) {
+    async savedShortcodes(requestSignal = signal, username = null) {
       if (requestSignal.aborted) throw new InstagramRequestFailure("stopped", "Stopped by user.", "saved");
-      return deps.savedShortcodes();
+      return deps.savedShortcodes(username, requestSignal);
     },
     async postPage(shortcode, requestSignal = signal) {
       if (requestSignal.aborted) throw new InstagramRequestFailure("stopped", "Stopped by user.", "media.download");
@@ -425,9 +465,9 @@ export async function connectInstagram(options: ConnectInstagramOptions = {}): P
       if (typeof manifest !== "string" || manifest === "") return null;
       return parseDashTracks(manifest);
     },
-    async mediaBytes(url, requestSignal = signal) {
+    async mediaBytes(url, requestSignal = signal, maxBytes = 0) {
       if (requestSignal.aborted) throw new InstagramRequestFailure("stopped", "Stopped by user.", "media.download");
-      return deps.fetchBytes(url);
+      return deps.fetchBytes(url, maxBytes, requestSignal);
     },
     capture: deps.capture,
     close: async () => {

@@ -5,6 +5,7 @@ import {
   readFileSync,
   readdirSync,
   renameSync,
+  statSync,
   unlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -14,6 +15,7 @@ export interface ArchiveFs {
   mkdir(path: string): void;
   readText(path: string): string | null;
   readBytes(path: string): Uint8Array | null;
+  size(path: string): number | null;
   writeText(path: string, text: string): void;
   writeAtomicText(path: string, text: string): void;
   writeAtomicBytes(path: string, bytes: Uint8Array): void;
@@ -61,6 +63,14 @@ export function createArchiveFs(): ArchiveFs {
     readBytes(path) {
       try {
         return new Uint8Array(readFileSync(path));
+      } catch (error) {
+        if (enoent(error)) return null;
+        throw error;
+      }
+    },
+    size(path) {
+      try {
+        return statSync(path).size;
       } catch (error) {
         if (enoent(error)) return null;
         throw error;

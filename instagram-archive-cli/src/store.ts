@@ -16,7 +16,7 @@ export function accountDir(outRoot: string, accountId: string): string {
 
 export function collectionKey(target: string, saved: boolean): { key: string; kind: CollectionKind; username: string | null } {
   const username = target.startsWith("@") ? target.slice(1) : target;
-  if (saved) return { key: (username === "" ? "account" : username) + "-saved", kind: "saved", username: null };
+  if (saved) return { key: (username === "" ? "account" : username) + "-saved", kind: "saved", username: username === "" ? null : username };
   if (username === "") throw new Error("A profile target is required; use @username.");
   return { key: username, kind: "profile", username };
 }
@@ -74,6 +74,17 @@ export function appendPosts(fs: ArchiveFs, dir: string, posts: readonly Post[]):
   fs.mkdir(dir);
   const lines = posts.map((post) => JSON.stringify(post) + "\n").join("");
   fs.appendText(recordsPath(dir), lines);
+}
+
+export function writePosts(fs: ArchiveFs, dir: string, posts: readonly Post[]): void {
+  fs.mkdir(dir);
+  fs.writeAtomicText(recordsPath(dir), posts.map((post) => JSON.stringify(post) + "\n").join(""));
+}
+
+export function markPostComplete(state: CollectionState, shortcode: string): CollectionState {
+  const record = state.membership[shortcode];
+  if (record === undefined) return state;
+  return withMembership(state, [{ ...record, complete: true }]);
 }
 
 export function markMembership(state: CollectionState, posts: readonly Post[], now: string): CollectionState {

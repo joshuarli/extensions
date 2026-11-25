@@ -55,9 +55,10 @@ async function runScan(
   onPark: (failure: InstagramRequestFailure, key: string, last: string | null) => void,
 ): Promise<ScanSummary> {
   const { client, fs, reporter, signal, pause } = deps;
-  const dir = collectionDir(accountDir(input.outRoot, input.accountId), target.key);
+  const { key, kind, username } = target;
+  const dir = collectionDir(accountDir(input.outRoot, input.accountId), key);
   fs.mkdir(dir);
-  let state = readState(fs, dir, target.kind, target.key);
+  let state = readState(fs, dir, kind, key);
   const saved = readPosts(fs, dir);
   const known = new Set(saved.map((post) => post.shortcode));
   const posts: Post[] = [];
@@ -73,10 +74,10 @@ async function runScan(
   }
 
   try {
-    if (target.kind === "saved") {
+    if (kind === "saved") {
       if (signal.aborted) throw new InstagramRequestFailure("stopped", "Stopped by user.", "saved");
       reporter.update({ phase: "list saved", done: 0, total: 0 });
-      const codes = await client.savedShortcodes(signal);
+      const codes = await client.savedShortcodes(signal, username);
       for (const shortcode of codes) {
         if (known.has(shortcode)) continue;
         posts.push({
@@ -92,7 +93,7 @@ async function runScan(
       }
       await commit(posts, true);
     } else {
-      const profile = await client.openProfile(target.username ?? target.key, signal);
+      const profile = await client.openProfile(target.username ?? key, signal);
       let cursor = state.complete ? null : state.cursor;
       let hasNext = true;
       let first = true;
@@ -113,18 +114,18 @@ async function runScan(
         cursor = page.cursor;
         const exhausted = !page.hasNext || cursor === null;
         hasNext = !exhausted && posts.length < (input.limit ?? Number.MAX_SAFE_INTEGER);
-        reporter.update({ phase: "scan " + target.key, done: posts.length, total: posts.length + known.size - posts.length });
+        reporter.update({ phase: "scan " + key, done: posts.length, total: posts.length + known.size - posts.length });
         await commit(accepted, exhausted);
       }
     }
   } catch (error) {
     if (error instanceof InstagramRequestFailure && error.kind !== "stopped") {
-      onPark(error, target.key, last);
+      onPark(error, key, last);
     }
     throw error;
   }
 
   const total = readPosts(fs, dir).length;
-  reporter.finish("scanned " + target.key + ": " + posts.length + " new, " + total + " total");
-  return { key: target.key, written: posts.length, total, complete: state.complete, collection: state };
+  reporter.finish("scanned " + key + ": " + posts.length + " new, " + total + " total");
+  return { key: key, written: posts.length, total, complete: state.complete, collection: state };
 }

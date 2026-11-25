@@ -1,10 +1,21 @@
 import { parseCliArgs, UsageError, type ArgSchema } from "../../lib/cli.ts";
+import { parseMediaSize } from "../../lib/media.ts";
 import { join } from "node:path";
 import { homedir } from "node:os";
 
 export { UsageError };
 
 export const DEFAULT_PAUSE_MS = 1500;
+export const DEFAULT_MAX_MEDIA_BYTES = 512 * 1024 * 1024;
+
+export function parseMaxMediaSize(value: string): number {
+  try {
+    return parseMediaSize(value);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new UsageError(detail + "\n\n" + USAGE);
+  }
+}
 
 export const COMMANDS = ["scan", "get", "update", "build", "info", "following", "follow", "get-post"] as const;
 export type CommandName = (typeof COMMANDS)[number];
@@ -29,6 +40,7 @@ Options:
   --out DIR            archive root (default: ~/.local/share/instagram-archive)
   --media-dir DIR      media directory inside the archive (default: images)
   --pause-ms N         wait N ms between posts and pages (default: 1500)
+  --max-media-size SIZE  skip media over SIZE (default: 512MB, 0 for unlimited)
   --limit N            stop after N posts in this run
   --resume             deliberately resume a parked job
   --refresh            fetch a fresh following list
@@ -55,6 +67,7 @@ export interface CommandOptions {
   readonly outRoot: string;
   readonly mediaDir: string;
   readonly pauseMs: number;
+  readonly maxMediaBytes: number;
   readonly limit: number | null;
   readonly resume: boolean;
   readonly refresh: boolean;
@@ -71,7 +84,7 @@ export type ParsedCommand =
   | { readonly kind: "run"; readonly options: CommandOptions };
 
 const schema: ArgSchema = {
-  values: ["out", "media-dir", "pause-ms", "limit", "backend", "session", "cdp-url"],
+  values: ["out", "media-dir", "pause-ms", "max-media-size", "limit", "backend", "session", "cdp-url"],
   flags: ["saved", "resume", "refresh", "dry-run"],
   maxPositionals: 64,
 };
@@ -111,6 +124,7 @@ export function parseArgs(argv: readonly string[]): ParsedCommand {
   if (rest.includes("--help") || rest.includes("-h")) return { kind: "help" };
   const parsed = parseCliArgs(rest, schema);
   const limit = parsed.values.get("limit");
+  const maxMediaSize = parsed.values.get("max-media-size");
   return {
     kind: "run",
     options: {
@@ -119,6 +133,7 @@ export function parseArgs(argv: readonly string[]): ParsedCommand {
       outRoot: parsed.values.get("out") ?? downloadsRoot(),
       mediaDir: parsed.values.get("media-dir") ?? "images",
       pauseMs: nonNegative(parsed.values.get("pause-ms"), "pause-ms", DEFAULT_PAUSE_MS),
+      maxMediaBytes: maxMediaSize === undefined ? DEFAULT_MAX_MEDIA_BYTES : parseMaxMediaSize(maxMediaSize),
       limit: limit === undefined ? null : positive(limit, "limit", 1),
       resume: parsed.flags.has("resume"),
       refresh: parsed.flags.has("refresh"),

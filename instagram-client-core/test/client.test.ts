@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { connectInstagram, type InstagramClientDeps } from "../src/client.ts";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { connectInstagram, MediaTooLarge, type InstagramClientDeps } from "../src/client.ts";
 import { queryBody, type ProfileSession } from "../src/capture.ts";
 import { InstagramRequestFailure, parksJob } from "../src/failures.ts";
 
@@ -48,6 +48,21 @@ function harness(overrides: Partial<InstagramClientDeps> = {}): InstagramClientD
     capture: () => () => {},
     sleep: async () => {},
     ...overrides,
+  };
+}
+
+function harnessWithoutFetchBytes(): Omit<InstagramClientDeps, "fetchBytes"> {
+  return {
+    cookies: async () => COOKIES,
+    navigate: async () => {},
+    pageText: async () => "",
+    onRequest: () => () => {},
+    fetch: async () => outcome(200, {}),
+    savedShortcodes: async () => [],
+    postPage: async () => [],
+    runQuery: async () => page([{ node: { code: "abc" } }], null, false),
+    capture: () => () => {},
+    sleep: async () => {},
   };
 }
 
@@ -103,6 +118,18 @@ describe("connectInstagram", () => {
     expect(parksJob(failure as InstagramRequestFailure)).toBe(true);
   });
 
+  it("passes the profile username into saved enumeration", async () => {
+    let received: string | null = null;
+    const client = await connectInstagram({
+      cdpUrl: "http://unused",
+      dependencies: harness({
+        savedShortcodes: async (username) => { received = username; return []; },
+      }),
+    });
+    await client.savedShortcodes(undefined, "teaandvessel");
+    expect(received).toBe("teaandvessel");
+  });
+
   it("fails loudly on a changed response shape", async () => {
     const client = await connectInstagram({
       cdpUrl: "http://unused",
@@ -123,5 +150,52 @@ describe("connectInstagram", () => {
     controller.abort();
     const client = await connectInstagram({ cdpUrl: "http://unused", dependencies: harness(), signal: controller.signal });
     await expect(client.profilePage(PROFILE, null)).rejects.toMatchObject({ kind: "stopped" });
+  });
+});
+
+describe("media size limit", () => {
+  afterEach(() => { vi.unstubAllGlobals(); });
+
+  it("skips a declared oversized body before reading it", async () => {
+    let read = false;
+    vi.stubGlobal("fetch", async () => ({
+      ok: true,
+      headers: new Headers({ "content-length": "16" }),
+      body: {
+        getReader: () => { read = true; throw new Error("body should not be read"); },
+        cancel: async () => {},
+      },
+    }));
+    const client = await connectInstagram({ cdpUrl: "http://unused", dependencies: harnessWithoutFetchBytes() });
+    await expect(client.mediaBytes("https://cdn/media", undefined, 8)).rejects.toBeInstanceOf(MediaTooLarge);
+    expect(read).toBe(false);
+  });
+
+  it("stops a streamed body as soon as it passes the cap", async () => {
+    const chunks = [new Uint8Array(4), new Uint8Array(4), new Uint8Array(4)];
+    let cancelled = false;
+    vi.stubGlobal("fetch", async () => ({
+      ok: true,
+      headers: new Headers(),
+      body: {
+        getReader: () => ({
+          read: async () => chunks.length > 0
+            ? { done: false, value: chunks.shift() }
+            : { done: true, value: undefined },
+          cancel: async () => { cancelled = true; },
+        }),
+        cancel: async () => { cancelled = true; },
+      },
+    }));
+    const client = await connectInstagram({ cdpUrl: "http://unused", dependencies: harnessWithoutFetchBytes() });
+    await expect(client.mediaBytes("https://cdn/media", undefined, 6)).rejects.toMatchObject({ bytes: 8 });
+    expect(cancelled).toBe(true);
+    expect(chunks).toHaveLength(1);
+  });
+
+  it("returns the full body when no cap is set", async () => {
+    vi.stubGlobal("fetch", async () => new Response(new Uint8Array([1, 2, 3])));
+    const client = await connectInstagram({ cdpUrl: "http://unused", dependencies: harnessWithoutFetchBytes() });
+    expect(Array.from(await client.mediaBytes("https://cdn/media"))).toEqual([1, 2, 3]);
   });
 });

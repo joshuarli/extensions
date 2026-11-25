@@ -14,12 +14,14 @@ import { assertRunnable, clearJob, parkJob } from "./job.ts";
 import { inspectArchive } from "./info.ts";
 import { listFollowing } from "./following.ts";
 import { scanTarget } from "./scan.ts";
+import { collectionKey } from "./store.ts";
 
 const INTERRUPT_MESSAGE = "Stopping after the current post or media file. Saved data is kept; re-running resumes. Ctrl-C again to force exit.";
 
 function targetsFor(options: CommandOptions, accountId: string | undefined, fs: ReturnType<typeof createArchiveFs>): readonly string[] {
   if (options.targets.length > 0) return options.targets;
   if (accountId === undefined) return [];
+  if (options.saved) return ["account"];
   return listCollectionKeys(fs, options.outRoot, accountId);
 }
 
@@ -67,6 +69,7 @@ async function run(options: CommandOptions, signal: AbortSignal): Promise<number
     const pause = (pauseSignal: AbortSignal): Promise<void> => abortableSleep(options.pauseMs, pauseSignal);
     let written = 0;
     let downloaded = 0;
+    let skipped = 0;
 
     for (const target of targets) {
       if (signal.aborted) break;
@@ -91,19 +94,22 @@ async function run(options: CommandOptions, signal: AbortSignal): Promise<number
         written += summary.written;
       }
       if (options.command === "get" || options.command === "update") {
-        const key = options.saved && !target.startsWith("@") ? target + "-saved" : target.replace(/^@/u, "");
+        const key = collectionKey(target, options.saved).key;
         const summary = await getTarget({
           outRoot: options.outRoot,
           accountId,
           key,
+          kind: options.saved ? "saved" : "profile",
           mediaDir: options.mediaDir,
           limit: options.limit,
+          maxMediaBytes: options.maxMediaBytes,
         }, { client, fs, reporter, signal, pause }, onPark);
         downloaded += summary.downloaded;
+        skipped += summary.skipped;
       }
     }
     clearJob(fs, options.outRoot);
-    process.stdout.write(`${options.command}: ${written} post(s) recorded, ${downloaded} media file(s) downloaded.\n`);
+    process.stdout.write(`${options.command}: ${written} post(s) recorded, ${downloaded} media file(s) downloaded, ${skipped} skipped.\n`);
     return signal.aborted ? 130 : 0;
   } finally {
     await client.close();

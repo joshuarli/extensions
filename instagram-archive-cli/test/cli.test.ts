@@ -5,9 +5,10 @@ import type { ArchiveFs } from "../src/fs.ts";
 import { getTarget } from "../src/get.ts";
 import { assertRunnable, parkJob, readJob } from "../src/job.ts";
 import { scanTarget } from "../src/scan.ts";
-import { accountDir, appendPosts, collectionDir, readPosts, readState, recordsPath } from "../src/store.ts";
+import { accountDir, appendPosts, collectionDir, markMembership, readPosts, readState, recordsPath, writeState } from "../src/store.ts";
+import { emptyCollection } from "../../instagram-archive-core/src/index.ts";
 import type { InstagramClient } from "../../instagram-client-core/src/index.ts";
-import { InstagramRequestFailure } from "../../instagram-client-core/src/index.ts";
+import { InstagramRequestFailure, MediaTooLarge } from "../../instagram-client-core/src/index.ts";
 import type { ProgressReporter } from "../../lib/progress.ts";
 
 class MemoryFs implements ArchiveFs {
@@ -23,6 +24,12 @@ class MemoryFs implements ArchiveFs {
   }
   readText(path: string): string | null { return this.files.get(path) ?? null; }
   readBytes(path: string): Uint8Array | null { return this.bytes.get(path) ?? null; }
+  size(path: string): number | null {
+    const bytes = this.bytes.get(path);
+    if (bytes !== undefined) return bytes.byteLength;
+    const text = this.files.get(path);
+    return text === undefined ? null : text.length;
+  }
   writeText(path: string, text: string): void { this.mkdir(join(path, "..")); this.files.set(path, text); }
   writeAtomicText(path: string, text: string): void { this.writeText(path, text); }
   writeAtomicBytes(path: string, data: Uint8Array): void { this.mkdir(join(path, "..")); this.bytes.set(path, data); }
@@ -110,6 +117,16 @@ describe("parseArgs", () => {
   it("rejects an unknown command and a bad limit", () => {
     expect(() => parseArgs(["nope"])).toThrow(UsageError);
     expect(() => parseArgs(["scan", "@alice", "--limit", "0"])).toThrow(/positive integer/);
+  });
+
+  it("caps media at 512 MB by default and accepts size suffixes", () => {
+    const parsed = parseArgs(["get", "@alice"]);
+    expect(parsed.kind === "run" && parsed.options.maxMediaBytes).toBe(512 * 1024 * 1024);
+    const sized = parseArgs(["get", "@alice", "--max-media-size", "1M"]);
+    expect(sized.kind === "run" && sized.options.maxMediaBytes).toBe(1024 * 1024);
+    const unlimited = parseArgs(["get", "@alice", "--max-media-size", "0"]);
+    expect(unlimited.kind === "run" && unlimited.options.maxMediaBytes).toBe(0);
+    expect(() => parseArgs(["get", "@alice", "--max-media-size", "big"])).toThrow(UsageError);
   });
 });
 
@@ -209,11 +226,57 @@ describe("pacing", () => {
       return new Uint8Array([1]);
     };
     const summary = await getTarget(
-      { outRoot: "/archive", accountId: "acct-1", key: "alice", mediaDir: "images", limit: null },
+      { outRoot: "/archive", accountId: "acct-1", key: "alice", kind: "profile", mediaDir: "images", limit: null, maxMediaBytes: 0 },
       { client, fs, reporter: reporter(), signal: new AbortController().signal, pause: async () => { events.push("pause"); } },
       () => {},
     );
     expect(summary.downloaded).toBe(2);
     expect(events).toEqual(["fetch https://cdn/abc.jpg", "pause", "fetch https://cdn/def.jpg"]);
+  });
+});
+
+describe("resolved media", () => {
+  it("persists media found on the post page and marks the post complete", async () => {
+    const fs = new MemoryFs();
+    const dir = collectionDir(accountDir("/archive", "acct-1"), "alice");
+    const post = { shortcode: "abc", username: "alice", postType: "image" as const, caption: null, media: [] };
+    fs.mkdir(dir);
+    appendPosts(fs, dir, [post]);
+    writeState(fs, dir, markMembership(emptyCollection("profile", "alice"), [post], "2026-11-25T00:00:00Z"));
+    const client = fakeClient([]);
+    (client as unknown as { postPage: (shortcode: string) => Promise<unknown> }).postPage = async () => [
+      { url: "https://cdn/abc.jpg", kind: "image", width: 10, height: 10 },
+    ];
+    const summary = await getTarget(
+      { outRoot: "/archive", accountId: "acct-1", key: "alice", kind: "profile", mediaDir: "images", limit: null, maxMediaBytes: 0 },
+      { client, fs, reporter: reporter(), signal: new AbortController().signal, pause: async () => {} },
+      () => {},
+    );
+    expect(summary).toMatchObject({ downloaded: 1, skipped: 0, failed: 0, remaining: 0 });
+    expect(readPosts(fs, dir)[0]?.media).toEqual([{ url: "https://cdn/abc.jpg", kind: "image", width: 10, height: 10 }]);
+    expect(readState(fs, dir, "profile", "alice").membership["abc"]?.complete).toBe(true);
+  });
+});
+
+describe("media size limit", () => {
+  it("counts oversized media as skipped without writing it", async () => {
+    const fs = new MemoryFs();
+    const dir = collectionDir(accountDir("/archive", "acct-1"), "alice");
+    fs.mkdir(dir);
+    appendPosts(fs, dir, [{
+      shortcode: "abc", username: "alice", postType: "image", caption: null,
+      media: [{ url: "https://cdn/abc.jpg", kind: "image", width: 1, height: 1 }],
+    }]);
+    const client = fakeClient([]);
+    (client as unknown as { mediaBytes: (url: string) => Promise<Uint8Array> }).mediaBytes = async () => {
+      throw new MediaTooLarge(2048);
+    };
+    const summary = await getTarget(
+      { outRoot: "/archive", accountId: "acct-1", key: "alice", kind: "profile", mediaDir: "images", limit: null, maxMediaBytes: 1024 },
+      { client, fs, reporter: reporter(), signal: new AbortController().signal, pause: async () => {} },
+      () => {},
+    );
+    expect(summary).toMatchObject({ downloaded: 0, skipped: 1, failed: 0, remaining: 1 });
+    expect(fs.exists(join(dir, "images", "abc.jpg"))).toBe(false);
   });
 });
