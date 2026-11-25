@@ -192,15 +192,6 @@ Next: 45
 - **Fix with:** none
 - **Effort:** M
 
-### EXT-35 · P3 · Onefile scoped CI duplicates the full check with narrower inputs
-
-- **Area:** CI
-- **Where:** .github/workflows/onefile.yml:6-18,40-43; vite.config.ts:87; .github/workflows/ci.yml:3-7
-- **Problem:** The workflow misses onefile-core and lib inputs that build the Onefile bundle, and its unverified dist run adds nothing over ci.yml.
-- **Recommendation:** Remove the redundant workflow or widen its paths to every bundle input and test its output.
-- **Fix with:** none
-- **Effort:** S
-
 ### EXT-37 · P3 · X capture operation sets are duplicated between core and CLI
 
 - **Area:** X archive / credential capture
