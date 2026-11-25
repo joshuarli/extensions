@@ -1,4 +1,4 @@
 supportedArchitectures:
   libc:
-    - current
     - glibc
+    - musl
