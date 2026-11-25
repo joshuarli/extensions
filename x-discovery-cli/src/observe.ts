@@ -68,11 +68,14 @@ export async function observeOperation(options: {
       try {
         let captured: Observation | null = null;
         page.on("response", async (response) => {
-          const parsed = new URL(response.url());
-          if (!captured || !parsed.pathname.endsWith("/" + options.operation)) return;
           try {
-            const body = await response.json() as Record<string, unknown>;
-            captured.responseKeys = Object.keys(body["data"] ?? body);
+            const parsed = new URL(response.url());
+            if (!captured || !parsed.pathname.endsWith("/" + options.operation)) return;
+            const body: unknown = await response.json();
+            if (body === null || typeof body !== "object" || Array.isArray(body)) return;
+            const data = (body as Record<string, unknown>)["data"];
+            captured.responseKeys = Object.keys(data !== null && typeof data === "object" && !Array.isArray(data)
+              ? data as Record<string, unknown> : body as Record<string, unknown>);
           } catch { /* Response bodies are optional for shape comparison. */ }
         });
         page.on("request", (request) => {

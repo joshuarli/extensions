@@ -79,7 +79,7 @@ export async function collectFeed(options: DiscoverOptions): Promise<CollectSumm
       budgetPages: options.maxPages,
     });
     const knownBefore = new Set(store.allPosts().map((post) => post.tweet_id));
-    let stopReason = "max_pages";
+    let stopReason = "failed";
     let pages = 0;
     try {
       const result = await collectHomeTimeline({

@@ -42,6 +42,7 @@ The roadmap, [docs/roadmap.md](docs/roadmap.md), holds all current and future wo
 - ChatGPT archive domain logic: [chatgpt-archive-core/README.md](chatgpt-archive-core/README.md)
 - ChatGPT archive CLI: [chatgpt-archive-cli/README.md](chatgpt-archive-cli/README.md)
 - X home-feed discovery SDK: [x-discovery-core](x-discovery-core/src/index.ts), [x-discovery-cli/README.md](x-discovery-cli/README.md)
+- Site-specific client boundary and operation recipes: [x-client-core](x-client-core/src/index.ts), [recipes](x-client-core/recipes)
 - X following and followers lists: [x-archive-cli/README.md](x-archive-cli/README.md)
 
 ## Verification
