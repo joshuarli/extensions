@@ -6,7 +6,7 @@ import {
   type Operation,
   type ProfileOperation,
 } from "./capture.ts";
-import { parseTimeline, parseFolders, parseProfileTimeline, type Bookmark, type Folder, type ProfileInfo } from "./parser.ts";
+import { parseTimeline, parseFolders, parseProfileTimeline, type Bookmark, type Folder, type ProfileInfo, type RawBookmark } from "./parser.ts";
 import type {
   ScanState,
   LikesScanState,
@@ -26,23 +26,23 @@ export interface ArchiveDeps {
 }
 
 export interface BookmarksStore {
-  savePage(items: Bookmark[], folderId?: string): Promise<void>;
+  savePage(items: RawBookmark[], folderId?: string): Promise<void>;
   saveFolders(folders: Folder[]): Promise<void>;
   loadState(): Promise<ScanState | null>;
   saveState(state: ScanState): Promise<void>;
 }
 
 export interface LikesStore {
-  savePage(items: Bookmark[]): Promise<void>;
+  savePage(items: RawBookmark[]): Promise<void>;
   loadState(): Promise<LikesScanState | null>;
   saveState(state: LikesScanState): Promise<void>;
 }
 
 export interface ProfileStore {
-  savePage(items: Bookmark[], targetUserId: string): Promise<void>;
+  savePage(items: RawBookmark[], targetUserId: string): Promise<void>;
   loadState(targetUserId: string): Promise<ProfileScanState | null>;
   saveState(targetUserId: string, state: ProfileScanState): Promise<void>;
-  allKnown?(items: Bookmark[], targetUserId: string): Promise<boolean>;
+  allKnown?(items: RawBookmark[], targetUserId: string): Promise<boolean>;
 }
 
 const MAX_EMPTY_PAGES = 3;
@@ -122,7 +122,7 @@ interface CollectionOptions<Store> {
   progressBase?: { posts: number; pages: number };
   resumeCursors?: Record<string, string>;
   checkpoint?: (key: string, cursor: string | null) => Promise<void>;
-  stopWhenAllKnown?: (items: Bookmark[]) => Promise<boolean>;
+  stopWhenAllKnown?: (items: RawBookmark[]) => Promise<boolean>;
 }
 
 interface PageSpec<Item> {

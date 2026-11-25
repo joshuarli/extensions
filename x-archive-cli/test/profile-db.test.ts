@@ -57,6 +57,30 @@ describe("SqliteProfileStore", () => {
     second.close();
   });
 
+  it("stores raw tweet payloads in a separate column and returns them with the record", async () => {
+    const dir = useTempDir();
+    const dbPath = join(dir, "archive.db");
+    const store = new SqliteProfileStore(dbPath, "1000");
+    const raw = { rest_id: "100", future_response_field: "keep-me" };
+    await store.savePage([{ ...post("100", "normalized"), raw_tweet: raw } as never], "1000");
+    const records = await store.allRecords() as Array<Record<string, unknown>>;
+    expect(records[0]?.["raw_tweet"]).toEqual(raw);
+    expect(records[0]?.["full_text"]).toBe("normalized");
+
+    const { DatabaseSync } = await import("node:sqlite");
+    const db = new DatabaseSync(dbPath);
+    try {
+      const row = db.prepare("SELECT json, raw_tweet FROM posts WHERE tweet_id = '100'").get() as
+        | { json: string; raw_tweet: string }
+        | undefined;
+      expect(JSON.parse(row?.["raw_tweet"] ?? "null")).toEqual(raw);
+      expect(JSON.parse(row?.["json"] ?? "{}")).not.toHaveProperty("raw_tweet");
+    } finally {
+      db.close();
+    }
+    store.close();
+  });
+
   it("scopes records per target user id", async () => {
     const dir = useTempDir();
     const dbPath = join(dir, "archive.db");
@@ -145,6 +169,57 @@ describe("SqliteProfileStore", () => {
     expect(await store.contextPageAttempts("42")).toBe(0);
     store.close();
   });
+
+  it("rejects a corrupt raw payload column instead of returning a lossy record", async () => {
+    const dbPath = join(useTempDir(), "archive.db");
+    const first = new SqliteProfileStore(dbPath, "1000");
+    await first.savePage([post("100", "first") as never], "1000");
+    first.close();
+
+    const { DatabaseSync } = await import("node:sqlite");
+    const db = new DatabaseSync(dbPath);
+    db.prepare("UPDATE posts SET raw_tweet = ? WHERE tweet_id = '100'").run("{broken");
+    db.close();
+
+    const second = new SqliteProfileStore(dbPath, "1000");
+    await expect(second.allRecords()).rejects.toThrow();
+    second.close();
+  });
+
+  it("upgrades a version 1 database with raw payload columns and keeps its records", async () => {
+    const dbPath = join(useTempDir(), "archive.db");
+    const { DatabaseSync } = await import("node:sqlite");
+    const legacy = new DatabaseSync(dbPath);
+    legacy.exec(
+      "CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);"
+      + "INSERT INTO meta VALUES ('schema_version', '1');"
+      + "CREATE TABLE posts (target_user_id TEXT NOT NULL, tweet_id TEXT NOT NULL, json TEXT NOT NULL, PRIMARY KEY (target_user_id, tweet_id));"
+      + "CREATE TABLE context_posts (target_user_id TEXT NOT NULL, tweet_id TEXT NOT NULL, json TEXT NOT NULL, PRIMARY KEY (target_user_id, tweet_id));"
+      + "CREATE TABLE context_pages (target_user_id TEXT NOT NULL, focal_id TEXT NOT NULL, status TEXT NOT NULL, fetched_at TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (target_user_id, focal_id));"
+      + `INSERT INTO posts VALUES ('1000', '100', '${JSON.stringify(post("100", "legacy"))}');`,
+    );
+    legacy.close();
+
+    const store = new SqliteProfileStore(dbPath, "1000");
+    expect(await store.allRecords()).toMatchObject([{ tweet_id: "100", full_text: "legacy" }]);
+    const raw = { rest_id: "101", future_response_field: "keep-me" };
+    await store.savePage([{ ...post("101", "new"), raw_tweet: raw } as never], "1000");
+    expect((await store.allRecords())[1]).toMatchObject({ raw_tweet: raw });
+    store.close();
+
+    const reopened = new DatabaseSync(dbPath);
+    try {
+      const version = reopened.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get() as { value: string };
+      expect(version.value).toBe("2");
+      for (const table of ["posts", "context_posts"]) {
+        const columns = reopened.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+        expect(columns.map((column) => column.name)).toContain("raw_tweet");
+      }
+    } finally {
+      reopened.close();
+    }
+  });
+
   it("does not add completion validity to an unsupported schema", async () => {
     const dbPath = join(useTempDir(), "archive.db");
     const { DatabaseSync } = await import("node:sqlite");

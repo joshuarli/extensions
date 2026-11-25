@@ -115,6 +115,18 @@ describe.each([
     expect(await second.allRecords()).toEqual([incoming]);
   });
 
+  it("keeps an undeclared GraphQL field in the raw payload through page merges", async () => {
+    useTempStateRoot();
+    const store = new Store("123");
+    const raw = { rest_id: "100", future_response_field: "keep-me" };
+    await store.savePage([{ ...post("100", "first"), raw_tweet: raw } as never]);
+    await store.savePage([{ ...post("100", "second"), raw_tweet: { ...raw, future_response_field: "newer" } } as never]);
+    const records = await store.allRecords();
+    expect(records).toHaveLength(1);
+    expect((records[0] as Record<string, unknown>)["raw_tweet"]).toEqual({ ...raw, future_response_field: "newer" });
+    expect((records[0] as Record<string, unknown>)["full_text"]).toBe("second");
+  });
+
   it.each([
     ["malformed JSON", "[{\"tweet_id\":\"old\""],
     ["non-array JSON", "{\"tweet_id\":\"old\"}\n"],

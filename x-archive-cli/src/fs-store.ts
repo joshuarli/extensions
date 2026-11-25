@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { Schema } from "effect";
-import { BookmarkSchema, type Bookmark } from "../../x-archive-core/src/parser.ts";
+import type { RawBookmark } from "../../x-archive-core/src/parser.ts";
+import { decodeBookmark } from "../../x-archive-core/src/raw.ts";
 import { mergeBookmark } from "../../x-archive-core/src/merge.ts";
 import {
   ScanStateSchema,
@@ -52,12 +53,12 @@ export class FsBookmarksStore implements BookmarksStore {
     this.foldersPath = join(storeDir(userId), "folders.json");
   }
 
-  async savePage(items: Bookmark[], folderId?: string): Promise<void> {
+  async savePage(items: RawBookmark[], folderId?: string): Promise<void> {
     if (items.length === 0) return;
     const records = readRecords(this.itemsPath);
-    const byId = new Map<string, Bookmark>();
+    const byId = new Map<string, RawBookmark>();
     for (const record of records) {
-      const parsed = Schema.decodeUnknownSync(BookmarkSchema)(record);
+      const parsed = decodeBookmark(record);
       byId.set(parsed.tweet_id, parsed);
     }
     for (const item of items) {
@@ -107,12 +108,12 @@ export class FsLikesStore implements LikesStore {
     this.statePath = join(stateDir(userId), "likes-state.json");
   }
 
-  async savePage(items: Bookmark[]): Promise<void> {
+  async savePage(items: RawBookmark[]): Promise<void> {
     if (items.length === 0) return;
     const records = readRecords(this.itemsPath);
-    const byId = new Map<string, Bookmark>();
+    const byId = new Map<string, RawBookmark>();
     for (const record of records) {
-      const parsed = Schema.decodeUnknownSync(BookmarkSchema)(record);
+      const parsed = decodeBookmark(record);
       byId.set(parsed.tweet_id, parsed);
     }
     for (const item of items) {

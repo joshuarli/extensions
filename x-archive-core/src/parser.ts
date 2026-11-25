@@ -24,8 +24,9 @@ export const BookmarkSchema = Schema.Struct({
 });
 
 export type Bookmark = Schema.Schema.Type<typeof BookmarkSchema>;
+export type RawBookmark = Bookmark & { readonly raw_tweet?: unknown };
 export type Folder = { id: string; name: string };
-export type ParsedPage = { valid: boolean; bookmarks: Bookmark[]; nextCursor: string | null; terminated?: boolean; detail?: string };
+export type ParsedPage = { valid: boolean; bookmarks: RawBookmark[]; nextCursor: string | null; terminated?: boolean; detail?: string };
 export type ParsedFolders = { valid: boolean; folders: Folder[]; nextCursor: string | null };
 
 type ObjectValue = Record<string, unknown>;
@@ -115,6 +116,16 @@ export function normalizeTweetResult(
   observedAt: string,
   fallbackId = "",
   sortIndex: string | null = null,
+): RawBookmark | null {
+  const normalized = normalizeTweetFields(result, observedAt, fallbackId, sortIndex);
+  return !normalized || !object(result) ? normalized : { ...normalized, raw_tweet: result };
+}
+
+function normalizeTweetFields(
+  result: unknown,
+  observedAt: string,
+  fallbackId: string,
+  sortIndex: string | null,
 ): Bookmark | null {
   const raw = object(result);
   if (!raw) return fallbackId ? unavailable(fallbackId, sortIndex, "No tweet data returned", observedAt) : null;
@@ -260,7 +271,7 @@ function instructionEntries(instruction: unknown): EntriesResult {
 
 
 
-type ModuleResult = { posts: Bookmark[] } | { detail: string };
+type ModuleResult = { posts: RawBookmark[] } | { detail: string };
 
 function unwrapModuleTweet(result: unknown): ObjectValue | null {
   return unwrapTweet(result);
@@ -276,7 +287,7 @@ function moduleAuthorId(itemContent: ObjectValue): string | null {
 function modulePosts(entry: ObjectValue, observedAt: string, authorUserId: string | undefined): ModuleResult {
   const items = array(get(entry, "content", "items"));
   const sortIndex = string(entry["sortIndex"]);
-  const posts: Bookmark[] = [];
+  const posts: RawBookmark[] = [];
   for (const item of items) {
     const itemObject = object(item);
     if (!itemObject) continue;
@@ -308,7 +319,7 @@ function modulePosts(entry: ObjectValue, observedAt: string, authorUserId: strin
 function parseInstructions(instructions: unknown, observedAt: string, authorUserId?: string): ParsedPage {
   const invalid = (detail: string): ParsedPage => ({ valid: false, bookmarks: [], nextCursor: null, detail });
   if (!Array.isArray(instructions)) return invalid("timeline instructions are missing or not an array");
-  const bookmarks: Bookmark[] = [];
+  const bookmarks: RawBookmark[] = [];
   let nextCursor: string | null = null;
   let terminated = false;
   for (const instruction of instructions) {
@@ -359,7 +370,7 @@ export interface ProfileInfo {
 }
 
 export type ParsedProfilePage =
-  | { valid: true; posts: Bookmark[]; nextCursor: string | null; terminated: boolean; profile: ProfileInfo | null }
+  | { valid: true; posts: RawBookmark[]; nextCursor: string | null; terminated: boolean; profile: ProfileInfo | null }
   | { valid: false; posts: []; nextCursor: null; terminated: false; profile: null; detail?: string };
 
 function parseProfileInfo(source: unknown): ProfileInfo | null {

@@ -1,5 +1,6 @@
 import { Schema } from "effect";
-import { BookmarkSchema, type Bookmark, type Folder, type ProfileInfo } from "./parser.ts";
+import { type Bookmark, type Folder, type ProfileInfo } from "./parser.ts";
+import { rederiveBookmark } from "./raw.ts";
 import { collectMediaJobs } from "./media.ts";
 import { PROFILE_OPERATIONS, type ProfileOperation } from "./capture.ts";
 
@@ -83,8 +84,7 @@ export function assembleBookmarkArchive(
   folders: Folder[];
   bookmarks: Array<Bookmark & { folders: string[] }>;
 } {
-  const bookmarks = rawBookmarks.map((record) =>
-    Schema.decodeUnknownSync(BookmarkSchema)(record));
+  const bookmarks = rawBookmarks.map(rederiveBookmark);
   const folders = rawFolders
     .filter((folder): folder is Folder =>
       typeof (folder as Folder | null)?.id === "string"
@@ -98,7 +98,7 @@ export function assembleBookmarkArchive(
   return {
     export_metadata: {
       tool: "x-bookmarks",
-      schema_version: 2,
+      schema_version: 3,
       kind: "cumulative",
       exported_at: new Date().toISOString(),
       user_id: userId,
@@ -127,15 +127,14 @@ export function assembleLikesArchive(
   export_metadata: object;
   likes: Bookmark[];
 } {
-  const likes = rawLikes.map((record) =>
-    Schema.decodeUnknownSync(BookmarkSchema)(record));
+  const likes = rawLikes.map(rederiveBookmark);
   const withMedia = collectMediaJobs(likes);
   likes.sort((a, b) => b.sort_index?.localeCompare(a.sort_index ?? "") ?? -1);
   const available = likes.filter((like) => like.status === "available").length;
   return {
     export_metadata: {
       tool: "x-likes",
-      schema_version: 2,
+      schema_version: 3,
       kind: "cumulative",
       exported_at: new Date().toISOString(),
       user_id: userId,
@@ -173,8 +172,7 @@ export function assembleProfileArchive(
   posts: Array<Omit<Bookmark, "folder_ids">>;
   context_posts?: Array<Omit<Bookmark, "folder_ids">>;
 } {
-  const posts = rawPosts.map((record) =>
-    Schema.decodeUnknownSync(BookmarkSchema)(stripTarget(record)));
+  const posts = rawPosts.map((record) => rederiveBookmark(stripTarget(record)));
   const withMedia = collectMediaJobs(posts);
   posts.sort((a, b) => b.sort_index?.localeCompare(a.sort_index ?? "") ?? -1);
   const available = posts.filter((post) => post.status === "available").length;
@@ -191,7 +189,7 @@ export function assembleProfileArchive(
   const base = {
     export_metadata: {
       tool: "x-profile-posts",
-      schema_version: 1,
+      schema_version: 2,
       kind: "cumulative",
       exported_at: new Date().toISOString(),
       user_id: accountUserId,
@@ -213,8 +211,7 @@ export function assembleProfileArchive(
     posts: exported,
   };
   if (rawContext === undefined) return base;
-  const context = rawContext.map((record) =>
-    Schema.decodeUnknownSync(BookmarkSchema)(stripTarget(record)));
+  const context = rawContext.map((record) => rederiveBookmark(stripTarget(record)));
   context.sort((a, b) => b.sort_index?.localeCompare(a.sort_index ?? "") ?? -1);
   const contextPosts = context.map(({ folder_ids: _folderIds, ...post }) => post);
   return {

@@ -2,7 +2,8 @@ import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { Schema } from "effect";
-import { BookmarkSchema, type Bookmark } from "../../x-archive-core/src/parser.ts";
+import type { RawBookmark } from "../../x-archive-core/src/parser.ts";
+import { decodeBookmark, normalizedFields, restoreRawTweet, serializeRawTweet } from "../../x-archive-core/src/raw.ts";
 import { mergeBookmark } from "../../x-archive-core/src/merge.ts";
 import {
   ProfileScanStateSchema,
@@ -10,7 +11,7 @@ import {
 } from "../../x-archive-core/src/storage.ts";
 import type { ProfileStore } from "../../x-archive-core/src/collector.ts";
 
-const SCHEMA_VERSION = "1";
+const SCHEMA_VERSION = "2";
 
 const PROFILE_DB_NAME = "archive.db";
 
@@ -35,6 +36,7 @@ export class SqliteProfileStore implements ProfileStore {
       + "  target_user_id TEXT NOT NULL,"
       + "  tweet_id TEXT NOT NULL,"
       + "  json TEXT NOT NULL,"
+      + "  raw_tweet TEXT,"
       + "  PRIMARY KEY (target_user_id, tweet_id)"
       + ");"
       + "CREATE TABLE IF NOT EXISTS state ("
@@ -45,6 +47,7 @@ export class SqliteProfileStore implements ProfileStore {
       + "  target_user_id TEXT NOT NULL,"
       + "  tweet_id TEXT NOT NULL,"
       + "  json TEXT NOT NULL,"
+      + "  raw_tweet TEXT,"
       + "  PRIMARY KEY (target_user_id, tweet_id)"
       + ");"
       + "CREATE TABLE IF NOT EXISTS context_pages ("
@@ -66,6 +69,14 @@ export class SqliteProfileStore implements ProfileStore {
       | undefined;
     if (row === undefined) {
       this.db.prepare("INSERT INTO meta (key, value) VALUES ('schema_version', ?)").run(SCHEMA_VERSION);
+    } else if (row.value === "1") {
+      for (const table of ["posts", "context_posts"]) {
+        const existing = this.db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+        if (!existing.some((column) => column.name === "raw_tweet")) {
+          this.db.exec(`ALTER TABLE ${table} ADD COLUMN raw_tweet TEXT`);
+        }
+      }
+      this.db.prepare("UPDATE meta SET value = ? WHERE key = 'schema_version'").run(SCHEMA_VERSION);
     } else if (row.value !== SCHEMA_VERSION) {
       this.db.close();
       throw new Error("Unsupported archive.db schema version: " + row.value);
@@ -79,23 +90,23 @@ export class SqliteProfileStore implements ProfileStore {
     this.db.close();
   }
 
-  async savePage(items: Bookmark[], targetUserId: string): Promise<void> {
+  async savePage(items: RawBookmark[], targetUserId: string): Promise<void> {
     if (items.length === 0) return;
     if (targetUserId !== this.targetUserId) throw new Error("Profile store scope mismatch.");
-    const get = this.db.prepare("SELECT json FROM posts WHERE target_user_id = ? AND tweet_id = ?");
+    const get = this.db.prepare("SELECT json, raw_tweet FROM posts WHERE target_user_id = ? AND tweet_id = ?");
     const upsert = this.db.prepare(
-      "INSERT INTO posts (target_user_id, tweet_id, json) VALUES (?, ?, ?)"
-      + " ON CONFLICT(target_user_id, tweet_id) DO UPDATE SET json = excluded.json",
+      "INSERT INTO posts (target_user_id, tweet_id, json, raw_tweet) VALUES (?, ?, ?, ?)"
+      + " ON CONFLICT(target_user_id, tweet_id) DO UPDATE SET json = excluded.json, raw_tweet = excluded.raw_tweet",
     );
     this.db.exec("BEGIN");
     try {
       for (const item of items) {
-        const existingRow = get.get(targetUserId, item.tweet_id) as { json: string } | undefined;
+        const existingRow = get.get(targetUserId, item.tweet_id) as { json: string; raw_tweet: string | null } | undefined;
         const existing = existingRow
-          ? Schema.decodeUnknownSync(BookmarkSchema)(JSON.parse(existingRow.json))
+          ? restoreRawTweet(JSON.parse(existingRow.json), existingRow.raw_tweet)
           : undefined;
         const merged = mergeBookmark(existing, item);
-        upsert.run(targetUserId, item.tweet_id, JSON.stringify(merged));
+        upsert.run(targetUserId, item.tweet_id, JSON.stringify(normalizedFields(merged)), serializeRawTweet(merged));
       }
       this.db.exec("COMMIT");
     } catch (error) {
@@ -104,7 +115,7 @@ export class SqliteProfileStore implements ProfileStore {
     }
   }
 
-  async allKnown(items: Bookmark[], targetUserId: string): Promise<boolean> {
+  async allKnown(items: RawBookmark[], targetUserId: string): Promise<boolean> {
     if (targetUserId !== this.targetUserId) throw new Error("Profile store scope mismatch.");
     if (items.length === 0) return false;
     const placeholders = items.map(() => "?").join(",");
@@ -137,22 +148,22 @@ export class SqliteProfileStore implements ProfileStore {
   }
 
   async allRecords(): Promise<unknown[]> {
-    const rows = this.db.prepare("SELECT json FROM posts WHERE target_user_id = ?").all(this.targetUserId) as Array<{ json: string }>;
-    return rows.map((row) => JSON.parse(row.json) as unknown);
+    const rows = this.db.prepare("SELECT json, raw_tweet FROM posts WHERE target_user_id = ?").all(this.targetUserId) as Array<{ json: string; raw_tweet: string | null }>;
+    return rows.map((row) => restoreRawTweet(JSON.parse(row.json), row.raw_tweet));
   }
 
-  async saveContextPage(items: Bookmark[], targetUserId: string): Promise<void> {
+  async saveContextPage(items: RawBookmark[], targetUserId: string): Promise<void> {
     if (items.length === 0) return;
     if (targetUserId !== this.targetUserId) throw new Error("Profile store scope mismatch.");
     const upsert = this.db.prepare(
-      "INSERT INTO context_posts (target_user_id, tweet_id, json) VALUES (?, ?, ?)"
-      + " ON CONFLICT(target_user_id, tweet_id) DO UPDATE SET json = excluded.json",
+      "INSERT INTO context_posts (target_user_id, tweet_id, json, raw_tweet) VALUES (?, ?, ?, ?)"
+      + " ON CONFLICT(target_user_id, tweet_id) DO UPDATE SET json = excluded.json, raw_tweet = excluded.raw_tweet",
     );
     this.db.exec("BEGIN");
     try {
       for (const item of items) {
-        Schema.decodeUnknownSync(BookmarkSchema)(item);
-        upsert.run(targetUserId, item.tweet_id, JSON.stringify(item));
+        const decoded = decodeBookmark(item);
+        upsert.run(targetUserId, decoded.tweet_id, JSON.stringify(normalizedFields(decoded)), serializeRawTweet(decoded));
       }
       this.db.exec("COMMIT");
     } catch (error) {
@@ -175,9 +186,9 @@ export class SqliteProfileStore implements ProfileStore {
   }
 
   async allContextRecords(): Promise<unknown[]> {
-    const rows = this.db.prepare("SELECT json FROM context_posts WHERE target_user_id = ?")
-      .all(this.targetUserId) as Array<{ json: string }>;
-    return rows.map((row) => JSON.parse(row.json) as unknown);
+    const rows = this.db.prepare("SELECT json, raw_tweet FROM context_posts WHERE target_user_id = ?")
+      .all(this.targetUserId) as Array<{ json: string; raw_tweet: string | null }>;
+    return rows.map((row) => restoreRawTweet(JSON.parse(row.json), row.raw_tweet));
   }
 
   async contextPageStatus(focalId: string): Promise<"ok" | "failed" | null> {
