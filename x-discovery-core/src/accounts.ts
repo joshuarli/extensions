@@ -3,7 +3,7 @@ import type { ResourceLink } from "./links.ts";
 import { sourceUrl, type DiscoveredPost } from "./post.ts";
 import type { TopicJudgment } from "./topic.ts";
 
-export const ACCOUNT_VERSION = "accounts-2";
+export const ACCOUNT_VERSION = "accounts-3";
 
 export const AccountExampleSchema = Schema.Struct({
   source_url: Schema.String,
@@ -46,9 +46,12 @@ export function deriveAccounts(
     posts: DiscoveredPost[];
     relevant: Array<{ post: DiscoveredPost; judgment: TopicJudgment }>;
     links: Set<string>;
+    linkUrls: Map<string, string>;
   }>();
   for (const post of posts) {
-    const account = accounts.get(post.author_id) ?? { posts: [], relevant: [], links: new Set<string>() };
+    const account = accounts.get(post.author_id) ?? {
+      posts: [], relevant: [], links: new Set<string>(), linkUrls: new Map<string, string>(),
+    };
     account.posts.push(post);
     const judgment = topicByTweet.get(post.tweet_id);
     if (judgment?.verdict === "relevant") account.relevant.push({ post, judgment });
@@ -57,7 +60,9 @@ export function deriveAccounts(
   for (const link of links) {
     const post = posts.find((candidate) => candidate.tweet_id === link.source_tweet_id);
     if (!post) continue;
-    accounts.get(post.author_id)?.links.add(link.dedupe_key);
+    const account = accounts.get(post.author_id);
+    account?.links.add(link.dedupe_key);
+    account?.linkUrls.set(link.dedupe_key, link.url);
   }
   return [...accounts.entries()].map(([authorId, account]) => {
     const handles = account.posts.map((post) => post.author_handle);
@@ -98,7 +103,7 @@ export function deriveAccounts(
       sample_sources: sampleSources,
       score,
       resource_links: account.links.size,
-      link_examples: [...account.links].slice(0, 3),
+      link_examples: [...account.links].slice(0, 3).map((key) => account.linkUrls.get(key) ?? key),
       examples,
       first_seen: times[0] ?? "",
       last_seen: times[times.length - 1] ?? "",

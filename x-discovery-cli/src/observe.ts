@@ -167,7 +167,6 @@ export async function observeOperation(options: {
         if (page) await page.close().catch(() => {});
         page = await context.newPage();
         exchanges = [];
-        pending = [];
         consumed.clear();
         const pageExchanges = exchanges;
         page.on("response", (response) => {
@@ -230,6 +229,9 @@ export async function observeOperation(options: {
     }
     await settle();
     if (page) await page.close().catch(() => {});
+  } catch (error) {
+    persistObservations();
+    throw error;
   } finally {
     await settle().catch(() => {});
     await browser.close();

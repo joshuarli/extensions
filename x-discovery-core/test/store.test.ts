@@ -120,6 +120,24 @@ describe("DiscoveryStore", () => {
     expect(() => store.finishRun(run.runId, "max_pages", "2026-11-25T00:20:00.000Z")).toThrow("expired");
   });
 
+  it("lets profile enrichment write while a home run owns the lease", () => {
+    const account = "1725684628491739136";
+    store.acquireJobLock(account, "collect-run");
+    const profile = newRun(account, "profile", 2);
+    store.beginRun(profile);
+    expect(() => store.commitPage({
+      runId: profile.runId,
+      accountId: account,
+      feed: "profile",
+      page: 1,
+      data: { data: {} },
+      posts: [post("1")],
+      cursor: null,
+      accounting: { total: 1, posts: 1, cursors: 0, nonPost: 0, unavailable: 0, unsupported: 0, postBearingUnsupported: 0, modulePosts: 0 },
+    })).not.toThrow();
+    expect(() => store.finishRun(profile.runId, "budget_reached")).not.toThrow();
+  });
+
   it("keeps a failing response and its reason", () => {
     const run = newRun("1725684628491739136", "home-for-you", 5);
     store.beginRun(run);

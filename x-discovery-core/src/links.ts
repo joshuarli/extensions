@@ -45,7 +45,7 @@ export function extractResourceLinks(post: DiscoveredPost, project: ProjectConfi
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([key, value]) => encodeURIComponent(key) + "=" + encodeURIComponent(value))
       .join("&");
-    const dedupeKey = parsed.origin + parsed.pathname + "?" + query + "#" + parsed.hash;
+    const dedupeKey = parsed.origin + parsed.pathname + "?" + query + (parsed.hash ? "#" + parsed.hash : "");
     if (seen.has(dedupeKey)) continue;
     seen.add(dedupeKey);
     result.push({ url: parsed.toString(), host, dedupe_key: dedupeKey, source_tweet_id: post.tweet_id, association, display_url: display });

@@ -99,7 +99,8 @@ export class DiscoveryStore {
     }
   }
 
-  private assertLease(accountId: string, runId: string, at: Date = new Date()): void {
+  private assertLease(accountId: string, runId: string, feed: Feed, at: Date = new Date()): void {
+    if (feed !== "home-for-you" && feed !== "home-following") return;
     const row = this.db.prepare("SELECT run_id, acquired_at FROM job_locks WHERE account_id = ?").get(accountId) as
       | { run_id: string; acquired_at: string } | undefined;
     if (!row) return;
@@ -174,9 +175,9 @@ export class DiscoveryStore {
   finishRun(runId: string, stopReason: string, at: string = new Date().toISOString()): void {
     this.db.exec("BEGIN IMMEDIATE");
     try {
-      const run = this.db.prepare("SELECT account_id FROM runs WHERE run_id = ?").get(runId) as
-        | { account_id: string } | undefined;
-      if (run) this.assertLease(run["account_id"], runId, new Date(at));
+      const run = this.db.prepare("SELECT account_id, feed FROM runs WHERE run_id = ?").get(runId) as
+        | { account_id: string; feed: Feed } | undefined;
+      if (run) this.assertLease(run["account_id"], runId, run["feed"]);
       this.db.prepare("UPDATE runs SET ended_at = ?, stop_reason = ? WHERE run_id = ?").run(at, stopReason, runId);
       this.db.exec("COMMIT");
     } catch (error) {
@@ -195,7 +196,7 @@ export class DiscoveryStore {
     );
     this.db.exec("BEGIN IMMEDIATE");
     try {
-      this.assertLease(input.accountId, input.runId);
+      this.assertLease(input.accountId, input.runId, input.feed);
       this.db.prepare("INSERT OR REPLACE INTO raw_pages (run_id, page, json) VALUES (?, ?, ?)")
         .run(input.runId, input.page, JSON.stringify(input.data));
       this.db.prepare("INSERT OR REPLACE INTO page_accounting (run_id, page, json) VALUES (?, ?, ?)")
@@ -226,9 +227,9 @@ export class DiscoveryStore {
     const json = JSON.stringify(data);
     this.db.exec("BEGIN IMMEDIATE");
     try {
-      const run = this.db.prepare("SELECT account_id FROM runs WHERE run_id = ?").get(runId) as
-        | { account_id: string } | undefined;
-      if (run) this.assertLease(run["account_id"], runId);
+      const run = this.db.prepare("SELECT account_id, feed FROM runs WHERE run_id = ?").get(runId) as
+        | { account_id: string; feed: Feed } | undefined;
+      if (run) this.assertLease(run["account_id"], runId, run["feed"]);
       this.db.prepare("INSERT OR REPLACE INTO raw_pages (run_id, page, json) VALUES (?, ?, ?)")
         .run(runId, page, json);
       this.db.prepare("INSERT OR REPLACE INTO page_failures (run_id, page, detail, json) VALUES (?, ?, ?, ?)")
