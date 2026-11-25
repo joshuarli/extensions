@@ -48,6 +48,7 @@ export interface RunOptions {
   backend: Backend;
   cdpUrl: string;
   noContext?: boolean;
+  offline?: boolean;
   maxMediaBytes: number;
   signal: AbortSignal;
 }
@@ -208,7 +209,7 @@ async function finishExport(input: FinishExportInput): Promise<RunSummary> {
   if (options.render) {
     status.say("rendering", "Rendering archive.html…");
     try {
-      const rendered = await renderArchive({ folder: outDir });
+      const rendered = await renderArchive({ folder: outDir, noFetch: options.offline === true });
       archiveHtml = rendered.output;
       status.say("rendering", "Rendered archive.html (" + rendered.posts + " posts).");
     } catch (error) {

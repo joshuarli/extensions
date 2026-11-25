@@ -39,7 +39,9 @@ describe("x arguments", () => {
   });
 
   it("selects the action from flags and rejects contradictory ones", () => {
-    expect(parseArgs(["download", "self", "--export-only"])).toMatchObject({ args: { options: { action: "export" } } });
+    expect(parseArgs(["download", "self", "--export-only"])).toMatchObject({ args: { options: { action: "export", offline: true } } });
+    expect(parseArgs(["download", "self", "--offline"])).toMatchObject({ args: { options: { offline: true } } });
+    expect(parseArgs(["download", "self"])).toMatchObject({ args: { options: { offline: false } } });
     expect(parseArgs(["download", "self", "--collect-only"])).toMatchObject({ args: { options: { action: "collect" } } });
     expect(() => parseArgs(["download", "self", "--export-only", "--collect-only"])).toThrow("mutually exclusive");
   });

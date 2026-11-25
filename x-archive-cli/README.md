@@ -22,6 +22,7 @@ pnpm x download self inve1ns         # self and profiles in one run
 pnpm x lists                         # save your following and followers lists
 pnpm x download self --export-only   # re-export from saved data, no re-collection
 pnpm x download self --no-render     # skip archive.html
+pnpm x download self --offline       # render from saved files only
 pnpm x download self --collect-only  # collect only
 pnpm x download cleanjpg --max-media-size=0   # no media size limit
 pnpm x download token___garden --out=/path   # downloads root (default ~/.local/share/x/downloads)
@@ -51,7 +52,8 @@ of the whole archive (lazy-loaded media, inline lightbox; the page carries
 one small inline script and makes no external requests). The page references
 `media/` relatively, so the
 folder must travel intact (a 13 GB inlined file helps nobody); open
-`archive.html` to browse the archive.
+`archive.html` to browse the archive. `--export-only` and `--offline` never fetch
+profile assets: they use cached files in `media/` or neutral placeholders.
 
 `collection: complete` in `debug.json` means X's timeline was fully
 scanned. X rate-limits large timelines aggressively; if a run stops

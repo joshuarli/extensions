@@ -14,6 +14,7 @@ Usage:
   x download self <handle>        Combine self and profiles in one run
   x download self --export-only   Re-export from saved data (no re-collection)
   x download self --no-render     Skip archive.html rendering
+  x download self --offline       Render without fetching profile assets
   x download <handle> --out DIR   Use DIR as the downloads root instead of the default
 
 Multiple targets are processed serially in the order given. A failure stops the
@@ -30,6 +31,7 @@ Options:
                   export to DIR/bookmarks-<date> and DIR/likes-<date>;
                   a profile exports to DIR/<handle> and is updated in place
   --no-render     skip rendering archive.html
+  --offline       render from saved files only; --export-only is always offline
   --max-media-size SIZE
                   largest media file to save (default 16MB; 0 disables the limit).
                   SIZE is bytes or a B/K/M/G suffix, e.g. 16MB or 500KB.
@@ -81,6 +83,7 @@ export interface ParsedArgs {
     outRoot: string;
     render: boolean;
     noContext: boolean;
+    offline: boolean;
     maxMediaBytes: number;
     backend: string | undefined;
     session: string | undefined;
@@ -108,7 +111,7 @@ export function parseMaxMediaSize(value: string): number {
 
 const schema: ArgSchema = {
   values: ["out", "backend", "session", "cdp-url", "max-media-size"],
-  flags: ["export-only", "collect-only", "no-render", "no-context"],
+  flags: ["export-only", "collect-only", "no-render", "no-context", "offline"],
   maxPositionals: Number.POSITIVE_INFINITY,
 };
 
@@ -129,6 +132,7 @@ export function parseArgs(argv: readonly string[]): Command {
         outRoot: parsed.values.get("out") ?? downloadsRoot(),
         render: false,
         noContext: false,
+        offline: false,
         maxMediaBytes: DEFAULT_MAX_MEDIA_BYTES,
         backend: parsed.values.get("backend"),
         session: parsed.values.get("session"),
@@ -152,6 +156,7 @@ export function parseArgs(argv: readonly string[]): Command {
       outRoot: parsed.values.get("out") ?? downloadsRoot(),
       render: !parsed.flags.has("no-render"),
       noContext: parsed.flags.has("no-context"),
+      offline: action === "export" || parsed.flags.has("offline"),
       maxMediaBytes: parsed.values.has("max-media-size")
         ? parseMaxMediaSize(parsed.values.get("max-media-size")!)
         : DEFAULT_MAX_MEDIA_BYTES,

@@ -39,15 +39,6 @@ Next: 45
 - **Effort:** M
 - **Design:** docs/rfc/EXT-26-discovery-ledger-privacy.md
 
-### EXT-17 · P2 · Make --export-only offline and reproducible
-
-- **Area:** X archive · HTML export
-- **Where:** x-archive-core/src/render.ts:285-342; x-archive-cli/src/run.ts:211, args.ts:32
-- **Problem:** Rendering fetches the profile photo and scrapes the banner from live x.com at export time and no CLI flag disables it, because renderArchive's noFetch option is never wired, so re-exporting saved data makes network calls and is not byte-reproducible.
-- **Recommendation:** Capture profile image and banner into media/ during collection, record them in the JSON, render only from local files, and add an offline guard that fails instead of fetching.
-- **Fix with:** isolate-effects
-- **Effort:** M
-
 ### EXT-20 · P2 · Add an end-to-end export contract test
 
 - **Area:** X archive · tests

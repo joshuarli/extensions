@@ -73,6 +73,7 @@ export async function main(argv: readonly string[]): Promise<number> {
       outRoot: options.outRoot,
       render: options.render,
       noContext: options.noContext,
+      offline: options.offline,
       maxMediaBytes: options.maxMediaBytes,
       backend: resolved.backend,
       cdpUrl: resolved.cdpUrl,
