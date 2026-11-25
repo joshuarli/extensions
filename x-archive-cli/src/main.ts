@@ -16,7 +16,7 @@ export async function main(argv: readonly string[]): Promise<number> {
   const interrupt = createInterruptController(
     "Stopping after the current page. Saved data is kept; re-running resumes. Ctrl-C again to force exit.",
   );
-  const finish = (): number => interrupt.stopped() ? dieBySignal(interrupt) : 0;
+  const finish = (): number | Promise<never> => interrupt.stopped() ? dieBySignal(interrupt) : 0;
   let command: ReturnType<typeof parseArgs>;
   try {
     command = parseArgs(argv);
@@ -56,7 +56,7 @@ export async function main(argv: readonly string[]): Promise<number> {
     } catch (error) {
       if (interrupt.stopped()) {
         process.stderr.write("Interrupted. Saved lists are kept; re-running resumes.\n");
-        return 130;
+        return dieBySignal(interrupt);
       }
       process.stderr.write("x lists failed: " + (error instanceof Error ? error.message : String(error)) + "\n");
       return 1;

@@ -4,7 +4,7 @@ import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { Schema } from "effect";
 import type { PageCommit } from "./collector.ts";
-import type { Feed, FeedObservation, ObservationRun } from "./observation.ts";
+import { FeedSchema, type Feed, type FeedObservation, type ObservationRun } from "./observation.ts";
 import { DiscoveredPostSchema, type DiscoveredPost } from "./post.ts";
 
 const LEASE_MS = 10 * 60 * 1000;
@@ -107,11 +107,19 @@ export class DiscoveryStore {
   }
 
   beginRun(run: ObservationRun): void {
-    this.db.prepare(
-      "INSERT INTO runs (run_id, account_id, feed, started_at, ended_at, stop_reason, budget_pages)"
-      + " VALUES (?, ?, ?, ?, ?, ?, ?)",
-    ).run(run.runId, run.accountId, run.feed, run.startedAt, run.endedAt, run.stopReason, run.budgetPages);
-    this.db.prepare("INSERT OR IGNORE INTO checkpoints (run_id, cursor) VALUES (?, NULL)").run(run.runId);
+    Schema.decodeUnknownSync(FeedSchema)(run.feed);
+    this.db.exec("BEGIN");
+    try {
+      this.db.prepare(
+        "INSERT INTO runs (run_id, account_id, feed, started_at, ended_at, stop_reason, budget_pages)"
+        + " VALUES (?, ?, ?, ?, ?, ?, ?)",
+      ).run(run.runId, run.accountId, run.feed, run.startedAt, run.endedAt, run.stopReason, run.budgetPages);
+      this.db.prepare("INSERT OR IGNORE INTO checkpoints (run_id, cursor) VALUES (?, NULL)").run(run.runId);
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
   }
 
   finishRun(runId: string, stopReason: string, at: string = new Date().toISOString()): void {
@@ -154,10 +162,18 @@ export class DiscoveryStore {
   }
 
   saveFailure(runId: string, page: number, data: unknown, detail: string): void {
-    this.db.prepare("INSERT OR REPLACE INTO raw_pages (run_id, page, json) VALUES (?, ?, ?)")
-      .run(runId, page, JSON.stringify(data));
-    this.db.prepare("INSERT OR REPLACE INTO page_failures (run_id, page, detail, json) VALUES (?, ?, ?, ?)")
-      .run(runId, page, detail, JSON.stringify(data));
+    const json = JSON.stringify(data);
+    this.db.exec("BEGIN");
+    try {
+      this.db.prepare("INSERT OR REPLACE INTO raw_pages (run_id, page, json) VALUES (?, ?, ?)")
+        .run(runId, page, json);
+      this.db.prepare("INSERT OR REPLACE INTO page_failures (run_id, page, detail, json) VALUES (?, ?, ?, ?)")
+        .run(runId, page, detail, json);
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
   }
 
   failures(runId: string): Array<{ page: number; detail: string }> {
@@ -210,7 +226,7 @@ export class DiscoveryStore {
     return (rows as Array<Record<string, unknown>>).map((row) => ({
       runId: String(row["run_id"]),
       accountId: String(row["account_id"]),
-      feed: String(row["feed"]) as Feed,
+      feed: Schema.decodeUnknownSync(FeedSchema)(row["feed"]),
       startedAt: String(row["started_at"]),
       endedAt: row["ended_at"] === null || row["ended_at"] === undefined ? null : String(row["ended_at"]),
       stopReason: row["stop_reason"] === null || row["stop_reason"] === undefined ? null : String(row["stop_reason"]),

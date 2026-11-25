@@ -72,7 +72,7 @@ async function ownScreenName(cdpUrl: string, userId: string, signal: AbortSignal
         if (signal.aborted) throw new Error("Interrupted while resolving your X handle.");
         const match = /^https:\/\/x\.com\/([A-Za-z0-9_]+)\/?$/u.exec(page.url());
         if (match?.[1]) return match[1];
-        await new Promise((resolvePromise) => setTimeout(resolvePromise, 500));
+        await delay(500, signal);
       }
       throw new Error("Could not resolve your X handle from https://x.com/i/user/" + userId
         + ". Open your profile in Helium once, then retry.");

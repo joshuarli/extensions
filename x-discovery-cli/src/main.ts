@@ -24,7 +24,7 @@ export async function main(argv: readonly string[]): Promise<number> {
     const { args } = command;
     const project = loadProject(args.project);
     const status = (message: string): void => { process.stderr.write(message + "\n"); };
-    const finish = (): number => interrupt.stopped() ? dieBySignal(interrupt) : 0;
+    const finish = (): number | Promise<never> => interrupt.stopped() ? dieBySignal(interrupt) : 0;
     if (command.kind === "collect") {
       const summary = await collectFeed({
         outDir: args.outDir,
@@ -46,22 +46,22 @@ export async function main(argv: readonly string[]): Promise<number> {
       process.stdout.write("posts=" + summary.posts + " topics=" + summary.topics
         + " links=" + summary.links + " accounts=" + summary.accounts
         + " cached=" + summary.cached + (summary.linkChecks === null ? "" : " linkChecks=" + summary.linkChecks) + "\n");
-      return 0;
+      return finish();
     }
     if (command.kind === "report") {
       process.stdout.write(buildReport(args.outDir));
-      return 0;
+      return finish();
     }
     if (command.kind === "track") {
       const result = trackFinds({ outDir: args.outDir, project, ledgerPath: args.ledger });
       process.stdout.write("added=" + result.added + " duplicates=" + result.duplicates
         + " accounts=" + result.accounts.length + "\n");
-      return 0;
+      return finish();
     }
     if (command.kind === "bootstrap") {
       const candidates = bootstrapCandidates(args.outDir);
       process.stdout.write("candidates=" + candidates.length + " " + args.outDir + "/candidates.json\n");
-      return 0;
+      return finish();
     }
     if (command.kind === "follow") {
       const result = await followHandles({

@@ -3,6 +3,7 @@ import { Schema } from "effect";
 import { join } from "node:path";
 import { writeJsonFile } from "../../x-archive-cli/src/state.ts";
 import { deriveRecipe, type Observation } from "../../x-client-core/src/recipe.ts";
+import { delay } from "../../x-archive-core/src/collector.ts";
 
 interface ObservationPage {
   url: string;
@@ -104,14 +105,14 @@ export async function observeOperation(options: {
         });
         await page.goto(url, { waitUntil: "domcontentloaded", timeout: 20_000 }).catch(() => {});
         if (spec.scroll) {
-          await new Promise((resolve) => setTimeout(resolve, 3000));
+          await delay(3000, options.signal);
           await page.mouse.wheel(0, 6000);
-          await new Promise((resolve) => setTimeout(resolve, 2500));
+          await delay(2500, options.signal);
         }
         const deadline = Date.now() + 15_000;
         while (!captured && Date.now() < deadline) {
           if (options.signal.aborted) throw new Error("Interrupted while observing " + options.operation + ".");
-          await new Promise((resolve) => setTimeout(resolve, 500));
+          await delay(500, options.signal);
         }
         if (captured) observations.push(captured);
         else options.onStatus?.("No " + options.operation + " request on observation " + (index + 1) + ".");

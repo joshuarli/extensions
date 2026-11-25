@@ -13,7 +13,7 @@ import {
   type ProfileTarget,
 } from "../../x-archive-core/src/capture.ts";
 import { Schema } from "effect";
-import type { ArchiveDeps } from "../../x-archive-core/src/collector.ts";
+import { delay, type ArchiveDeps } from "../../x-archive-core/src/collector.ts";
 import { HELIUM_BACKEND, type Backend } from "./backend.ts";
 import { ensureSuiteExtensionOnBrowser, suiteWorker } from "./extension.ts";
 import { credentialsCachePath, readJsonFile, writeJsonFile, stateDir } from "./state.ts";
@@ -107,7 +107,7 @@ export async function captureOperationsFromBrowser(
         const deadline = Date.now() + 20_000;
         while (!credentials.queryIds[operation] && Date.now() < deadline) {
           if (signal.aborted) throw new Error("Interrupted while capturing X credentials.");
-          await new Promise((resolvePromise) => setTimeout(resolvePromise, 500));
+          await delay(500, signal);
         }
       } finally {
         await page.close().catch(() => {});
@@ -226,7 +226,7 @@ export async function readCapturedCredentials(
               credentials = credentials ? mergeCredentials(credentials, latest) : latest;
               if (hasRequiredCaptures(credentials, required)) break;
             }
-            await new Promise((resolvePromise) => setTimeout(resolvePromise, 500));
+            await delay(500, capture.signal ?? new AbortController().signal);
           }
         } finally {
           await page.close().catch(() => {});

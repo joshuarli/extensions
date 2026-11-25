@@ -153,12 +153,11 @@ export function installInterrupt(message: string, onInterrupt?: () => void): voi
   });
 }
 
-export function dieBySignal(interrupt: InterruptController): never {
+export function dieBySignal(interrupt: InterruptController): Promise<never> {
   interrupt.close();
   process.removeAllListeners("SIGINT");
   process.kill(process.pid, "SIGINT");
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1000);
-  return process.exit(130);
+  return new Promise<never>(() => {});
 }
 
 export interface InterruptController {

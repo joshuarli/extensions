@@ -107,7 +107,7 @@ export async function collectFeed(options: DiscoverOptions): Promise<CollectSumm
       const posts = result.posts;
       report("Committed " + posts + " observed posts in " + result.pages + " pages.", options.onStatus);
     } finally {
-      store.finishRun(runId, stopReason);
+      store.finishRun(runId, options.signal.aborted ? "stopped" : stopReason);
       store.releaseJobLock(client.accountId, runId);
     }
     const all = store.allPosts();

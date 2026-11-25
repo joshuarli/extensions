@@ -5,7 +5,7 @@ import { cookieSession, readBrowserSession } from "../../lib/x-session.ts";
 import { resolveBackend } from "../../x-archive-cli/src/backend.ts";
 import { readCapturedCredentials, type RequiredCaptures } from "../../x-archive-cli/src/deps.ts";
 import { credentialsCachePath, readJsonFile, writeJsonFile } from "../../x-archive-cli/src/state.ts";
-import { requestWithRetry } from "../../x-archive-core/src/collector.ts";
+import { delay, requestWithRetry } from "../../x-archive-core/src/collector.ts";
 import {
   CredentialsSchema,
   captureRequest,
@@ -95,7 +95,7 @@ async function captureHomeTab(
       const deadline = Date.now() + 20_000;
       while (!captured.queryIds[operation] && Date.now() < deadline) {
         if (signal.aborted) throw new Error("Interrupted while capturing " + operation + ".");
-        await new Promise((resolve) => setTimeout(resolve, 500));
+        await delay(500, signal);
       }
     } finally {
       await page.close().catch(() => {});
