@@ -1,6 +1,7 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { makeTempDir } from "../../lib/test/tmp.ts";
 import type { XClient } from "../../x-client-core/src/client.ts";
 import { followingFromMutation } from "../../x-client-core/src/follow.ts";
 import { appendFinds, loadProject, readLedger, type FindRecord } from "../../x-discovery-core/src/index.ts";
@@ -40,7 +41,7 @@ function client(following: boolean | undefined): XClient {
 }
 
 beforeEach(() => {
-  directory = mkdtempSync(join(process.cwd(), ".work/tmp", "x-discovery-follow-"));
+  directory = makeTempDir("x-discovery-follow-");
   ledgerPath = join(directory, "finds.jsonl");
   appendFinds(ledgerPath, [record]);
 });

@@ -1,6 +1,7 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { makeTempDir } from "../../lib/test/tmp.ts";
 import { appendFinds, markFollowed, readLedger, type FindRecord } from "../src/ledger.ts";
 
 let directory: string;
@@ -21,7 +22,7 @@ function record(id: string): FindRecord {
 }
 
 beforeEach(() => {
-  directory = mkdtempSync(join(process.cwd(), ".work/tmp", "x-discovery-ledger-"));
+  directory = makeTempDir("x-discovery-ledger-");
   path = join(directory, "finds.jsonl");
 });
 

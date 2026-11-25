@@ -1,6 +1,7 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { makeTempDir } from "../../lib/test/tmp.ts";
 import {
   DiscoveryStore,
   loadProject,
@@ -31,7 +32,7 @@ function post(id: string, text: string, handle: string, authorId: string): Disco
 }
 
 beforeEach(() => {
-  directory = mkdtempSync(join(process.cwd(), ".work/tmp", "x-discovery-cli-"));
+  directory = makeTempDir("x-discovery-cli-");
   store = new DiscoveryStore(join(directory, "discovery.db"));
   const run = newRun("1725684628491739136", "home-for-you", 5);
   store.beginRun(run);

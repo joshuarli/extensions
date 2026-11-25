@@ -79,9 +79,10 @@ export function deriveRecipe(
   return {
     operation,
     semantic_name: semanticName,
-    description: "Request recipe derived from " + observations.length + " browser observations. "
-      + "Caller inputs are explicit; continuation values come from the previous response; "
-      + "captured configuration is refreshed by observing the page; session material comes from the live browser.",
+    description: "Descriptive request recipe derived from " + observations.length + " browser observations. "
+      + "Caller inputs are explicit; continuation values must come from the previous response; "
+      + "session material comes from the live browser. This JSON is documentation and a fixture, "
+      + "not an executable client; the handwritten client refreshes captured home operations when X rejects them.",
     method: first.method.toUpperCase() === "POST" ? "POST" : "GET",
     path: first.path,
     ...kinds,

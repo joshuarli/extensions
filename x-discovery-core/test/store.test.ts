@@ -1,6 +1,7 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { makeTempDir } from "../../lib/test/tmp.ts";
 import { newRun } from "../src/observation.ts";
 import type { DiscoveredPost } from "../src/post.ts";
 import { contentHash, DiscoveryStore } from "../src/store.ts";
@@ -9,7 +10,7 @@ let directory: string;
 let store: DiscoveryStore;
 
 beforeEach(() => {
-  directory = mkdtempSync(join(process.cwd(), ".work/tmp", "x-discovery-store-"));
+  directory = makeTempDir("x-discovery-store-");
   store = new DiscoveryStore(join(directory, "discovery.db"));
 });
 
