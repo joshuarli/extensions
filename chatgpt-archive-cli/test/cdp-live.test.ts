@@ -6,7 +6,7 @@ import { chromium, type Browser, type BrowserContext } from "playwright";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createChatgptArchive } from "../../chatgpt-archive-core/src/index.ts";
 import type { DownloadOptions } from "../src/args.ts";
-import { connectChatgpt, createPageTransport, type ChatgptConnection } from "../src/browser.ts";
+import { connectChatgpt, type ChatgptClient } from "../../chatgpt-client-core/src/index.ts";
 import { runDownload } from "../src/download.ts";
 import { sha256Hex, splitLines } from "../src/storage.ts";
 import { createMemoryFs, createReporter } from "./fakes.ts";
@@ -100,7 +100,7 @@ async function discoverPort(profileDir: string, process: ChildProcess): Promise<
 let profileDir: string | undefined;
 let chromiumProcess: ChildProcess | undefined;
 let setupConnection: Browser | undefined;
-let connection: ChatgptConnection | undefined;
+let client: ChatgptClient | undefined;
 let cdpUrl: string | undefined;
 let fixtureState: FixtureState | undefined;
 let skipReason: string | undefined;
@@ -144,9 +144,9 @@ beforeAll(async () => {
 }, 15_000);
 
 afterEach(async () => {
-  await connection?.close().catch(() => {});
+  await client?.close().catch(() => {});
   await setupConnection?.close().catch(() => {});
-  connection = undefined;
+  client = undefined;
   setupConnection = undefined;
 
   const process = chromiumProcess;
@@ -209,8 +209,8 @@ describe("live CDP archive", () => {
       return;
     }
 
-    connection = await connectChatgpt(cdpUrl);
-    const transport = createPageTransport(connection);
+    client = await connectChatgpt({ cdpUrl });
+    const transport = client.transport;
     const archive = createChatgptArchive({
       transport,
       sleep: async () => {},

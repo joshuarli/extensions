@@ -1,24 +1,28 @@
 import { createInterruptController, UsageError } from "../../lib/cli.ts";
 import { createProgressReporter } from "../../lib/progress.ts";
+import { connectChatgpt } from "../../chatgpt-client-core/src/index.ts";
 import { parseArgs, USAGE, type DownloadOptions } from "./args.ts";
-import { resolveBackend } from "./backend.ts";
 import { formatSummary, runDownload } from "./download.ts";
 import { createNodeArchiveFs } from "./storage.ts";
+import { knownAccountIds } from "./state.ts";
 
 const INTERRUPT_MESSAGE = "Stopping after the current record or media file. Saved data is kept; re-running resumes. Ctrl-C again to force exit.";
 
 async function download(options: DownloadOptions, signal: AbortSignal): Promise<number> {
-  const resolved = resolveBackend({
+  const fs = createNodeArchiveFs();
+  const known = knownAccountIds(fs, options.outRoot);
+  const client = await connectChatgpt({
     backend: options.backend,
     session: options.session,
     cdpUrl: options.cdpUrl,
+    ...(known.length === 1 ? { expectedAccountId: known[0] } : {}),
+    signal,
+    onStatus: (message) => process.stderr.write(message + "\n"),
   });
-  const { connectChatgpt, createPageTransport } = await import("./browser.ts");
-  const { createChatgptArchive } = await import("../../chatgpt-archive-core/src/index.ts");
-  const connection = await connectChatgpt(resolved.cdpUrl);
   try {
+    const { createChatgptArchive } = await import("../../chatgpt-archive-core/src/index.ts");
     const archive = createChatgptArchive({
-      transport: createPageTransport(connection, signal),
+      transport: client.transport,
       sleep: (ms) => new Promise<void>((resolve) => { setTimeout(resolve, ms); }),
       now: () => Date.now(),
       signal,
@@ -27,7 +31,7 @@ async function download(options: DownloadOptions, signal: AbortSignal): Promise<
       { options },
       {
         archive,
-        fs: createNodeArchiveFs(),
+        fs,
         reporter: createProgressReporter(),
         now: () => Date.now(),
         signal,
@@ -36,7 +40,9 @@ async function download(options: DownloadOptions, signal: AbortSignal): Promise<
     process.stdout.write(formatSummary(summary) + "\n");
     return summary.stopped ? 130 : 0;
   } finally {
-    await connection.close();
+    await client.close().catch((error: unknown) => {
+      process.stderr.write("Could not close the ChatGPT browser connection: " + String(error) + "\n");
+    });
   }
 }
 

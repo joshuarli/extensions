@@ -41,8 +41,12 @@ signed in, the run fails with a clear message. Use `--cdp-url` to attach to a
 different endpoint, or `--backend bctl` for a dedicated session.
 
 ChatGPT traffic goes through the browser page (`fetch` with
-`credentials: "include"`). No cookies or access tokens are written to disk,
-and the manifest records only the account id.
+`credentials: "include"`). `chatgpt-client-core` owns that connection and the
+request policy: it checks the signed-in account against the existing archive
+when exactly one account is saved, re-reads the session once on a 401 or 403,
+and backs off on 429 or 5xx responses. A changed session shape or account stops
+the run before any conversation is fetched. No cookies or access tokens are
+written to disk, and the manifest records only the account id.
 
 ### Timeframe semantics
 

@@ -1,0 +1,24 @@
+{
+  "operation": "session",
+  "semantic_name": "session.read",
+  "description": "Reads the signed-in account id and access token from chatgpt.com. The response shape is validated before any archive request runs; a changed shape fails the run.",
+  "method": "GET",
+  "path": "/api/auth/session",
+  "caller_inputs": [],
+  "response_dependencies": ["user.id", "accessToken"],
+  "captured_config": [],
+  "session_material": ["cookie"],
+  "app_generated": ["accessToken"],
+  "observation_recipe": [
+    "open https://chatgpt.com/ while signed in and record GET /api/auth/session",
+    "sign out and confirm the same request no longer returns an account id and access token"
+  ],
+  "verification_cases": [
+    "identity: account id matches the browser session",
+    "signed out: a missing user or token stops the run with a sign-in message",
+    "shape drift: a changed response fails before any conversation is fetched",
+    "account change: a different account id stops the run when expectedAccountId is set",
+    "expired token: a 401 retries once with a freshly read session"
+  ],
+  "fixtures": []
+}

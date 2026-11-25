@@ -1,0 +1,24 @@
+{
+  "operation": "conversation.get",
+  "semantic_name": "conversation.record",
+  "description": "Fetch one full conversation record, including all branches and metadata. The raw object is returned unchanged and hashed canonically before it is saved.",
+  "method": "GET",
+  "path": "/backend-api/conversation/{id}",
+  "caller_inputs": ["id"],
+  "response_dependencies": [],
+  "captured_config": [],
+  "session_material": ["authorization", "cookie"],
+  "app_generated": [],
+  "observation_recipe": [
+    "open a conversation at https://chatgpt.com/c/{id} and record the conversation request",
+    "open a second conversation and confirm only the id in the path changes"
+  ],
+  "verification_cases": [
+    "identity: the requested id is the id in the path",
+    "payload: the raw object is preserved without field filtering",
+    "missing id: an empty id is rejected before a request is sent",
+    "auth failure: a 401 refreshes the session once, then stops the run",
+    "rate limit: a 429 retries with backoff and stops after the retry budget"
+  ],
+  "fixtures": []
+}

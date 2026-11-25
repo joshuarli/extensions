@@ -1,0 +1,24 @@
+{
+  "operation": "files.download",
+  "semantic_name": "media.bytes",
+  "description": "Download media referenced by a conversation record. Byte streams are written through a temporary file and never interpreted; failures are reported per file and do not fail the archive.",
+  "method": "GET",
+  "path": "/backend-api/files/{id}/download",
+  "caller_inputs": ["id"],
+  "response_dependencies": [],
+  "captured_config": [],
+  "session_material": ["authorization", "cookie"],
+  "app_generated": [],
+  "observation_recipe": [
+    "open a conversation with an uploaded image and record the files download request",
+    "open a second conversation with a different attachment and confirm only the id changes"
+  ],
+  "verification_cases": [
+    "identity: bytes are written to the media path derived from the file id",
+    "error body: a JSON error response is treated as a failure, not as media",
+    "oversized: a file above the size cap is skipped and recorded in the manifest",
+    "auth failure: a 401 refreshes the session once, then reports the file as failed",
+    "existing file: a complete media file is skipped without being overwritten"
+  ],
+  "fixtures": []
+}

@@ -1,0 +1,27 @@
+{
+  "operation": "conversations.list",
+  "semantic_name": "conversations.page",
+  "description": "One page of conversation metadata for the active or archived scope. Rows are normalized to ChatRef; a malformed row fails the page instead of being dropped.",
+  "method": "GET",
+  "path": "/backend-api/conversations?offset={offset}&limit={limit}&order=updated",
+  "caller_inputs": ["scope", "offset", "limit"],
+  "response_dependencies": ["total", "items[].id", "items[].create_time", "items[].update_time"],
+  "captured_config": [],
+  "session_material": ["authorization", "cookie"],
+  "app_generated": [],
+  "observation_recipe": [
+    "open https://chatgpt.com/ and record the conversations request for the active scope",
+    "open the Archived section and record the request with is_archived=true",
+    "scroll to record a second page with a larger offset"
+  ],
+  "verification_cases": [
+    "identity: conversation ids come from the response items",
+    "paging: offset advances by the number of rows actually returned",
+    "archived scope: is_archived=true is sent only for the archived scope",
+    "timestamps: epoch seconds and ISO-8601 values normalize to epoch milliseconds",
+    "shape drift: a malformed row fails the run instead of dropping the chat",
+    "auth failure: a 401 refreshes the session once, then stops the run",
+    "rate limit: a 429 retries with backoff and stops after the retry budget"
+  ],
+  "fixtures": []
+}

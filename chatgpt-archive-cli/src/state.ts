@@ -23,6 +23,28 @@ export function archiveDir(outRoot: string, accountId: string): string {
   return join(outRoot, "chatgpt-" + safeId);
 }
 
+export function knownAccountIds(fs: ArchiveFs, outRoot: string): string[] {
+  const ids = new Set<string>();
+  for (const name of fs.listDirs(outRoot)) {
+    if (LEGACY_FOLDER.test(name) || !name.startsWith("chatgpt-")) continue;
+    const path = join(outRoot, name, "manifest.json");
+    const raw = fs.readText(path);
+    if (raw === null) continue;
+    let value: unknown;
+    try {
+      value = JSON.parse(raw);
+    } catch {
+      throw new Error("The archive manifest at " + path + " is unreadable.");
+    }
+    if (value === null || typeof value !== "object") {
+      throw new Error("The archive manifest at " + path + " is unreadable.");
+    }
+    const accountId = (value as Record<string, unknown>)["accountId"];
+    if (typeof accountId === "string" && accountId !== "") ids.add(accountId);
+  }
+  return [...ids];
+}
+
 export function readRecordLines(
   fs: ArchiveFs,
   path: string,

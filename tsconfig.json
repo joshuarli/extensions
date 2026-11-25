@@ -31,6 +31,8 @@
     "chatgpt-archive-core/test/**/*.ts",
     "chatgpt-archive-cli/src/**/*.ts",
     "chatgpt-archive-cli/test/**/*.ts",
+    "chatgpt-client-core/src/**/*.ts",
+    "chatgpt-client-core/test/**/*.ts",
     "x-archive-core/src/**/*.ts",
     "x-archive-core/test/**/*.ts",
     "x-archive-cli/src/**/*.ts",
