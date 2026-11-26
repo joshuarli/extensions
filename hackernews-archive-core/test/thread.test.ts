@@ -108,3 +108,15 @@ test("handles untyped dead comment tombstones without accepting unrelated edges"
   await assert.rejects(collectThread(1, loader([{ id: 1, type: "poll", parts: [2] }, { id: 2, dead: true, kids: [3] }])), /Unexpected replies/u);
   await assert.rejects(collectThread(1, loader([{ id: 1, type: "story", kids: [2] }, { id: 2, dead: true, parent: 9 }])), /does not belong/u);
 });
+
+test("walks and renders a deeply nested thread up to the item limit without recursion", async () => {
+  const count = 10_000;
+  const archive = await collectThread(count, async (id) => id === 1
+    ? { id, type: "story", kids: [2] }
+    : { id, type: "comment", parent: id - 1, ...(id < count ? { kids: [id + 1] } : {}) });
+  assert.equal(archive.items.length, count);
+  assert.equal((renderThread(archive).match(/<article id=/gu) ?? []).length, count - 1);
+  await assert.rejects(collectThread(1, async (id) => id === 1
+    ? { id, type: "story", kids: Array.from({ length: count }, (_, i) => i + 2) }
+    : { id, type: "comment", parent: 1 }), /exceeds 10000 items/u);
+});

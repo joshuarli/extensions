@@ -1,6 +1,6 @@
 import { test, expect, chromium, type BrowserContext } from "playwright/test";
 import { createServer } from "node:http";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { extractStoredEntry, readStoredArchive } from "../../../onefile-core/src/zip.ts";
 
@@ -120,6 +120,13 @@ test("installed suite archives an HN comment permalink through the real worker a
     downloads = await mkdtemp(resolve(".work/tmp/mv3-hn-downloads-"));
   let context: BrowserContext | undefined;
   try {
+    // Use Chrome's normal download target determiner. CDP's "allow" mode
+    // bypasses the extension-suggested filename and derives it from the blob URL.
+    const defaults = resolve(profile, "Default");
+    await mkdir(defaults, { recursive: true });
+    await writeFile(resolve(defaults, "Preferences"), JSON.stringify({
+      download: { default_directory: downloads, prompt_for_download: false, directory_upgrade: true },
+    }));
     context = await chromium.launchPersistentContext(profile, {
       channel: "chromium", headless: true, acceptDownloads: true,
       args: [`--disable-extensions-except=${extensionPath}`, `--load-extension=${extensionPath}`],
@@ -128,7 +135,7 @@ test("installed suite archives an HN comment permalink through the real worker a
     if (!browser) throw new Error("Persistent context has no browser");
     const session = await browser.newBrowserCDPSession();
     await session.send("Browser.setDownloadBehavior", {
-      behavior: "allow", downloadPath: downloads, eventsEnabled: true,
+      behavior: "default", eventsEnabled: true,
     });
     const worker = context.serviceWorkers()[0] ?? await context.waitForEvent("serviceworker");
     const extensionId = new URL(worker.url()).host;
