@@ -74,3 +74,15 @@ test("clearing a tab resets its action state without touching another tab", () =
   status.forgetTab(1);
   expect(calls).toEqual([]);
 });
+
+test("keeps HN archive feedback independent of other features", () => {
+  const { calls, status } = harness();
+  status.set("allow-right-click", 1, { badge: "ON" });
+  status.set("hackernews-archive", 1, { title: "Archiving", badge: "HN" });
+  expect(calls).toContain("title:1:Archiving");
+  expect(calls).toContain("badge:1:HN");
+  calls.length = 0;
+  status.clear("hackernews-archive", 1);
+  expect(calls).toContain("badge:1:ON");
+  expect(calls).toContain("title:1:Browser Extensions");
+});

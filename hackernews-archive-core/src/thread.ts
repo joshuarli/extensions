@@ -27,6 +27,10 @@ export interface ThreadArchive {
 
 export class HnArchiveError extends Error {}
 
+export function isTombstone(item: HnItem): boolean {
+  return item.deleted === true || item.dead === true;
+}
+
 export function validId(id: number): boolean {
   return Number.isSafeInteger(id) && id > 0;
 }
@@ -70,8 +74,10 @@ export async function collectThread(
 
   let root = await get(requestedId);
   const ancestors = new Set<number>([root.id]);
-  while (root.type === "comment" || root.type === "pollopt") {
-    const parent = root.type === "comment" ? root.parent : root.poll;
+  while (root.type === "comment" || root.type === "pollopt" ||
+      (root.type === undefined && isTombstone(root) && (root.parent !== undefined || root.poll !== undefined))) {
+    const parent = root.type === "comment" ? root.parent : root.type === "pollopt" ? root.poll
+      : root.parent === undefined ? root.poll : root.poll === undefined ? root.parent : undefined;
     if (parent === undefined || ancestors.has(parent) || ancestors.size >= limit) {
       throw new HnArchiveError(`Cannot resolve the thread containing ${requestedId}.`);
     }
@@ -83,7 +89,7 @@ export async function collectThread(
   }
 
   const items = [root], seen = new Set<number>([root.id]), queue: Edge[] = [];
-  function enqueue(item: HnItem): void {
+  function enqueue(item: HnItem, kind = item.type): void {
     function add(ids: readonly number[], kind: Edge["kind"]): void {
       for (const id of ids) {
         if (!validId(id) || seen.has(id)) throw new HnArchiveError(`Invalid or repeated HN child ${id}.`);
@@ -92,8 +98,8 @@ export async function collectThread(
         queue.push({ id, parent: item.id, kind });
       }
     }
-    if (item.parts?.length && item.type !== "poll") throw new HnArchiveError(`Unexpected poll options on ${item.id}.`);
-    if (item.type === "pollopt" && item.kids?.length) throw new HnArchiveError(`Unexpected replies on poll option ${item.id}.`);
+    if (item.parts?.length && kind !== "poll") throw new HnArchiveError(`Unexpected poll options on ${item.id}.`);
+    if (kind === "pollopt" && item.kids?.length) throw new HnArchiveError(`Unexpected replies on poll option ${item.id}.`);
     add(item.parts ?? [], "pollopt");
     add(item.kids ?? [], "comment");
   }
@@ -103,15 +109,15 @@ export async function collectThread(
     const loaded = await Promise.all(batch.map(async (edge) => {
       const item = await get(edge.id);
       const parent = edge.kind === "comment" ? item.parent : item.poll;
-      if ((item.type !== edge.kind && !(item.deleted && item.type === undefined)) ||
-          (parent !== edge.parent && !(item.deleted && parent === undefined))) {
+      if ((item.type !== edge.kind && !(isTombstone(item) && item.type === undefined)) ||
+          (parent !== edge.parent && !(isTombstone(item) && parent === undefined))) {
         throw new HnArchiveError(`HN item ${item.id} does not belong to ${edge.parent}.`);
       }
-      return item;
+      return { item, kind: edge.kind };
     }));
-    for (const item of loaded) {
+    for (const { item, kind } of loaded) {
       items.push(item);
-      enqueue(item);
+      enqueue(item, kind);
     }
     offset += batch.length;
   }

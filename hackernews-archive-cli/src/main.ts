@@ -1,4 +1,5 @@
-import { writeFile } from "node:fs/promises";
+import { link, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { Effect } from "effect";
 import { parseCliArgs, UsageError } from "../../lib/cli.ts";
 import { fetchThread } from "../../hackernews-archive-core/src/client.ts";
@@ -23,7 +24,19 @@ export function parseArgs(argv: readonly string[]): { id: number; format: "html"
   return { id, format, out: parsed.values.get("out") };
 }
 
-export async function main(argv: readonly string[]): Promise<number> {
+// Stage beside the destination, then atomically publish without replacing an existing archive.
+async function writeArchive(path: string, output: string): Promise<void> {
+  const stage = await mkdtemp(join(dirname(path), ".hn-archive-"));
+  try {
+    const file = join(stage, "archive");
+    await writeFile(file, output, { encoding: "utf8", mode: 0o600 });
+    await link(file, path);
+  } finally {
+    await rm(stage, { recursive: true, force: true });
+  }
+}
+
+export async function main(argv: readonly string[], fetchImpl = globalThis.fetch): Promise<number> {
   if (!argv.length || argv.includes("--help") || argv.includes("-h")) {
     process.stdout.write(help);
     return 0;
@@ -41,10 +54,10 @@ export async function main(argv: readonly string[]): Promise<number> {
     return 2;
   }
   try {
-    const archive = await Effect.runPromise(fetchThread(options.id));
+    const archive = await Effect.runPromise(fetchThread(options.id, fetchImpl));
     const output = options.format === "json" ? JSON.stringify(archive, null, 2) + "\n" : renderThread(archive);
     if (options.out) {
-      await writeFile(options.out, output, { encoding: "utf8", flag: "wx" });
+      await writeArchive(options.out, output);
       process.stderr.write(options.out + "\n");
     } else {
       process.stdout.write(output);

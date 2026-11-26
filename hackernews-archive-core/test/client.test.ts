@@ -6,6 +6,7 @@ import { decodeItem, fetchThread } from "../src/client.ts";
 test("validates API items while allowing additional fields and deleted tombstones", () => {
   assert.equal(decodeItem({ id: 7, type: "story", extra: 1 }, 7).id, 7);
   assert.equal(decodeItem({ id: 8, deleted: true }, 8).deleted, true);
+  assert.equal(decodeItem({ id: 8, dead: true }, 8).dead, true);
   for (const payload of [null, { id: 8, type: "story" }, { id: 7 }, { id: 7, type: "story", kids: [0] }, { id: 7, type: "comment", time: "bad" }]) {
     assert.throws(() => decodeItem(payload, 7));
   }
@@ -29,4 +30,10 @@ test("fails a whole capture if a referenced item is missing", async () => {
   const fake: typeof fetch = async (input) => Response.json(String(input).endsWith("/7.json")
     ? { id: 7, type: "story", kids: [8] } : null);
   await assert.rejects(Effect.runPromise(fetchThread(7, fake)), /HN item 8 is unavailable/u);
+});
+
+
+test("reports malformed JSON with the failing item ID", async () => {
+  const fake: typeof fetch = async () => new Response("not JSON");
+  await assert.rejects(Effect.runPromise(fetchThread(7, fake)), /HN item 7: could not read JSON/u);
 });

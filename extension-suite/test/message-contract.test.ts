@@ -24,15 +24,17 @@ test("accepts namespaced suite requests", () => {
   ).toEqual({ kind: "chatgpt/open-dashboard" });
   expect(isSuiteRequest({ kind: "allow-right-click/status", tabId: 7 })).toBe(true);
   expect(isSuiteRequest({ kind: "chatgpt/open-dashboard" })).toBe(true);
-  expect(isSuiteRequest({ kind: "hackernews/archive", tabId: 7 })).toBe(true);
+  expect(isSuiteRequest({ kind: "hackernews/archive", tabId: 7, itemId: 9 })).toBe(true);
 });
 
 test("rejects unknown or malformed suite requests", () => {
   expect(isSuiteRequest({ kind: "youtube-transcript/copy", tabId: 7 })).toBe(false);
   expect(isSuiteRequest({ kind: "x-bookmarks/run", job: "profile", action: "download" })).toBe(false);
   expect(isSuiteRequest({ kind: "onefile/save", tabId: "7" })).toBe(false);
-  expect(isSuiteRequest({ kind: "hackernews/archive", tabId: "7" })).toBe(false);
-  expect(isSuiteRequest({ kind: "hackernews/archive", tabId: 7, url: "https://example.com" })).toBe(false);
+  expect(isSuiteRequest({ kind: "hackernews/archive", tabId: "7", itemId: 9 })).toBe(false);
+  expect(isSuiteRequest({ kind: "hackernews/archive", tabId: 7 })).toBe(false);
+  expect(isSuiteRequest({ kind: "hackernews/archive", tabId: 7, itemId: "9" })).toBe(false);
+  expect(isSuiteRequest({ kind: "hackernews/archive", tabId: 7, itemId: 9, url: "https://example.com" })).toBe(false);
   expect(isSuiteRequest({ kind: "chatgpt/open-dashboard", tabId: 7 })).toBe(false);
   expect(() =>
     Schema.decodeUnknownSync(SuiteRequestSchema)({ kind: "allow-right-click/toggle" }),

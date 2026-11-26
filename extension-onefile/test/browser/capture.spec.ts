@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "playwright/test";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CapturePayloadSchema } from "../../../onefile-core/src/message-contract.ts";
@@ -9,7 +9,10 @@ import { Schema } from "effect";
 const specDirectory = dirname(fileURLToPath(import.meta.url)),
   repoRoot = join(specDirectory, "..", "..", ".."),
   fixtureRoot = join(repoRoot, "extension-onefile", "test", "fixtures"),
-  captureSource = join(repoRoot, "build", "extension-suite", "inject", "onefile", "capture.js");
+  productionCaptureSource = join(repoRoot, "dist", "extension-suite", "inject", "onefile", "capture.js"),
+  captureSource = existsSync(productionCaptureSource)
+    ? productionCaptureSource
+    : join(repoRoot, "build", "extension-suite", "inject", "onefile", "capture.js");
 
 const onePixelPng = Buffer.from([
   0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,

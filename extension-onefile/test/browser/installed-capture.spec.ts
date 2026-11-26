@@ -114,3 +114,76 @@ test("installed suite captures a local page and downloads a readable polyglot ar
     await rm(downloads, { recursive: true, force: true });
   }
 });
+
+test("installed suite archives an HN comment permalink through the real worker and download transport", async () => {
+  const profile = await mkdtemp(resolve(".work/tmp/mv3-hn-profile-")),
+    downloads = await mkdtemp(resolve(".work/tmp/mv3-hn-downloads-"));
+  let context: BrowserContext | undefined;
+  try {
+    context = await chromium.launchPersistentContext(profile, {
+      channel: "chromium", headless: true, acceptDownloads: true,
+      args: [`--disable-extensions-except=${extensionPath}`, `--load-extension=${extensionPath}`],
+    });
+    const browser = context.browser();
+    if (!browser) throw new Error("Persistent context has no browser");
+    const session = await browser.newBrowserCDPSession();
+    await session.send("Browser.setDownloadBehavior", {
+      behavior: "allow", downloadPath: downloads, eventsEnabled: true,
+    });
+    const worker = context.serviceWorkers()[0] ?? await context.waitForEvent("serviceworker");
+    const extensionId = new URL(worker.url()).host;
+    // Replace only the public API network boundary, not the actual extension handler or renderer.
+    await worker.evaluate(() => {
+      const original = globalThis.fetch.bind(globalThis);
+      globalThis.fetch = async (input, init) => {
+        const url = String(input);
+        const prefix = "https://hacker-news.firebaseio.com/v0/item/";
+        if (!url.startsWith(prefix)) return original(input, init);
+        if (init?.credentials !== "omit" || init.redirect !== "error") throw new Error("Unsafe HN request");
+        if (url === prefix + "7.json") return Response.json({ id: 7, type: "story", title: "Fixture HN", kids: [8, 9] });
+        if (url === prefix + "8.json") return Response.json({ id: 8, type: "comment", parent: 7, text: "<i>First" });
+        if (url === prefix + "9.json") return Response.json({ id: 9, type: "comment", parent: 7, text: "Second" });
+        return Response.json(null);
+      };
+    });
+    const url = "https://news.ycombinator.com/item?id=8";
+    await context.route(url, (route) => route.fulfill({ contentType: "text/html", body: "<title>HN fixture</title>" }));
+    const fixture = await context.newPage();
+    await fixture.goto(url);
+    const { targetInfos } = await session.send("Target.getTargets", { filter: [{ type: "tab", exclude: false }] });
+    const target = targetInfos.find((info) => info.url === url);
+    if (!target) throw new Error("Fixture tab target not found");
+    await session.send("Extensions.triggerAction", { id: extensionId, targetId: target.targetId });
+
+    const page = await context.newPage();
+    await page.goto(`chrome-extension://${extensionId}/options.html`);
+    const send = (itemId: number) => page.evaluate(async ({ url, itemId }) => {
+      const tab = (await chrome.tabs.query({})).find((entry) => entry.url === url);
+      if (tab?.id === undefined) throw new Error("HN fixture tab not found");
+      return chrome.runtime.sendMessage({ kind: "hackernews/archive", tabId: tab.id, itemId });
+    }, { url, itemId });
+    expect(await send(7)).toEqual({ ok: false, error: "The active Hacker News item changed; reopen the popup." });
+    expect(await page.evaluate(async () => (await chrome.downloads.search({})).length)).toBe(0);
+    expect(await send(8)).toEqual({ ok: true });
+
+    let downloadPath: string | undefined;
+    await expect.poll(async () => {
+      downloadPath = await page.evaluate(async () => (await chrome.downloads.search({ state: "complete" }))[0]?.filename);
+      return downloadPath;
+    }, { timeout: 20_000 }).toBeTruthy();
+    if (!downloadPath) throw new Error("No completed HN archive download");
+    expect(downloadPath).toMatch(/hn-7\.html$/u);
+    const html = await readFile(downloadPath, "utf8");
+    expect(html).toContain("<title>Fixture HN</title>");
+    expect(html).toContain("<i>First</i></div></article>");
+    expect(html).toContain("Second");
+    const data = /<script type="application\/json" id="hn-archive">(.*?)<\/script>/su.exec(html)?.[1];
+    if (!data) throw new Error("No structured HN snapshot");
+    const archive: unknown = JSON.parse(data);
+    expect(archive).toMatchObject({ rootId: 7, requestedId: 8, items: [{ id: 7 }, { id: 8 }, { id: 9 }] });
+  } finally {
+    await context?.close();
+    await rm(profile, { recursive: true, force: true });
+    await rm(downloads, { recursive: true, force: true });
+  }
+});

@@ -80,3 +80,31 @@ test("escapes executable markup, preserves text, and safely embeds hostile JSON"
   assert.match(html, /default-src 'none'/u);
   assert.equal((html.match(/<\/script>/gu) ?? []).length, 1);
 });
+
+test("isolates malformed formatting per comment and decodes HN link entities", async () => {
+  const archive = await collectThread(2, loader([
+    { id: 1, type: "story", title: "A &amp; B", kids: [2, 3], descendants: 3 },
+    { id: 2, type: "comment", parent: 1, text: 'first<p>second<p><pre><code>code</code></pre><i><a href="https:&#x2F;&#x2F;example.com/?x=1&amp;y=2" rel="nofollow noopener">link' },
+    { id: 3, type: "comment", parent: 1, text: '</article></a></i><a href="javascript&#58;alert(1)">next' },
+  ]));
+  const html = renderThread(archive);
+  assert.match(html, /<title>A &amp; B<\/title>/u);
+  assert.match(html, /<h1>A &amp; B<\/h1>/u);
+  assert.match(html, /first<p>second<\/p><p><\/p><pre><code>code<\/code><\/pre>/u);
+  assert.match(html, /href="https:\/\/example\.com\/\?x=1&amp;y=2" rel="noreferrer">link<\/a><\/i><\/div><\/article>/u);
+  assert.match(html, /href="#item-2">Requested item/u);
+  assert.match(html, /2 comment records \(HN reported 3\)/u);
+  assert.doesNotMatch(html, /<a href="javascript:/u);
+  assert.match(html, /id="item-3"[^\n]+&lt;\/article&gt;/u);
+});
+
+test("handles untyped dead comment tombstones without accepting unrelated edges", async () => {
+  const items: readonly HnItem[] = [
+    { id: 1, type: "story", kids: [2] },
+    { id: 2, dead: true, parent: 1, kids: [3] },
+    { id: 3, dead: true },
+  ];
+  assert.deepEqual((await collectThread(2, loader(items))).items, items);
+  await assert.rejects(collectThread(1, loader([{ id: 1, type: "poll", parts: [2] }, { id: 2, dead: true, kids: [3] }])), /Unexpected replies/u);
+  await assert.rejects(collectThread(1, loader([{ id: 1, type: "story", kids: [2] }, { id: 2, dead: true, parent: 9 }])), /does not belong/u);
+});

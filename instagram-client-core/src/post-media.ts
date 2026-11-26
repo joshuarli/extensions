@@ -56,7 +56,8 @@ function findWebItem(value: unknown, shortcode: string): unknown {
     if (key === "xdt_api__v1__media__shortcode__web_info" && typeof child === "object" && child !== null) {
       for (const [itemKey, items] of entries(child)) {
         if (itemKey !== "items" || !Array.isArray(items)) continue;
-        for (const item of items) {
+        const candidates: readonly unknown[] = items;
+        for (const item of candidates) {
           if (typeof item !== "object" || item === null) continue;
           if (entries(item).some(([codeKey, code]) => codeKey === "code" && code === shortcode)) return item;
         }

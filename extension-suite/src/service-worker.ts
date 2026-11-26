@@ -79,7 +79,10 @@ async function handleSuiteRequest(request: SuiteRequest): Promise<SuiteResponse>
       return { ok: true };
     }
     case "hackernews/archive": {
-      await saveHackerNewsThread(await chrome.tabs.get(request.tabId));
+      await saveHackerNewsThread(
+        await chrome.tabs.get(request.tabId), request.itemId,
+        (tabId, state) => actionStatus.set("hackernews-archive", tabId, state),
+      );
       return { ok: true };
     }
     case "chatgpt/open-dashboard": {

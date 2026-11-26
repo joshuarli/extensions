@@ -38,11 +38,12 @@ if (tabId === undefined) {
   wireAllowRightClick(tabId);
   wireOnefile(tabId);
 
-  if (threadId(tab?.url ?? "") !== undefined) {
+  const hnItemId = threadId(tab?.url ?? "");
+  if (hnItemId !== undefined) {
     hnSection.hidden = false;
     hnSave.addEventListener("click", () => {
       setStatus(statusElement, "Archiving the Hacker News discussion…");
-      runSuiteAction(hnSave, { kind: "hackernews/archive", tabId });
+      runSuiteAction(hnSave, { kind: "hackernews/archive", tabId, itemId: hnItemId });
     });
   }
 

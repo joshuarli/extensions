@@ -1,4 +1,4 @@
-type ActionFeature = "allow-right-click" | "onefile" | "youtube-transcript";
+type ActionFeature = "allow-right-click" | "onefile" | "youtube-transcript" | "hackernews-archive";
 
 interface FeatureActionState {
   title?: string;
@@ -21,6 +21,7 @@ export interface ActionStatus {
 
 const priority: readonly ActionFeature[] = [
     "onefile",
+    "hackernews-archive",
     "youtube-transcript",
     "allow-right-click",
   ],

@@ -1,5 +1,5 @@
 import { Effect, Schema } from "effect";
-import { collectThread, HnArchiveError, validId, type HnItem, type ThreadArchive } from "./thread.ts";
+import { collectThread, HnArchiveError, isTombstone, validId, type HnItem, type ThreadArchive } from "./thread.ts";
 
 const ItemSchema = Schema.Struct({
   id: Schema.Number,
@@ -16,7 +16,7 @@ export function decodeItem(value: unknown, id: number): HnItem {
   if (value === null) throw new HnArchiveError(`HN item ${id} is unavailable.`);
   try {
     const item = Schema.decodeUnknownSync(ItemSchema)(value);
-    if (item.id !== id || !validId(item.id) || (!item.type && !item.deleted)) throw new Error();
+    if (item.id !== id || !validId(item.id) || (!item.type && !isTombstone(item))) throw new Error();
     for (const related of [...(item.kids ?? []), ...(item.parts ?? []), ...(item.parent === undefined ? [] : [item.parent]), ...(item.poll === undefined ? [] : [item.poll])]) {
       if (!validId(related)) throw new Error();
     }
@@ -37,6 +37,7 @@ export function fetchThread(id: number, fetchImpl = globalThis.fetch): Effect.Ef
       try {
         return await collectThread(id, async (itemId) => {
           for (let attempt = 0; ; attempt++) {
+            deadline.throwIfAborted();
             const requestSignal = AbortSignal.any([deadline, AbortSignal.timeout(15_000)]);
             let response: Response;
             try {
@@ -44,18 +45,27 @@ export function fetchThread(id: number, fetchImpl = globalThis.fetch): Effect.Ef
                 signal: requestSignal, credentials: "omit", redirect: "error", cache: "no-store",
               });
             } catch (error) {
-              if (attempt === 0 && !deadline.aborted) continue;
+              if (attempt === 0 && !deadline.aborted) {
+                await new Promise<void>((resolve) => setTimeout(resolve, 500));
+                continue;
+              }
               throw new HnArchiveError(`HN item ${itemId} request failed: ${String(error)}`);
             }
             if (!response.ok) {
-              await response.body?.cancel();
+              await response.body?.cancel().catch(() => undefined);
               if (attempt === 0 && (response.status === 429 || response.status >= 500) && !deadline.aborted) {
                 await new Promise<void>((resolve) => setTimeout(resolve, 500));
                 continue;
               }
               throw new HnArchiveError(`HN item ${itemId}: HTTP ${response.status}.`);
             }
-            const value: unknown = await response.json();
+            let value: unknown;
+            try {
+              value = await response.json();
+            } catch (error) {
+              throw new HnArchiveError(`HN item ${itemId}: could not read JSON: ${String(error)}`);
+            }
+            deadline.throwIfAborted();
             return decodeItem(value, itemId);
           }
         });
