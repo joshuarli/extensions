@@ -5,6 +5,7 @@ import {
   setStatus,
 } from "../../lib/extension-ui.ts";
 import { mountYouTubeTranscriptPopup } from "../../extension-youtube-transcript/src/popup.ts";
+import { threadId } from "../../hackernews-archive-core/src/thread.ts";
 import { isYouTubeUrl } from "../../youtube-transcript-core/src/url.ts";
 import { SuiteResponseSchema, type SuiteResponse } from "./message-contract.ts";
 
@@ -16,6 +17,8 @@ const [tab] = await chrome.tabs.query({ active: true, currentWindow: true }),
   arcToggle = requiredElement<HTMLButtonElement>(document, "[data-arc-toggle]", popupContext),
   arcState = requiredElement<HTMLElement>(document, "[data-arc-state]", popupContext),
   onefileSave = requiredElement<HTMLButtonElement>(document, "[data-onefile-save]", popupContext),
+  hnSection = requiredElement<HTMLElement>(document, "[data-hn-section]", popupContext),
+  hnSave = requiredElement<HTMLButtonElement>(document, "[data-hn-save]", popupContext),
   chatgptDashboard = requiredElement<HTMLButtonElement>(document, "[data-chatgpt-dashboard]", popupContext),
   openOptions = requiredElement<HTMLAnchorElement>(document, "[data-open-options]", popupContext),
   ytSection = requiredElement<HTMLElement>(document, "[data-yt-section]", popupContext);
@@ -34,6 +37,14 @@ if (tabId === undefined) {
 } else {
   wireAllowRightClick(tabId);
   wireOnefile(tabId);
+
+  if (threadId(tab?.url ?? "") !== undefined) {
+    hnSection.hidden = false;
+    hnSave.addEventListener("click", () => {
+      setStatus(statusElement, "Archiving the Hacker News discussion…");
+      runSuiteAction(hnSave, { kind: "hackernews/archive", tabId });
+    });
+  }
 
   if (isYouTubeUrl(tab?.url ?? "")) {
     ytSection.hidden = false;

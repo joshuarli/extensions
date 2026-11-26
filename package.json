@@ -28,6 +28,7 @@
     "onefile": "node onefile-cli/src/cli.ts",
     "youtube": "node youtube-transcript-cli/src/cli.ts",
     "ig": "node instagram-archive-cli/src/cli.ts",
+    "hn": "node hackernews-archive-cli/src/cli.ts",
     "tools": "node cli/src/cli.ts"
   },
   "dependencies": {

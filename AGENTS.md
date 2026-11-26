@@ -1,6 +1,6 @@
 # Repository guide
 
-This repository builds one Chromium Manifest V3 extension from five feature packages with shared TypeScript and Vite tooling.
+This repository builds one Chromium Manifest V3 extension from six feature packages with shared TypeScript and Vite tooling.
 
 The ticket queue, [TODO.md](TODO.md), holds current and deferred work; `todo list --json` is the resume point.
 
@@ -12,7 +12,7 @@ The ticket queue, [TODO.md](TODO.md), holds current and deferred work; `todo lis
 - Install dependencies: `pnpm install`
 - Check types and unit tests: `pnpm run check`
 - Build development or production bundles: `pnpm run build` or `pnpm run dist`; `pnpm run dist` also regenerates the embedded runtime assets in `lib/generated/assets.ts`
-- Run a CLI: `pnpm tools <x|onefile|youtube|chatgpt|ig> [args...]`; X discovery is `pnpm x:discover [args...]`
+- Run a CLI: `pnpm tools <x|onefile|youtube|chatgpt|ig|hn> [args...]`; X discovery is `pnpm x:discover [args...]`
 - Run browser tests: `pnpm run test:browser`, `pnpm run test:browser:chatgpt`, or `pnpm run test:browser:right-click`
 
 ## Invariants
@@ -39,6 +39,7 @@ The ticket queue, [TODO.md](TODO.md), holds current and deferred work; `todo lis
 - Onefile terminal CLI: [onefile-cli/README.md](onefile-cli/README.md)
 - Onefile domain core: [onefile-core/README.md](onefile-core/README.md)
 - Onefile save and format: [extension-onefile/README.md](extension-onefile/README.md), [extension-onefile/ARCHITECTURE.md](extension-onefile/ARCHITECTURE.md), [extension-onefile/FORMAT.md](extension-onefile/FORMAT.md)
+- Hacker News thread archive (suite and CLI): [guide](extension-hackernews-archive/README.md)
 - ChatGPT organizer (suite feature): [extension-chatgpt/README.md](extension-chatgpt/README.md)
 - ChatGPT archive domain logic: [chatgpt-archive-core/README.md](chatgpt-archive-core/README.md)
 - ChatGPT archive CLI: [chatgpt-archive-cli/README.md](chatgpt-archive-cli/README.md)
@@ -62,6 +63,7 @@ The ticket queue, [TODO.md](TODO.md), holds current and deferred work; `todo lis
 - X GraphQL request and response handling: `x-archive-core/test/api.test.ts`, `parser.test.ts`, `merge.test.ts`, `collector.test.ts`, `debug.test.ts`; extension credential capture: `extension-x-archive/test/capture.test.ts`.
 - X CLI flags and exit codes: `x-archive-cli/test/args.test.ts`; backend selection: `x-archive-cli/test/backend.test.ts`; filesystem state: `fs-store.test.ts`; CDP extension hot-load and credential capture: `extension.test.ts`, `credential-capture.test.ts`; archive rendering: `x-archive-core/test/render.test.ts`.
 - X exported JSON/media/HTML agreement and offline determinism: `x-archive-core/test/export-contract.test.ts`. Live X and YouTube endpoints remain unqualified; other tests use fixtures or mocks.
+- Hacker News archive: public item decoding, ranked graph traversal, safe offline HTML and embedded JSON in `hackernews-archive-core/test/`; CLI flags in `hackernews-archive-cli/test/`.
 - Instagram archive: timeline parsing, media selection, completion and site rendering in `instagram-archive-core/test/`; account guard, parking failures, retry policy and recipe drift in `instagram-client-core/test/`; flags, parked job, scan/resume and media paths in `instagram-archive-cli/test/`. Live CDP validation lives in `.work/tmp` scratch scripts and is not committed.
 - ChatGPT archive: paging, early-stop paging, checkpoint state, timeframe, media pointers and record hashing in `chatgpt-archive-core/test/`; CLI flags, selection, append-only resume, cross-day checkpointing, legacy import, cooperative interrupt and media size cap in `chatgpt-archive-cli/test/` (`parity.test.ts` for the last four). Client session guard, re-authentication, retry policy and recipe drift in `chatgpt-client-core/test/`. Interrupt controller and media size helpers are covered in `lib/test/`. `chatgpt-archive-cli/test/cdp-live.test.ts` drives the CLI through a real CDP endpoint against routed fixtures.
 - Performance workloads, entrypoint and budgets: [extension-onefile/PERFORMANCE.md](extension-onefile/PERFORMANCE.md); `make bench-list`, `make bench BENCH_ARGS='--tier=edit'`, Change workloads and `--budget=BASE,CAND`; Full is manual only.

@@ -10,6 +10,7 @@ describe("tools dispatcher", () => {
       expect(text).toContain("tools <command>");
       expect(text).toContain("youtube");
       expect(text).toContain("chatgpt");
+      expect(text).toContain("archive a Hacker News discussion");
     } finally {
       output.mockRestore();
     }

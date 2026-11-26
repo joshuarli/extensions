@@ -1,5 +1,6 @@
 import { allowRightClickManifest } from "../../extension-allow-right-click/src/manifest.fragment.ts";
 import { chatgptManifest } from "../../extension-chatgpt/src/manifest.fragment.ts";
+import { hackerNewsArchiveManifest } from "../../extension-hackernews-archive/src/manifest.fragment.ts";
 import { onefileManifest } from "../../extension-onefile/src/manifest.fragment.ts";
 import { xArchiveManifest } from "../../extension-x-archive/src/manifest.fragment.ts";
 import { youtubeTranscriptManifest } from "../../extension-youtube-transcript/src/manifest.fragment.ts";
@@ -21,6 +22,7 @@ export const featureManifests: readonly FeatureManifest[] = [
   youtubeTranscriptManifest,
   xArchiveManifest,
   chatgptManifest,
+  hackerNewsArchiveManifest,
 ];
 
 function unique<T>(values: readonly T[]): T[] {

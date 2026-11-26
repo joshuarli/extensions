@@ -2,6 +2,7 @@ import { Schema } from "effect";
 import { createAllowRightClickBackground } from "../../extension-allow-right-click/src/background.ts";
 import { createChatgptApi, isApiRequest } from "../../extension-chatgpt/src/background-api.ts";
 import { isChatgptMessage, openChatgptDashboard } from "../../extension-chatgpt/src/background.ts";
+import { saveHackerNewsThread } from "../../extension-hackernews-archive/src/background.ts";
 import { createOnefileBackground } from "../../extension-onefile/src/background.ts";
 import {
   clearYouTubeTranscriptCaches,
@@ -75,6 +76,10 @@ async function handleSuiteRequest(request: SuiteRequest): Promise<SuiteResponse>
     case "onefile/save": {
       const tab = await chrome.tabs.get(request.tabId);
       void onefile.save(tab);
+      return { ok: true };
+    }
+    case "hackernews/archive": {
+      await saveHackerNewsThread(await chrome.tabs.get(request.tabId));
       return { ok: true };
     }
     case "chatgpt/open-dashboard": {

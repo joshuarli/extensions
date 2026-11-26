@@ -10,6 +10,7 @@ test("composes a manifest fragment from every extension package", () => {
   expect(packages.map((entry) => entry.name).sort()).toEqual([
     "extension-allow-right-click",
     "extension-chatgpt",
+    "extension-hackernews-archive",
     "extension-onefile",
     "extension-x-archive",
     "extension-youtube-transcript",
@@ -47,6 +48,7 @@ test("composes one manifest from the feature fragments", () => {
     "https://youtu.be/*",
     "https://x.com/*",
     "https://chatgpt.com/*",
+    "https://hacker-news.firebaseio.com/*",
   ]);
   assert.ok(!("content_scripts" in manifest));
   assert.deepEqual(manifest.declarative_net_request, {
